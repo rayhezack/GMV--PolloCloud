@@ -253,15 +253,6 @@
   margin-top: auto;
   padding: 24px 8px 0;
 }
-.sidebar-note {
-  background: var(--ui-surface-subtle);
-  border-radius: 12px;
-  padding: 13px;
-  font-size: 11px;
-  line-height: 1.8;
-  color: var(--ui-muted);
-  margin-bottom: 16px;
-}
 .sidebar-user {
   display: flex;
   align-items: center;
@@ -1273,10 +1264,10 @@
 .payment-donut-graphic { position: relative; width: 158px; height: 158px; }
 .payment-donut { display: block; width: 100%; height: 100%; overflow: visible; }
 .payment-donut-base { stroke: #f1f0f7; }
-.payment-donut-segment { cursor: help; transition: stroke-width 160ms ease; }
+.payment-donut-segment { cursor: default; outline: none; transition: stroke-width 160ms ease; }
 .payment-donut-segment[data-index='0'] { stroke: var(--ui-purple); }
 .payment-donut-segment[data-index='1'] { stroke: var(--ui-lavender); }
-.payment-donut-segment[data-active='true'], .payment-donut-segment:focus-visible { stroke-width: 23; outline: none; }
+.payment-donut-segment[data-active='true'] { stroke-width: 23; }
 .payment-donut-tooltip { position: absolute; z-index: 2; left: 50%; bottom: calc(100% + 5px); display: grid; gap: 3px; width: max-content; max-width: 190px; padding: 7px 9px; border-radius: 6px; background: var(--ui-ink); color: white; font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none; transform: translateX(-50%); box-shadow: 0 6px 18px rgba(37, 36, 61, .16); }
 .payment-donut-tooltip strong { font-size: 12px; }
 .payment-donut-copy { display: grid; align-content: center; gap: 5px; min-width: 0; font-variant-numeric: tabular-nums; }

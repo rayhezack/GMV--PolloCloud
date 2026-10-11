@@ -4,7 +4,6 @@ import { motion, useReducedMotion } from 'framer-motion';
 import {
   Menu,
   X,
-  ChevronRight,
   PanelLeftClose,
 } from 'lucide-react';
 import {
@@ -206,14 +205,6 @@ const Layout = () => {
           </NavLink>
         </nav>
         <div className="sidebar-bottom">
-          <Link
-            to={dashboardHref('data', location.search)}
-            className="sidebar-note block"
-          >
-            <span className="text-accent-foreground">数据与口径</span>
-            <br />
-            查看数据截至与同步状态 <ChevronRight size={12} className="inline" />
-          </Link>
           <div className="sidebar-user">
             <Link
               to="/permissions"

@@ -330,6 +330,12 @@ const CHAIN_METRIC_DEFINITIONS = [
   { label: '客单价', formula: '主动付费GMV / 支付UV' },
 ] as const;
 
+const RENEWAL_METRIC_DEFINITIONS = [
+  { label: '续订 GMV', formula: '到期用户数 * 续订率 * 续订客单价' },
+  { label: '续订率', formula: '续订用户数 / 到期用户数' },
+  { label: '续订客单价', formula: '续订金额 / 续订用户数' },
+] as const;
+
 function isUserTag(
   value: string | null,
 ): value is '新用户' | '老用户' | '未知' {
@@ -979,6 +985,22 @@ function GmvCoverageExplanation({
           <div className="mt-1 text-xs leading-5 text-muted-foreground">
             归因表按各分析页的业务周选择器比较；单指标趋势使用独立趋势窗口。
           </div>
+        </div>
+        <div className="dashboard-formula mt-4">
+          <div className="text-xs text-muted-foreground">自动续订 GMV 关系</div>
+          <div className="mt-1 text-sm font-medium leading-6 text-foreground">
+            续订 GMV = 到期用户数 * 续订率 * 续订客单价
+          </div>
+          <dl className="mt-2 grid gap-x-5 gap-y-1 text-xs leading-5 text-muted-foreground sm:grid-cols-2">
+            {RENEWAL_METRIC_DEFINITIONS.map((item) => (
+              <div key={item.label} className="flex min-w-0 gap-1.5">
+                <dt className="shrink-0 font-medium text-foreground">
+                  {item.label}：
+                </dt>
+                <dd>{item.formula}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
         <div className="dashboard-coverage-notes">
           <div>
@@ -2466,12 +2488,9 @@ function ContributionTable({
                       strokeDasharray={`${share} ${100 - share}`}
                       strokeDashoffset={index === 0 ? 0 : 100 - firstShare}
                       transform="rotate(-90 80 80)"
-                      tabIndex={0}
                       aria-label={`${item.key}，分析期日均 ${formatContributionValue(item.analysisDailyAvg, section.valueLabel)}，占比 ${share.toFixed(1)}%`}
                       onMouseEnter={() => setHoveredSegment(index)}
                       onMouseLeave={() => setHoveredSegment(null)}
-                      onFocus={() => setHoveredSegment(index)}
-                      onBlur={() => setHoveredSegment(null)}
                     />
                   );
                 })}
@@ -3843,7 +3862,7 @@ const DashboardPage = () => {
   const chainDrivers = attributions.chain?.drivers ?? [];
   const activeChainDriverDescription =
     isRenewalChain
-      ? `${planTier === 'all' ? '全部套餐' : PLAN_TIER_OPTIONS.find((option) => option.value === planTier)?.label ?? planTier}，续订 GMV = 到期用户数 × 续订率 × 续订客单价。`
+      ? undefined
       : activeCreationTier === 'all'
       ? `主动付费整体 - ${activeChainUserLabel}，DAU、转化率、客单价按同一用户类型联动展示。`
       : `${formatTierLabel(activeCreationTier)} - ${activeChainUserLabel}，DAU、转化率、客单价按同一用户类型联动展示。`;
@@ -4070,11 +4089,11 @@ const DashboardPage = () => {
                   <SectionHeaderLine
                     title={isRenewalChain ? '自动续订因子拆解' : '支付链路指标拆解'}
                     description={activeChainDriverDescription}
-                    badge={
+                    badge={!isRenewalChain ? (
                       <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-600">
-                        {isRenewalChain ? '三因子归因' : '链路指标'}
+                        链路指标
                       </span>
-                    }
+                    ) : undefined}
                     count={isRenewalChain || activeCreationTier !== 'all' ? chainDrivers.length : undefined}
                   />
                   <DriverTable

@@ -243,10 +243,10 @@ export function RevenueCards({
           >
             <div className="revenue-label">
               <span>
-                {item.key}{' '}
-                <span className="text-[11px] opacity-65">
-                  · {item.metric === 'activeGmv' && activePayType !== '整体' ? activePayType : '最新日'}
-                </span>
+                {item.key}
+                {item.metric === 'activeGmv' && activePayType !== '整体' ? (
+                  <span className="text-[11px] opacity-65"> · {activePayType}</span>
+                ) : null}
               </span>
             </div>
             <motion.div

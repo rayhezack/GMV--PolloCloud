@@ -56,5 +56,8 @@ export function dashboardView(pathname: string, search: string) {
 export function dashboardHref(id: string, search: string) {
   const params = new URLSearchParams(search);
   params.set('tab', id);
+  if (id === 'trend') {
+    params.set('metric', 'activeGmv');
+  }
   return `${id === 'report' ? '/report' : '/'}?${params.toString()}`;
 }
