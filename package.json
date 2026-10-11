@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite --config vite.pollocloud.config.ts --host 127.0.0.1 --port 5189",
     "build": "vite build --config vite.pollocloud.config.ts && node scripts/prepare-pollocloud-dist.mjs",
-    "type:check": "tsc --noEmit --project tsconfig.app.json"
+    "type:check": "tsc --noEmit --project tsconfig.app.json",
+    "prebuild": "node scripts/prepare-report-skill.mjs"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",

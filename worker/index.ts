@@ -1,3 +1,4 @@
+import { chainDriverEffects } from './chain-attribution';
 /* Pollocloud Worker: Feishu Base is the analytical source of truth. */
 
 import { MaxComputeClient } from '../server/modules/maxcompute/maxcompute.client';
@@ -923,11 +924,15 @@ async function attributions(env: Env, request: Request) {
     ['chainPaySuccessRate', '提交支付率', false],
     ['chainArppu', '客单价', false],
   ] as const;
+  const effects = chainDriverEffects(
+    { ...previousMetrics, activeUv: previousMetrics.activeUv / comparison.baselinePeriodDays },
+    { ...currentMetrics, activeUv: currentMetrics.activeUv / comparison.analysisPeriodDays },
+  );
   const drivers = driverDefinitions.map(([metricKey, metric, dailyAverage]) => {
     const value = dailyAverage ? currentMetrics[metricKey] / comparison.analysisPeriodDays : currentMetrics[metricKey];
     const previousValue = dailyAverage ? previousMetrics[metricKey] / comparison.baselinePeriodDays : previousMetrics[metricKey];
     const change = value - previousValue;
-    return { tier: selectedTier, userTag: driverUserTag || '全部', metricKey, metric, value, previousValue, change, wowChange: previousValue ? change / previousValue : null, contribution: driverDelta ? change * (currentDriver.chainGmvUsd / Math.max(1, currentMetrics[metricKey])) / driverDelta : null };
+    return { tier: selectedTier, userTag: driverUserTag || '全部', metricKey, metric, value, previousValue, change, wowChange: previousValue ? change / previousValue : null, contribution: driverDelta ? effects[metricKey] / driverDelta : null };
   });
   return json({ dimension, valueLabel: '主动付费GMV', comparison, metricLabels, items, sections, drivers, drill: { path: url.searchParams.get('chainPath') || 'tier_to_chain', creationTier: selectedTier, userTag: driverUserTag || '全部' }, trend });
 }
@@ -1181,7 +1186,7 @@ async function collectReportEvidence(env: Env, request: ReportGenerationRequest,
   };
   // Give the model display-ready, consistently daily figures instead of mixing
   // weekly totals, daily averages and unformatted percentage ratios.
-  const money = (value: number) => `$${number(value)}`;
+  const money = (value: number) => `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
   const gmvEvidence = (baseline: number, analysis: number) => ({ 基准期日均GMV: money(baseline), 分析期日均GMV: money(analysis), 日均增量: money(analysis - baseline), 周环比: percent(baseline ? (analysis - baseline) / baseline : null) });
   const itemsEvidence = (items: AttributionItem[]) => items.map(item => ({ 名称: labels[item.key] || item.key, ...gmvEvidence(item.baselineDailyAvg, item.analysisDailyAvg), 贡献度: percent(item.contribution) }));
   const driversEvidence = (drivers: AttributionDriverItem[]) => drivers.map(driver => {
@@ -1199,14 +1204,39 @@ async function collectReportEvidence(env: Env, request: ReportGenerationRequest,
       return { 指标: label, 基准期: value(baseline), 分析期: value(analysis), 周环比: percent(baseline ? (analysis - baseline) / baseline : null) };
     }),
   }));
+  const overallCreative = (period: string) => creative.trend.find(point => point.period === period) as Record<string, unknown> | undefined;
+  const creativeOverall = Object.entries(creative.metricLabels).map(([key, label]) => {
+    const baseline = Number(overallCreative(startDate)?.[key] ?? 0);
+    const analysis = Number(overallCreative(analysisPeriod)?.[key] ?? 0);
+    const value = (amount: number) => /Rate/.test(key) ? `${(amount * 100).toFixed(2)}%` : number(amount);
+    return { 指标: label, 基准期: value(baseline), 分析期: value(analysis), 周环比: percent(baseline ? (analysis - baseline) / baseline : null) };
+  });
+  const rankedDrivers = [...(coreChain.drivers || [])].filter(driver => (driver.contribution ?? 0) > 0)
+    .sort((a, b) => (b.contribution ?? 0) - (a.contribution ?? 0));
+  const coreDriver = rankedDrivers[0];
+  let inflection: unknown = null;
+  if (coreTier && coreDriver) {
+    const rows = (await dailyRows(env, 'chain_daily', { platform, startDate, endDate }))
+      .filter(row => tierKey(row) === coreTier.key);
+    const daily = Array.from({ length: 14 }, (_, i) => {
+      const date = shiftDate(startDate, i);
+      const metrics = chainMetrics(sumChain(rows.filter(row => asText(row.period) === date)));
+      return { date, value: metrics[coreDriver.metricKey as keyof typeof metrics] };
+    });
+    const baselineMean = sum(daily.slice(0, 7).map(item => item.value)) / 7;
+    const analysisDaily = daily.slice(7);
+    const direction = Math.sign(coreDriver.change);
+    const first = direction ? analysisDaily.find((_, i) => analysisDaily.slice(i).every(item => (item.value - baselineMean) * direction > 0)) : undefined;
+    inflection = { 指标: coreDriver.metric, 持续变动开始日: first?.date ?? null, 方向: direction > 0 ? '持续高于基准周日均' : direction < 0 ? '持续低于基准周日均' : '无变化', 无拐点时: '仅可使用较弱的周级时序证据' };
+  }
   await progress('analyze', 'success', '已按所选业务周和前一周计算归因');
   return {
     evidence: {
       platform, baselineWeek: `${startDate} ~ ${shiftDate(startDate, 6)}`, analysisWeek: `${analysisPeriod} ~ ${endDate}`,
       付费总收入: { 数据源: 'pay_type_daily', ...totalEvidence(pay.items), 一级构成: itemsEvidence(pay.items), 主动付费下钻: itemsEvidence(pay.sections?.[1]?.items || []) },
-      主动支付链路: { 数据源: 'chain_daily', ...totalEvidence(chain.items), 创作分层: itemsEvidence(chain.items), 核心分层: coreTier ? labels[coreTier.key] || coreTier.key : '全部', 核心分层过程因子: driversEvidence(coreChain.drivers || []) },
+      主动支付链路: { 数据源: 'chain_daily', ...totalEvidence(chain.items), 创作分层: itemsEvidence(chain.items), 核心分层: coreTier ? labels[coreTier.key] || coreTier.key : '全部', 核心分层过程因子: driversEvidence(coreChain.drivers || []), 同向因子排名: driversEvidence(rankedDrivers), 核心因子拐点: inflection },
       自动续订链路: { 数据源: 'renewal_daily', ...gmvEvidence(renewalGmv(startDate), renewalGmv(analysisPeriod)), 过程因子: driversEvidence(renewal.drivers || []) },
-      创作侧证: creativeEvidence, productActions: actions,
+      创作侧证: { 整体: creativeOverall, 分层: creativeEvidence }, productActions: actions,
     },
     tables: { PAY_TYPE_PRIMARY_TABLE: itemTable(pay.items), PAY_TYPE_DRILL_TABLE: itemTable(pay.sections?.[1]?.items || []), CHAIN_TIER_TABLE: itemTable(chain.items), CHAIN_DRIVER_TABLE: driverTable(coreChain.drivers || []), RENEWAL_DRIVER_TABLE: driverTable(renewal.drivers || []) },
   };

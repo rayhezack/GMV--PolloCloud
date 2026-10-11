@@ -87,3 +87,9 @@ Pollo Decision Canvas is a quiet working interface for repeated revenue diagnosi
 - Do not place a tinted background behind the donut chart.
 - Do not nest decorative cards inside a larger decorative card.
 - Do not use oversized headings inside dense operational panels.
+
+## 诊断报告 · 阅读界面
+
+模式：Read。参照用户提供的白底博客布局；保留全站导航和紫色操作按钮，报告正文使用白底、深灰文字与细分隔线，不使用彩色百分比徽章、彩色结论卡或嵌套卡片。
+
+桌面用窄目录栏与连续文章栏，窄屏目录移至顶部。阅读顺序为核心结论、原因判断、行动建议、数据与论证；原因详细论证和数据明细按需展开。正文限制行宽，14–16px、1.95行高，只有论点标题加粗。历史报告不自动补写未经生成的建议。
