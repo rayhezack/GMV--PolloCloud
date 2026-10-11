@@ -1071,14 +1071,14 @@
 }
 .contribution-table {
   width: 100%;
-  min-width: 640px;
+  min-width: 760px;
 }
 .contribution-table-head,
 .contribution-table-row {
   width: 100%;
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(150px, 1.5fr) repeat(4, minmax(100px, 1fr));
+  grid-template-columns: minmax(150px, 1.5fr) repeat(5, minmax(92px, 1fr));
   align-items: center;
   gap: 12px;
 }

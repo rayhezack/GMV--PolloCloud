@@ -489,6 +489,8 @@ export function ContributionBars({
 }) {
   if (!items.length) return null;
   const formatValue = (value: number) => `$${Math.round(value).toLocaleString('en-US')}`;
+  const formatPercent = (value: number | null | undefined) =>
+    value == null ? '—' : `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
   return (
     <div className="contribution-viz">
       <div className="contribution-table" role="table" aria-label={label}>
@@ -497,6 +499,7 @@ export function ContributionBars({
           <span>基准期日均</span>
           <span>分析期日均</span>
           <span>日均增量</span>
+          <span>周环比</span>
           <span>贡献度</span>
         </div>
         {items.map((item) => {
@@ -508,8 +511,11 @@ export function ContributionBars({
                 <span className="contribution-value contribution-baseline">{formatValue(item.baselineDailyAvg)}</span>
                 <span className="contribution-value contribution-analysis">{formatValue(item.analysisDailyAvg)}</span>
                 <span className="contribution-value">{delta >= 0 ? '+' : '−'}{formatValue(Math.abs(delta))}</span>
+                <span className={cn('contribution-value contribution-wow', (item.wowChange ?? 0) < 0 ? 'text-red-600' : 'text-emerald-700')}>
+                  {formatPercent(item.wowChange)}
+                </span>
                 <strong className={cn('contribution-value', (item.contribution ?? 0) < 0 ? 'text-red-600' : 'text-emerald-700')}>
-                  {item.contribution == null ? '—' : `${item.contribution >= 0 ? '+' : ''}${(item.contribution * 100).toFixed(1)}%`}
+                  {formatPercent(item.contribution)}
                 </strong>
               </button>
               <AnimatePresence initial={false}>
