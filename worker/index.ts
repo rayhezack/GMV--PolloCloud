@@ -1179,9 +1179,35 @@ async function collectReportEvidence(env: Env, request: ReportGenerationRequest,
     const value = (driver: AttributionDriverItem, amount: number) => /Rate/.test(driver.metricKey) ? `${(amount * 100).toFixed(2)}%` : /Arppu|Aov/.test(driver.metricKey) ? `$${number(amount)}` : number(amount);
     return ['| 指标 | 基准期 | 分析期 | 周环比 | 贡献度 |', '| --- | ---: | ---: | ---: | ---: |', ...drivers.map(driver => `| ${driver.metric} | ${value(driver, driver.previousValue)} | ${value(driver, driver.value)} | ${percent(driver.wowChange)} | ${percent(driver.contribution)} |`)].join('\n');
   };
+  // Give the model display-ready, consistently daily figures instead of mixing
+  // weekly totals, daily averages and unformatted percentage ratios.
+  const money = (value: number) => `$${number(value)}`;
+  const gmvEvidence = (baseline: number, analysis: number) => ({ 基准期日均GMV: money(baseline), 分析期日均GMV: money(analysis), 日均增量: money(analysis - baseline), 周环比: percent(baseline ? (analysis - baseline) / baseline : null) });
+  const itemsEvidence = (items: AttributionItem[]) => items.map(item => ({ 名称: labels[item.key] || item.key, ...gmvEvidence(item.baselineDailyAvg, item.analysisDailyAvg), 贡献度: percent(item.contribution) }));
+  const driversEvidence = (drivers: AttributionDriverItem[]) => drivers.map(driver => {
+    const value = (amount: number) => /Rate/.test(driver.metricKey) ? `${(amount * 100).toFixed(2)}%` : /Arppu|Aov/.test(driver.metricKey) ? money(amount) : number(amount);
+    return { 指标: driver.metric, 基准期: value(driver.previousValue), 分析期: value(driver.value), 周环比: percent(driver.wowChange), 贡献度: percent(driver.contribution) };
+  });
+  const totalEvidence = (items: AttributionItem[]) => gmvEvidence(sum(items.map(item => item.baselineDailyAvg)), sum(items.map(item => item.analysisDailyAvg)));
+  const renewalGmv = (period: string) => Number(renewal.trend.find(point => point.period === period)?.gmv ?? 0);
+  const creativeEvidence = creative.items.map(item => ({
+    分层: labels[item.key] || item.key,
+    指标: Object.entries(creative.metricLabels).map(([key, label]) => {
+      const baseline = item.previousMetrics?.[key] ?? 0;
+      const analysis = item.metrics?.[key] ?? 0;
+      const value = (amount: number) => /Rate/.test(key) ? `${(amount * 100).toFixed(2)}%` : number(amount);
+      return { 指标: label, 基准期: value(baseline), 分析期: value(analysis), 周环比: percent(baseline ? (analysis - baseline) / baseline : null) };
+    }),
+  }));
   await progress('analyze', 'success', '已按所选业务周和前一周计算归因');
   return {
-    evidence: { platform, baselineWeek: `${startDate} ~ ${shiftDate(startDate, 6)}`, analysisWeek: `${analysisPeriod} ~ ${endDate}`, tierLabels: labels, pay, chain, coreChain, renewal, creative, productActions: actions },
+    evidence: {
+      platform, baselineWeek: `${startDate} ~ ${shiftDate(startDate, 6)}`, analysisWeek: `${analysisPeriod} ~ ${endDate}`,
+      付费总收入: { 数据源: 'pay_type_daily', ...totalEvidence(pay.items), 一级构成: itemsEvidence(pay.items), 主动付费下钻: itemsEvidence(pay.sections?.[1]?.items || []) },
+      主动支付链路: { 数据源: 'chain_daily', ...totalEvidence(chain.items), 创作分层: itemsEvidence(chain.items), 核心分层: coreTier ? labels[coreTier.key] || coreTier.key : '全部', 核心分层过程因子: driversEvidence(coreChain.drivers || []) },
+      自动续订链路: { 数据源: 'renewal_daily', ...gmvEvidence(renewalGmv(startDate), renewalGmv(analysisPeriod)), 过程因子: driversEvidence(renewal.drivers || []) },
+      创作侧证: creativeEvidence, productActions: actions,
+    },
     tables: { PAY_TYPE_PRIMARY_TABLE: itemTable(pay.items), PAY_TYPE_DRILL_TABLE: itemTable(pay.sections?.[1]?.items || []), CHAIN_TIER_TABLE: itemTable(chain.items), CHAIN_DRIVER_TABLE: driverTable(coreChain.drivers || []), RENEWAL_DRIVER_TABLE: driverTable(renewal.drivers || []) },
   };
 }
