@@ -1132,16 +1132,18 @@ function PageSection({
   description,
   action,
   fullBleed = false,
+  className,
   children,
 }: {
   title: string;
   description?: string;
   action?: ReactNode;
   fullBleed?: boolean;
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <section className={cn(SURFACE_CARD_CLASS, fullBleed && 'md:p-8')}>
+    <section className={cn(SURFACE_CARD_CLASS, fullBleed && 'md:p-8', className)}>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-3xl">
           <h2 className="text-lg font-semibold tracking-tight text-gray-900">
@@ -3982,6 +3984,7 @@ const DashboardPage = () => {
           <PageSection
             title="收入趋势"
             description="查看收入及付费链路指标的变化。"
+            className="dashboard-panel-flat"
           >
             <div className="grid min-w-0 gap-4">
               {loadingBySection.overview && !overview ? (

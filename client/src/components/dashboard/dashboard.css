@@ -444,6 +444,9 @@
   padding: 24px;
   min-width: 0;
 }
+.dashboard-panel-flat {
+  border-color: transparent;
+}
 .metric-menu {
   position: relative;
   z-index: 8;
