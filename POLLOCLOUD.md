@@ -7,6 +7,7 @@ npm ci
 npm run build
 pollocloud login
 pollocloud db execute --name pollo-ai --file db/0002_dashboard_response_cache.sql
+pollocloud db execute --name pollo-ai --file db/0003_report_jobs.sql
 pollocloud deploy
 ```
 
@@ -23,6 +24,7 @@ MAXCOMPUTE_ENDPOINT
 MAXCOMPUTE_PROJECT
 MAXCOMPUTE_ACCESS_KEY_ID
 MAXCOMPUTE_ACCESS_KEY_SECRET
+KIMI_API_KEY
 ```
 
 The Feishu app must have record read/write API scopes and document-level access to Base `OjCAbXDNbavIU9seAzVcqUHanHg`. Record reads, creates, updates, and deletes have all been verified against this Base.
@@ -32,3 +34,15 @@ Dashboard endpoints push platform and date filters into Base, merge identical in
 The top three GMV cards read `pay_type_daily`. The trend chart reads `chain_daily` for active payment and `renewal_daily` for renewal; the chain attribution tab uses the same respective fact tables.
 
 Set `VITE_DATA_MODE=demo` only for a local visual preview. Production uses the same-origin Worker routes and does not require `API_ORIGIN`.
+
+## Report generation
+
+The business-week selector controls both report viewing and generation. A request contains the selected Saturday–Friday analysis week and the immediately preceding baseline week. The Worker rejects incomplete/future windows and missing daily facts before invoking the model. Historical selections never fall back to a different report.
+
+Jobs and individual step states are stored in D1 (`report_jobs`). The application polls status every three seconds on the report page. A streamed execution request stays open in the shared layout while the Worker reads Base, calculates attribution, calls Kimi, and writes the report to Base history and latest-report tables. Navigation inside the dashboard keeps that request alive. Closing the browser can interrupt execution; jobs with no heartbeat for three minutes become failed and can be generated again. This is not a durable queue that guarantees execution after every client disconnect.
+
+The task monitor is a compact floating control shared across dashboard routes, collapsed by default. Expanding it reveals real step states; navigation collapses it. Completed or failed notifications can be dismissed, are cleared on navigation, and are not restored on a fresh visit. Backend job records remain available for diagnosis. Each new run starts with new step state. Report drafts are checkpointed in D1 before Base writes, and transient write failures are retried. Base's `degraded` single-select field is written as the string `true` or `false`.
+
+The default model is `kimi-k3` at `https://api.moonshot.ai/v1`; optional `KIMI_MODEL` and `KIMI_BASE_URL` override those settings. Secrets are managed with `pollocloud secret set`, never committed. Progress percentages count completed steps; model inference uses an indeterminate bar instead of invented percentage estimates.
+
+“管理成员” opens Pollo Cloud's native embedded share page (`https://pollocloud.com/apps/pollo-ai/share?embed=1`) directly inside the dashboard dialog. This avoids the native button's one-time SPA initialization and keeps report execution alive in the parent layout. The dialog fits the viewport and does not change member access without an explicit user action.

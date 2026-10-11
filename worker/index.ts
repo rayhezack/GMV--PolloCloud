@@ -3,6 +3,8 @@
 import { MaxComputeClient } from '../server/modules/maxcompute/maxcompute.client';
 import { buildDatasetSql, type DatasetKind } from '../server/modules/maxcompute/sql-templates';
 import { POLLOCLOUD_APP_OWNER_ID } from '../shared/auth.constants';
+import { reportGenerations } from './report-jobs';
+import type { DashboardAttributionsResponse, ReportGenerationRequest, ReportGenerationStatus, ReportSummary, AttributionItem, AttributionDriverItem } from '../shared/api.interface';
 
 type D1Row = Record<string, string | number | null>;
 type D1Result<T> = { results: T[] };
@@ -13,7 +15,7 @@ type D1Statement = {
   run: () => Promise<unknown>;
 };
 type D1Database = { prepare: (sql: string) => D1Statement };
-type Env = {
+export type Env = {
   DB?: D1Database;
   FEISHU_APP_ID?: string;
   FEISHU_APP_SECRET?: string;
@@ -21,6 +23,9 @@ type Env = {
   MAXCOMPUTE_PROJECT?: string;
   MAXCOMPUTE_ACCESS_KEY_ID?: string;
   MAXCOMPUTE_ACCESS_KEY_SECRET?: string;
+  KIMI_API_KEY?: string;
+  KIMI_BASE_URL?: string;
+  KIMI_MODEL?: string;
 };
 
 type BaseSheet =
@@ -129,6 +134,9 @@ async function invalidateDashboardCache(env: Env) {
 }
 
 export async function authorizeDashboardMutation(request: Request): Promise<Response | null> {
+  // Pollo Cloud verifies these identity headers before forwarding to the Worker.
+  // Worker-to-app fetches do not retain the browser's platform login context.
+  if (request.headers.get('x-pollocloud-user-id') === POLLOCLOUD_APP_OWNER_ID) return null;
   const url = new URL('/_pollocloud/me', request.url);
   let identity: Response;
   try {
@@ -227,6 +235,7 @@ type BaseReadOptions = {
   filter?: string;
   sort?: string[];
   limit?: number;
+  fields?: string[];
 };
 
 function invalidateBaseCache(sheet?: BaseSheet) {
@@ -245,7 +254,7 @@ async function baseRecords(
   fresh = false,
   options: BaseReadOptions = {},
 ): Promise<BaseRecord[]> {
-  const cacheKey = `${sheet}|${options.filter ?? '*'}|${JSON.stringify(options.sort ?? [])}|${options.limit ?? '*'}`;
+  const cacheKey = `${sheet}|${options.filter ?? '*'}|${JSON.stringify(options.sort ?? [])}|${options.limit ?? '*'}|${JSON.stringify(options.fields ?? [])}`;
   const cached = baseCache.get(cacheKey);
   if (!fresh && cached && cached.expiresAt > Date.now()) return cached.records;
   const pending = baseLoads.get(cacheKey);
@@ -260,6 +269,7 @@ async function baseRecords(
       if (pageToken) query.set('page_token', pageToken);
       if (options.filter) query.set('filter', options.filter);
       if (options.sort?.length) query.set('sort', JSON.stringify(options.sort));
+      if (options.fields?.length) query.set('field_names', JSON.stringify(options.fields));
       const usesListApi = Boolean(options.filter || options.sort?.length);
       const data = await baseRequest<{
         items?: Array<{ record_id: string; fields: Record<string, unknown> }>;
@@ -269,7 +279,7 @@ async function baseRecords(
         env,
         sheet,
         `/${usesListApi ? 'records' : 'records/search'}?${query}`,
-        usesListApi ? undefined : {},
+        usesListApi ? undefined : options.fields ? { field_names: options.fields } : {},
         usesListApi ? 'GET' : 'POST',
       );
       records.push(...(data.items ?? []).map((item) => ({ id: item.record_id, fields: normalizeBaseFields(item.fields) })));
@@ -1121,31 +1131,104 @@ async function createSyncRun(env: Env, request: Request, context: { waitUntil(pr
   return json({ runId, mode: body.mode || 'latest_day', startDate: plan.startDate, endDate: plan.endDate, platforms, status: 'running', rowsSynced: 0 });
 }
 
+type ReportProgress = (key: string, status: NonNullable<ReportGenerationStatus['steps']>[number]['status'], detail?: string) => Promise<void>;
+
+async function collectReportEvidence(env: Env, request: ReportGenerationRequest, progress: ReportProgress) {
+  const { platform, startDate, endDate } = request;
+  const analysisPeriod = shiftDate(endDate, -6);
+  const params = new URLSearchParams({ platform, startDate, endDate, baselinePeriod: startDate, analysisPeriod });
+  const readAttribution = async (dimension: string, extra: Record<string, string> = {}) => {
+    const query = new URLSearchParams(params);
+    query.set('dimension', dimension);
+    Object.entries(extra).forEach(([key, value]) => query.set(key, value));
+    const response = await attributions(env, new Request(`https://report.internal/api/dashboard/attributions?${query}`));
+    if (!response.ok) throw new Error('归因数据读取失败');
+    return await response.json() as DashboardAttributionsResponse;
+  };
+  const read = async (key: string, table: 'pay_type_daily' | 'chain_daily' | 'renewal_daily' | 'creative_daily', dimension: string, extra = {}) => {
+    await progress(key, 'running');
+    const rows = await dailyRows(env, table, { platform, startDate, endDate });
+    const dates = new Set(rows.map(row => asText(row.period)));
+    const missing = Array.from({ length: 14 }, (_, i) => shiftDate(startDate, i)).filter(date => !dates.has(date));
+    if (missing.length) throw new Error(`${table} 缺少 ${missing.join('、')} 的数据，请先同步后再生成。`);
+    const data = await readAttribution(dimension, extra);
+    await progress(key, 'success', `已读取 ${rows.length.toLocaleString('en-US')} 条记录 · 14 个业务日`);
+    return data;
+  };
+  const results = await Promise.allSettled([
+    read('pay', 'pay_type_daily', 'pay_type'), read('chain', 'chain_daily', 'chain'),
+    read('renewal', 'renewal_daily', 'chain', { chainType: 'renewal' }), read('creative', 'creative_daily', 'creative'),
+  ]);
+  const failure = results.find(result => result.status === 'rejected');
+  if (failure?.status === 'rejected') throw failure.reason;
+  const [pay, chain, renewal, creative] = results.map(result => (result as PromiseFulfilledResult<DashboardAttributionsResponse>).value);
+  await progress('analyze', 'running');
+  const coreTier = [...chain.items].filter(item => (item.contribution ?? 0) > 0).sort((a, b) => (b.contribution ?? 0) - (a.contribution ?? 0))[0];
+  const coreChain = coreTier ? await readAttribution('chain', { creationTier: coreTier.key }) : chain;
+  const actions = (await baseRecords(env, 'product_actions')).map(record => record.fields).filter(row => {
+    const dateValue = row['合入时间'] || row['上线时间'];
+    const date = typeof dateValue === 'number' ? new Date(dateValue).toISOString().slice(0, 10) : asText(dateValue).slice(0, 10);
+    const scope = asText(row['端类型'] || row['端'] || 'web').toLowerCase();
+    return dateInRange(date, startDate, endDate) && ['新增功能', '优化'].includes(asText(row['类型'])) && (scope.includes(platform) || /全部|双端/.test(scope));
+  });
+  const labels: Record<string, string> = Object.fromEntries(TIER_ORDER.map((tier, i) => [tier, ['分析期前30日无创作用户', '分析期前30日创作1-10次用户', '分析期前30日创作11-30次用户', '分析期前30日创作31-100次用户', '分析期前30日创作101次以上用户'][i]]));
+  const number = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const percent = (value: number | null) => value == null ? '—' : `${value >= 0 ? '+' : ''}${(value * 100).toFixed(2)}%`;
+  const itemTable = (items: AttributionItem[]) => ['| 维度 | 基准期日均 | 分析期日均 | 周环比 | 贡献度 |', '| --- | ---: | ---: | ---: | ---: |', ...items.map(item => `| ${labels[item.key] || item.key} | $${number(item.baselineDailyAvg)} | $${number(item.analysisDailyAvg)} | ${percent(item.wowChange)} | ${percent(item.contribution)} |`)].join('\n');
+  const driverTable = (drivers: AttributionDriverItem[]) => {
+    const value = (driver: AttributionDriverItem, amount: number) => /Rate/.test(driver.metricKey) ? `${(amount * 100).toFixed(2)}%` : /Arppu|Aov/.test(driver.metricKey) ? `$${number(amount)}` : number(amount);
+    return ['| 指标 | 基准期 | 分析期 | 周环比 | 贡献度 |', '| --- | ---: | ---: | ---: | ---: |', ...drivers.map(driver => `| ${driver.metric} | ${value(driver, driver.previousValue)} | ${value(driver, driver.value)} | ${percent(driver.wowChange)} | ${percent(driver.contribution)} |`)].join('\n');
+  };
+  await progress('analyze', 'success', '已按所选业务周和前一周计算归因');
+  return {
+    evidence: { platform, baselineWeek: `${startDate} ~ ${shiftDate(startDate, 6)}`, analysisWeek: `${analysisPeriod} ~ ${endDate}`, tierLabels: labels, pay, chain, coreChain, renewal, creative, productActions: actions },
+    tables: { PAY_TYPE_PRIMARY_TABLE: itemTable(pay.items), PAY_TYPE_DRILL_TABLE: itemTable(pay.sections?.[1]?.items || []), CHAIN_TIER_TABLE: itemTable(chain.items), CHAIN_DRIVER_TABLE: driverTable(coreChain.drivers || []), RENEWAL_DRIVER_TABLE: driverTable(renewal.drivers || []) },
+  };
+}
+
+async function persistGeneratedReport(env: Env, report: ReportSummary) {
+  const fields = { platform: report.platform, period_start: report.periodStart, period_end: report.periodEnd, model_used: report.modelUsed, degraded: report.degraded ? 'true' : 'false', generated_at: report.generatedAt, report_md: report.markdown };
+  // Write history first; the latest pointer must never reference an unsaved report.
+  for (const sheet of ['report_history', 'latest_report'] as const) {
+    const parts = [`CurrentValue.[platform]="${report.platform}"`];
+    if (sheet === 'report_history') parts.push(`CurrentValue.[period_start]="${report.periodStart}"`, `CurrentValue.[period_end]="${report.periodEnd}"`);
+    const records = await baseRecords(env, sheet, true, { filter: parts.length > 1 ? `AND(${parts.join(',')})` : parts[0], sort: ['generated_at DESC'], limit: 1 });
+    const existing = records[0];
+    await baseRequest(env, sheet, existing ? `/records/${existing.id}` : '/records', { fields }, existing ? 'PUT' : 'POST');
+    invalidateBaseCache(sheet);
+  }
+}
+
 async function reportHandler(env: Env, request: Request) {
   const url = new URL(request.url);
   const platform = url.searchParams.get('platform');
+  if (url.pathname.startsWith('/api/report-generations')) return reportGenerations(env, request, {
+    collect: (body, progress) => collectReportEvidence(env, body, progress),
+    persist: report => persistGeneratedReport(env, report),
+  });
+  if (platform && !PLATFORMS.has(platform)) return errorResponse('platform 必须是 web / app 之一');
+  const reportFilter = platform ? `CurrentValue.[platform]="${platform}"` : undefined;
   if (request.method === 'GET' && url.pathname === '/api/report-latest') {
-    const row = (await baseRecords(env, 'latest_report')).map((record) => record.fields)
+    const row = (await baseRecords(env, 'latest_report', false, { filter: reportFilter, sort: ['generated_at DESC'], limit: 1 })).map((record) => record.fields)
       .filter((item) => !platform || asText(item.platform) === platform)
       .sort((left, right) => asText(right.generated_at).localeCompare(asText(left.generated_at)))[0];
-    return json(row ? { platform: asText(row.platform), periodStart: asText(row.period_start), periodEnd: asText(row.period_end), modelUsed: asText(row.model_used), degraded: Boolean(row.degraded), markdown: asText(row.report_md), generatedAt: asText(row.generated_at) } : null);
+    return json(row ? { platform: asText(row.platform), periodStart: asText(row.period_start), periodEnd: asText(row.period_end), modelUsed: asText(row.model_used), degraded: asText(row.degraded) === 'true', markdown: asText(row.report_md), generatedAt: asText(row.generated_at) } : null);
   }
   if (request.method === 'GET' && url.pathname === '/api/report-history') {
-    const rows = (await baseRecords(env, 'report_history')).map((record) => record.fields)
+    const rows = (await baseRecords(env, 'report_history', false, { filter: reportFilter, sort: ['generated_at DESC'], fields: PREVIEW_FIELDS.report_history.filter(field => field !== 'report_md') })).map((record) => record.fields)
       .filter((item) => !platform || asText(item.platform) === platform)
       .sort((left, right) => asText(right.generated_at).localeCompare(asText(left.generated_at)));
-    return json(rows.map((row) => ({ platform: asText(row.platform), periodStart: asText(row.period_start), periodEnd: asText(row.period_end), modelUsed: asText(row.model_used), degraded: Boolean(row.degraded), generatedAt: asText(row.generated_at) })));
+    return json(rows.map((row) => ({ platform: asText(row.platform), periodStart: asText(row.period_start), periodEnd: asText(row.period_end), modelUsed: asText(row.model_used), degraded: asText(row.degraded) === 'true', generatedAt: asText(row.generated_at) })));
   }
   if (request.method === 'GET' && url.pathname === '/api/report-history/detail') {
     const periodStart = url.searchParams.get('periodStart');
     const periodEnd = url.searchParams.get('periodEnd');
-    const row = (await baseRecords(env, 'report_history')).map((record) => record.fields)
+    const filter = `AND(CurrentValue.[platform]="${escapeBaseFormulaValue(platform || '')}",CurrentValue.[period_start]="${escapeBaseFormulaValue(periodStart || '')}",CurrentValue.[period_end]="${escapeBaseFormulaValue(periodEnd || '')}")`;
+    const row = (await baseRecords(env, 'report_history', false, { filter, sort: ['generated_at DESC'], limit: 1 })).map((record) => record.fields)
       .filter((item) => asText(item.platform) === platform && asText(item.period_start) === periodStart && asText(item.period_end) === periodEnd)
       .sort((left, right) => asText(right.generated_at).localeCompare(asText(left.generated_at)))[0];
-    return json(row ? { platform: asText(row.platform), periodStart: asText(row.period_start), periodEnd: asText(row.period_end), modelUsed: asText(row.model_used), degraded: Boolean(row.degraded), markdown: asText(row.report_md), generatedAt: asText(row.generated_at) } : null);
+    return json(row ? { platform: asText(row.platform), periodStart: asText(row.period_start), periodEnd: asText(row.period_end), modelUsed: asText(row.model_used), degraded: asText(row.degraded) === 'true', markdown: asText(row.report_md), generatedAt: asText(row.generated_at) } : null);
   }
-  if (request.method === 'GET' && url.pathname === '/api/report-generations/latest') return json(null);
-  if (request.method === 'POST' && url.pathname === '/api/report-generations') return errorResponse('数据库迁移阶段暂不生成新报告，请先完成数据源同步服务接入', 501);
   return errorResponse('报告接口不存在', 404);
 }
 
@@ -1164,7 +1247,7 @@ export default {
         const denial = await authorizeDashboardMutation(request);
         return denial || createSyncRun(env, request, context);
       }
-      if (url.pathname === '/api/report-generations' && request.method === 'POST') {
+      if (url.pathname.startsWith('/api/report-generations') && request.method === 'POST') {
         const denial = await authorizeDashboardMutation(request);
         if (denial) return denial;
       }

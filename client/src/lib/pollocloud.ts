@@ -45,7 +45,9 @@ export async function apiRequest<T>(
     const message =
       typeof data === 'object' && data !== null && 'message' in data
         ? String((data as { message: unknown }).message)
-        : `请求失败（${response.status}）`;
+        : typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string'
+          ? data.error
+          : `请求失败（${response.status}）`;
     const error = new Error(message) as Error & { response?: ApiResponse<T> };
     error.response = { data, status: response.status };
     throw error;
@@ -74,14 +76,14 @@ export function readPollocloudUser(value: unknown): PollocloudUser | null {
   const isAdmin = item.isAdmin === true || item.is_admin === true;
   return {
     userId,
-    userName: String(
+    userName: normalizeUserName(String(
       item.userName ??
         item.user_name ??
         item.displayName ??
         item.display_name ??
         item.name ??
         '',
-    ),
+    )),
     avatar: String(item.avatar ?? item.avatarUrl ?? item.avatar_url ?? '') || undefined,
     role: String(
       explicitRole ??
@@ -92,6 +94,12 @@ export function readPollocloudUser(value: unknown): PollocloudUser | null {
             : 'viewer'),
     ) as PollocloudRole,
   };
+}
+
+export function normalizeUserName(value: string): string {
+  const name = value.trim();
+  const match = name.match(/^(.*?)\s*[（(]\s*([^()（）]+)\s*[)）]$/u);
+  return match && match[1].trim() === match[2].trim() ? match[1].trim() : name;
 }
 
 export function canManagePollocloudApp(

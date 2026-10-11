@@ -628,9 +628,16 @@ function isCreativeSection(title: string): boolean {
   return /创作积极性|创作侧/u.test(title);
 }
 
+export function removeCreativeEvidenceTables(body: string): string {
+  return body.split('\n').filter(line => !/^\s*\|.*\|\s*$/u.test(line)
+    && !/CREATIVE_(?:ATOMIC|OVERALL)_TABLE/u.test(line)
+    && !/创作积极性原子指标.*按创作分层列出/u.test(line)).join('\n').trim();
+}
+
 function ReportSectionCard({ section }: { section: ParsedReportSection }) {
   const causeSection = isCauseSection(section.title);
   const creativeSection = isCreativeSection(section.title);
+  const body = creativeSection ? removeCreativeEvidenceTables(section.body) : section.body;
 
   return (
     <section className="rounded-3xl bg-white p-6 shadow-[0_24px_70px_rgba(15,23,42,0.05)] md:p-8">
@@ -644,14 +651,14 @@ function ReportSectionCard({ section }: { section: ParsedReportSection }) {
           仅表示该窗口内创作次数为0。下方创作UV、创作渗透率等指标统计的是这批用户在分析期内的行为，不代表他们在分析期内没有创作。
         </div>
       ) : null}
-      {section.body ? (
+      {body ? (
         causeSection ? (
           <div className="mt-6 rounded-2xl border-l-4 border-primary bg-accent px-6 py-5">
-            <ReportMarkdown variant="callout">{section.body}</ReportMarkdown>
+            <ReportMarkdown variant="callout">{body}</ReportMarkdown>
           </div>
         ) : (
           <div className="mt-6">
-            <ReportMarkdown>{section.body}</ReportMarkdown>
+            <ReportMarkdown>{body}</ReportMarkdown>
           </div>
         )
       ) : null}

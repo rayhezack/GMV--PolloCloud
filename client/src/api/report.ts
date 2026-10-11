@@ -8,6 +8,10 @@ import type {
   ReportSummary,
 } from '@shared/api.interface';
 
+export async function executeReportGeneration(runId: string): Promise<void> {
+  await apiRequest('/api/report-generations/run', { method: 'POST', body: JSON.stringify({ runId }) });
+}
+
 export async function generateReport(
   req: ReportGenerationRequest,
 ): Promise<ReportGenerationStatus> {

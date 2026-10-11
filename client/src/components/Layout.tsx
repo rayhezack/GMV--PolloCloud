@@ -16,8 +16,9 @@ import { ShieldCheck } from 'lucide-react';
 import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
 import { canManagePollocloudApp } from '@/lib/pollocloud';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { getLatestReportGeneration } from '@client/src/api/report';
+import { executeReportGeneration, getLatestReportGeneration } from '@client/src/api/report';
 import type { Platform, ReportGenerationStatus } from '@shared/api.interface';
+import { ReportTask } from './dashboard/ReportTask';
 
 const REPORT_GENERATION_KEEPALIVE_INTERVAL_MS = 10_000;
 const REPORT_GENERATION_PLATFORMS: Platform[] = ['web', 'app'];
@@ -65,6 +66,15 @@ const Layout = () => {
     }
   });
   const [jobs, setJobs] = useState<ReportGenerationStatus[]>([]);
+  const executingJobs = useRef(new Set<string>());
+  useEffect(() => {
+    if (!canManagePollocloudApp(userInfo)) return;
+    for (const job of jobs) {
+      if (job.status !== 'queued' || executingJobs.current.has(job.runId)) continue;
+      executingJobs.current.add(job.runId);
+      void executeReportGeneration(job.runId).catch(() => undefined).finally(() => executingJobs.current.delete(job.runId));
+    }
+  }, [jobs, userInfo]);
   const trackReport = useCallback((job: ReportGenerationStatus) => { setJobs(current => [...current.filter(item => item.platform !== job.platform), job]); }, []);
   const location = useLocation();
   const currentView = dashboardView(location.pathname, location.search);
@@ -282,6 +292,7 @@ const Layout = () => {
           <Outlet context={{ trackReport }} />
         </main>
       </div>
+      {isAdmin && <ReportTask jobs={jobs} />}
     </div>
   );
 };

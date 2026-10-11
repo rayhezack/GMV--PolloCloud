@@ -294,6 +294,13 @@ export interface ReportGenerationStatus {
   finishedAt?: string;
   errorMessage?: string;
   report?: ReportSummary;
+  heartbeatAt?: string;
+  steps?: Array<{
+    key: string;
+    label: string;
+    status: 'waiting' | 'running' | 'success' | 'failed';
+    detail?: string;
+  }>;
 }
 
 /* ===== 管理员成员 ===== */

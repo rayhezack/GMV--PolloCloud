@@ -1,4 +1,7 @@
 import { ShieldCheck } from 'lucide-react';
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
 import { canManagePollocloudApp } from '@/lib/pollocloud';
 import { STATIC_DEMO_MODE } from '@/lib/demo-data';
@@ -14,6 +17,7 @@ const roleNames: Record<string, string> = {
 export default function PermissionsPage() {
   const { user, loading } = usePollocloudUser();
   const canManage = canManagePollocloudApp(user);
+  const [managementOpen, setManagementOpen] = useState(false);
 
   return (
     <section className="permissions-page" aria-labelledby="permissions-title">
@@ -23,7 +27,6 @@ export default function PermissionsPage() {
             <h1 id="permissions-title">账号与权限</h1>
             <p>查看当前权限，并管理看板的访问成员。</p>
           </div>
-          {canManage && !STATIC_DEMO_MODE ? <span data-pollocloud-share /> : null}
         </header>
         <div className="permissions-identity">
           <ShieldCheck size={20} strokeWidth={1.8} aria-hidden="true" />
@@ -36,7 +39,7 @@ export default function PermissionsPage() {
           <div role="row"><strong role="columnheader">操作</strong><strong role="columnheader">当前权限</strong></div>
           <div role="row"><span role="cell">查看看板与诊断报告</span><span role="cell">可用</span></div>
           <div role="row"><span role="cell">更新数据</span><span role="cell">{loading ? '检查中' : canManage ? '可用' : '需要所有者或协作者权限'}</span></div>
-          <div role="row"><span role="cell">更新报告</span><span role="cell">当前部署暂不可用</span></div>
+          <div role="row"><span role="cell">生成报告</span><span role="cell">{loading ? '检查中' : canManage ? '可用' : '需要所有者或协作者权限'}</span></div>
           <div role="row"><span role="cell">管理访问成员</span><span role="cell">{loading ? '检查中' : canManage ? '可用' : '仅所有者、管理员或编辑者可用'}</span></div>
         </div>
         {canManage ? (
@@ -44,9 +47,10 @@ export default function PermissionsPage() {
             {STATIC_DEMO_MODE ? <AdminManagementPage embedded /> : (
               <div className="permissions-share-management">
                 <div>
-                  <h2>访问成员</h2>
-                  <p>访问者可查看看板，协作者可更新数据。</p>
+                  <h2>管理访问成员</h2>
+                  <p>添加成员、调整访问权限或管理已有协作者。</p>
                 </div>
+                <Button onClick={() => setManagementOpen(true)}>管理成员</Button>
               </div>
             )}
           </div>
@@ -54,6 +58,12 @@ export default function PermissionsPage() {
           <div className="permissions-readonly">当前账号为只读角色。如需调整成员，请联系应用所有者。</div>
         )}
       </div>
+      {canManage && <Dialog open={managementOpen} onOpenChange={setManagementOpen}>
+        <DialogContent className="member-management-dialog" aria-describedby={undefined}>
+          <DialogTitle className="sr-only">管理访问成员</DialogTitle>
+          <iframe src="https://pollocloud.com/apps/pollo-ai/share?embed=1&from=%2Fpermissions" title="成员与访问权限" />
+        </DialogContent>
+      </Dialog>}
     </section>
   );
 }
