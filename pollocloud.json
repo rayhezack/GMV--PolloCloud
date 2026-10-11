@@ -1,0 +1,7 @@
+{
+  "name": "pollo-ai",
+  "dir": "dist",
+  "spa": true,
+  "worker": "worker/index.ts",
+  "immutable": ["/assets/*"]
+}

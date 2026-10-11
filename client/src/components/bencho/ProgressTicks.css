@@ -1,0 +1,90 @@
+/* Bencho ProgressTicks. Tokens stay local to the component root. */
+.bencho-progress-ticks {
+  --font-ui: var(--ui-font, Inter, 'PingFang SC', system-ui, sans-serif);
+  --font-mono: var(--font-ui);
+  --font-num: var(--font-ui);
+  --ink: var(--ui-ink, #384b52);
+  --ink-3: var(--ui-muted, #7f8b8b);
+  --ink-4: #9aa5a4;
+  --ink-rgb: 56 75 82;
+  --ok: var(--ui-mint, #2d9b71);
+  --pane: #ffffff;
+  --pane-edge: var(--ui-line, #e3ebe7);
+  --shadow-rgb: 56 75 82;
+  --solid: #26383a;
+  --solid-ink: #f4f3f1;
+  --nod-r: 20px;
+  --try-edge: transparent;
+  --g-blur: 2px;
+  --g-bright: 100%;
+  --g-sat: 150%;
+  --g-lift: 0.08;
+  --g-spec: 0;
+  --g-edge-far: 0;
+  --g-edge-hi: 0;
+  --g-edge-lo: 0;
+  position: relative;
+  width: 100%;
+  padding: 12px;
+  overflow: hidden;
+  isolation: isolate;
+  color: var(--ink);
+  background: var(--pane);
+  border-radius: 16px;
+  box-shadow: 0 10px 32px rgb(var(--shadow-rgb) / var(--g-lift));
+  font-family: var(--font-ui);
+}
+
+.bencho-progress-ticks-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.bencho-progress-ticks-figure {
+  color: var(--ink);
+  font-size: 32px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.bencho-progress-ticks-figure i {
+  margin-left: 2px;
+  color: var(--ink-3);
+  font-size: 16px;
+  font-style: normal;
+}
+
+.bencho-progress-ticks-delta {
+  color: var(--ink-4);
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 140ms ease, color 140ms ease;
+  font-variant-numeric: tabular-nums;
+}
+
+.bencho-progress-ticks-delta[data-show='true'] { opacity: 1; }
+.bencho-progress-ticks-delta[data-up='true'] { color: var(--ok); }
+
+.bencho-progress-ticks-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 92px;
+  overflow: hidden;
+  border-radius: 6px;
+  touch-action: pan-y;
+}
+
+.bencho-progress-tick {
+  flex: 1;
+  min-width: 2px;
+  background: rgb(var(--ink-rgb) / 0.16);
+  border-radius: 2px;
+  cursor: crosshair;
+  transition: background 160ms ease, height 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bencho-progress-tick[data-on='true'] { background: var(--ink); }
+.bencho-progress-tick[data-cursor='true'] { background: var(--ok); }
