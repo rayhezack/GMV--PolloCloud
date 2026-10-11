@@ -65,7 +65,7 @@ export function ReportInsightArticle({ report }: { report: ReportSummary }) {
         </section>
         {cause && <section id="report-cause" className="report-reading-section">
           <h2>原因判断</h2>
-          <Markdown>{causeParts.lead.replace(/^\*\*核心判断[：:]/, '**')}</Markdown>
+          <Markdown>{causeParts.lead.replace(/\*\*/g, '').replace(/^核心判断[：:]\s*/, '')}</Markdown>
           {causeParts.detail && <details className="report-inline-detail"><summary>查看原因论证<ChevronDown size={15} /></summary><Markdown>{causeParts.detail}</Markdown></details>}
         </section>}
         <section id="report-actions" className="report-reading-section">
