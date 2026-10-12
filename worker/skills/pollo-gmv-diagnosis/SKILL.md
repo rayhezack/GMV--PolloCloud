@@ -77,7 +77,6 @@ If active payment is not the main driver, still state total daily average GMV, t
 
 - Every numbered argument must start with a concrete business sub-claim, not a template label. The bold prefix before `：` summarizes the evidence that follows.
 - Bold every section conclusion and numbered argument's business sub-claim. Keep supporting explanation in regular text. Do not use light-text conventions for core judgments.
-- Use italic Markdown for at most one decisive metric movement in each numbered argument. Italics are reserved for this restrained visual emphasis; do not emphasize entire sentences or decorate secondary numbers.
 - Do not output literal meta labels such as `事实论点`, `数据论点`, `核心论点`, `观点`, `结论`, or `推测` as the bold prefix of a numbered argument.
 - Good numbered-argument prefixes look like: `主动付费GMV是GMV下滑的核心驱动因素`, `首订收缩解释了主动付费下滑的主要部分`, `分析期前30日无创作用户是主动付费下滑的主要贡献分层`, `支付提交率是该分层链路下滑的核心过程因子，客单价是次要拖累因素`.
 - After the bold sub-claim and colon, write the quantitative inline evidence and business meaning. The inline evidence should support the sub-claim rather than repeat table rows mechanically.

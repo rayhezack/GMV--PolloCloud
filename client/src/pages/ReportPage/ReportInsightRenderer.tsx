@@ -29,11 +29,22 @@ export function removeDefinitionParagraphs(body: string): string {
     return !/^口径说明[：:]/u.test(plainText);
   }).join('\n\n').trim();
 }
+export function emphasizeNarrativeMetrics(markdown: string): string {
+  return markdown.split('\n').map(line => {
+    if (/^\s*\|.*\|\s*$/u.test(line)) return line;
+    return line.split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*)/u).map(segment => {
+      if (segment.startsWith('*')) return segment;
+      return segment
+        .replace(/([+\-−]\d+(?:\.\d+)?%)/gu, '*$1*')
+        .replace(/((?:增加|减少|上升|下降|增长|收缩)\s+)(\$[\d,]+(?:\.\d+)?)/gu, '$1*$2*');
+    }).join('');
+  }).join('\n');
+}
 const components: NonNullable<ComponentProps<typeof Streamdown>['components']> = {
   table: ({ children, ...props }) => <div className="report-table-scroll" role="region" aria-label="诊断证据表格" tabIndex={0}><table {...omit(props, ['node'])}>{children}</table></div>,
 };
 function Markdown({ children }: { children: string }) {
-  return <Streamdown className="report-prose" components={components}>{children}</Streamdown>;
+  return <Streamdown className="report-prose" components={components}>{emphasizeNarrativeMetrics(children)}</Streamdown>;
 }
 function leadAndDetail(body: string) {
   const paragraphs = body.split(/\n\s*\n/);
