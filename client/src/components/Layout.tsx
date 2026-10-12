@@ -18,6 +18,8 @@ import { canManagePollocloudApp } from '@/lib/pollocloud';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { executeReportGeneration, getLatestReportGeneration } from '@client/src/api/report';
 import type { Platform, ReportGenerationStatus } from '@shared/api.interface';
+import type { SyncRunStatus } from '@shared/api.interface';
+import { executeSyncRun, getLatestSyncRun } from '@/api/sync';
 import { ReportTask } from './dashboard/ReportTask';
 
 const REPORT_GENERATION_KEEPALIVE_INTERVAL_MS = 10_000;
@@ -66,7 +68,9 @@ const Layout = () => {
     }
   });
   const [jobs, setJobs] = useState<ReportGenerationStatus[]>([]);
+  const [syncJob, setSyncJob] = useState<SyncRunStatus | null>(null);
   const executingJobs = useRef(new Set<string>());
+  const executingSyncJobs = useRef(new Set<string>());
   useEffect(() => {
     if (!canManagePollocloudApp(userInfo)) return;
     for (const job of jobs) {
@@ -76,6 +80,12 @@ const Layout = () => {
     }
   }, [jobs, userInfo]);
   const trackReport = useCallback((job: ReportGenerationStatus) => { setJobs(current => [...current.filter(item => item.platform !== job.platform), job]); }, []);
+  const trackSync = useCallback((job: SyncRunStatus) => { setSyncJob(job); }, []);
+  useEffect(() => {
+    if (!canManagePollocloudApp(userInfo) || syncJob?.status !== 'queued' || executingSyncJobs.current.has(syncJob.runId)) return;
+    executingSyncJobs.current.add(syncJob.runId);
+    void executeSyncRun(syncJob.runId).catch(() => undefined).finally(() => executingSyncJobs.current.delete(syncJob.runId));
+  }, [syncJob, userInfo]);
   const location = useLocation();
   const currentView = dashboardView(location.pathname, location.search);
   const reducedMotion = useReducedMotion();
@@ -136,6 +146,20 @@ const Layout = () => {
       cancelled = true;
       window.clearInterval(timer);
     };
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const job = await getLatestSyncRun();
+        if (!cancelled) setSyncJob(job);
+      } catch { /* The dock keeps its last known state until the next poll. */ }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 3000);
+    return () => { cancelled = true; window.clearInterval(timer); };
   }, [isAdmin]);
 
   const displayName = accessLoading ? '读取权限' : userInfo?.userName || 'Pollo Cloud';
@@ -289,10 +313,10 @@ const Layout = () => {
           </button>
         </div>
         <main id="main-content">
-          <Outlet context={{ trackReport }} />
+          <Outlet context={{ trackReport, trackSync }} />
         </main>
       </div>
-      {isAdmin && <ReportTask jobs={jobs} />}
+      {isAdmin && <ReportTask jobs={jobs} syncJob={syncJob} />}
     </div>
   );
 };

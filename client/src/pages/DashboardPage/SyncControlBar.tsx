@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import {
-  CheckCircle2,
   Loader2,
   LockKeyhole,
   RefreshCw,
   ShieldCheck,
-  XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -22,7 +21,6 @@ import {
 import { Badge } from '@client/src/components/ui/badge';
 import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
 import { canManagePollocloudApp } from '@/lib/pollocloud';
-import { StepPlayer } from '@/components/bencho/StepPlayer';
 import { Button } from '@client/src/components/ui/button';
 import {
   createSyncRun,
@@ -33,15 +31,8 @@ import type {
   LatestDaySyncPlan,
   SyncRunResponse,
   SyncRunStatus,
-  SyncStage,
   WorkbookSheet,
 } from '@shared/api.interface';
-
-const STAGES: Array<{ key: SyncStage; label: string }> = [
-  { key: 'pull', label: '拉取' },
-  { key: 'rollup', label: '汇总' },
-  { key: 'write', label: '写入' },
-];
 
 const POLL_INTERVAL_MS = 2000;
 const SYNC_SURFACE_CLASS =
@@ -68,7 +59,7 @@ function statusFromResponse(response: SyncRunResponse): SyncRunStatus {
   return {
     runId: response.runId,
     status: response.status,
-    stage: response.status === 'running' ? 'pull' : 'write',
+    stage: response.status === 'running' || response.status === 'queued' ? 'pull' : 'write',
     startDate: response.startDate,
     endDate: response.endDate,
     platforms: response.platforms,
@@ -76,7 +67,7 @@ function statusFromResponse(response: SyncRunResponse): SyncRunStatus {
     errorMessage: response.errorMessage,
     startedAt: new Date().toISOString(),
     finishedAt:
-      response.status === 'running' ? undefined : new Date().toISOString(),
+      response.status === 'running' || response.status === 'queued' ? undefined : new Date().toISOString(),
     skipped: response.skipped,
   };
 }
@@ -107,6 +98,7 @@ function readErrorResponseMessage(data: unknown): string {
 }
 
 const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
+  const { trackSync } = useOutletContext<{ trackSync: (job: SyncRunStatus) => void }>();
   const { user, loading: accessLoading } = usePollocloudUser();
   const [syncing, setSyncing] = useState(false);
   const [status, setStatus] = useState<SyncRunStatus | null>(null);
@@ -141,8 +133,8 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
     pollRef.current = setInterval(() => {
       getLatestSyncRun()
         .then((latest: SyncRunStatus | null) => {
-          if (latest) setStatus(latest);
-          if (latest && latest.status !== 'running') {
+          if (latest) { setStatus(latest); trackSync(latest); }
+          if (latest && latest.status !== 'running' && latest.status !== 'queued') {
             stopPolling();
             setSyncing(false);
             void refreshPlan();
@@ -151,7 +143,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
         })
         .catch(() => undefined);
     }, POLL_INTERVAL_MS);
-  }, [onSyncSettled, refreshPlan, stopPolling]);
+  }, [onSyncSettled, refreshPlan, stopPolling, trackSync]);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,7 +152,8 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
         if (cancelled) return;
         if (latestResult.status === 'fulfilled' && latestResult.value) {
           setStatus(latestResult.value);
-          if (latestResult.value.status === 'running') {
+          trackSync(latestResult.value);
+          if (latestResult.value.status === 'running' || latestResult.value.status === 'queued') {
             setSyncing(true);
             startPolling();
           }
@@ -182,7 +175,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
       cancelled = true;
       stopPolling();
     };
-  }, [startPolling, stopPolling]);
+  }, [startPolling, stopPolling, trackSync]);
 
   const handleSync = useCallback(async () => {
     if (syncing || !plan?.canSync || accessLoading) return;
@@ -190,16 +183,19 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
     setSyncing(true);
     setErrorMsg('');
     setStatus(null);
-    startPolling();
     let startedAsync = false;
     try {
       const response = await createSyncRun({
         mode: 'latest_day',
         platforms: plan.platforms,
       });
-      if (response.status === 'running') {
+      if (response.status === 'running' || response.status === 'queued') {
         startedAsync = true;
-        setStatus(statusFromResponse(response));
+        const latest = await getLatestSyncRun().catch(() => null);
+        const started = latest?.runId === response.runId ? latest : statusFromResponse(response);
+        setStatus(started);
+        trackSync(started);
+        startPolling();
         toast.info('同步任务已启动');
         return;
       }
@@ -210,6 +206,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
           ? latest
           : statusFromResponse(response);
       setStatus(finalStatus);
+      trackSync(finalStatus);
       await refreshPlan();
       if (response.skipped) {
         toast.info(response.skipReason ?? '最新日期已入库，已跳过拉取');
@@ -239,15 +236,13 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
     startPolling,
     stopPolling,
     syncing,
+    trackSync,
   ]);
 
   const running =
-    syncing || status?.status === 'running' || Boolean(plan?.running);
+    syncing || status?.status === 'queued' || status?.status === 'running' || Boolean(plan?.running);
   const isAdmin = canManagePollocloudApp(user);
   const canSync = isAdmin && Boolean(plan?.canSync) && !running && !planLoading;
-  const currentStageIndex = STAGES.findIndex(
-    (stage: { key: SyncStage; label: string }) => stage.key === status?.stage,
-  );
   const planStatusLabel = planLoading
     ? '检查中'
     : plan?.alreadySynced
@@ -396,60 +391,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
           </AlertDialogContent>
         </AlertDialog>
       </div>
-      <div className="mt-5 rounded-2xl bg-gray-50 px-4 py-3">
-        <div className="sync-status-row flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <StepPlayer
-              steps={STAGES.length}
-              activeStep={currentStageIndex < 0 ? 0 : currentStageIndex}
-              playing={running}
-              readOnly
-            />
-          </div>
-          <div className="flex min-w-0 items-center gap-3 font-mono text-xs">
-            {running ? (
-              <span className="flex items-center gap-1.5 text-primary">
-                <Loader2 className="size-3.5 animate-spin" />
-                {STAGES[currentStageIndex < 0 ? 0 : currentStageIndex]?.label}中
-                · {status?.rowsSynced ?? 0} 行
-                <span className="sync-bounce" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-              </span>
-            ) : plan?.alreadySynced ? (
-              <span className="flex items-center gap-1.5 text-foreground">
-                <CheckCircle2 className="size-3.5 text-primary" />
-                最新日期已入库，无需同步
-              </span>
-            ) : status?.status === 'success' ? (
-              <span className="flex items-center gap-1.5 text-foreground">
-                <CheckCircle2 className="size-3.5 text-primary" />
-                {status.skipped
-                  ? '已跳过拉取'
-                  : `上次同步成功 · ${status.rowsSynced} 行`}
-              </span>
-            ) : status?.status === 'failed' ? (
-              <span className="flex items-center gap-1.5 text-destructive">
-                <XCircle className="size-3.5" />
-                上次同步失败
-              </span>
-            ) : plan ? (
-              <span className="text-muted-foreground">
-                最新日期待补 {plan.missingItems.length} 项，可同步
-              </span>
-            ) : (
-              <span className="text-muted-foreground">等待同步计划</span>
-            )}
-          </div>
-        </div>
-        {errorMsg && (
-          <div className="mt-2 rounded-2xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-            {errorMsg}
-          </div>
-        )}
-      </div>
+      {errorMsg && <p className="mt-3 text-xs text-destructive" role="alert">{errorMsg}</p>}
     </section>
   );
 };

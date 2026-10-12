@@ -58,7 +58,7 @@ export interface SyncRunResponse {
   startDate: string;
   endDate: string;
   platforms: Platform[];
-  status: 'running' | 'success' | 'failed';
+  status: 'queued' | 'running' | 'success' | 'failed';
   rowsSynced: number;
   skipped?: boolean;
   skipReason?: string;
@@ -67,7 +67,7 @@ export interface SyncRunResponse {
 
 export interface SyncRunStatus {
   runId: string;
-  status: 'running' | 'success' | 'failed';
+  status: 'queued' | 'running' | 'success' | 'failed';
   stage: SyncStage;
   startDate: string;
   endDate: string;
@@ -76,6 +76,8 @@ export interface SyncRunStatus {
   errorMessage?: string;
   startedAt: string;
   finishedAt?: string;
+  heartbeatAt?: string;
+  steps?: Array<{ key: string; label: string; status: 'waiting' | 'running' | 'success' | 'failed'; detail?: string }>;
   skipped?: boolean;
 }
 

@@ -8,6 +8,10 @@ import type {
   SyncRunStatus,
 } from '@shared/api.interface';
 
+export async function executeSyncRun(runId: string): Promise<void> {
+  await apiRequest('/api/sync-runs/run', { method: 'POST', body: JSON.stringify({ runId }) });
+}
+
 export async function createSyncRun(
   req: SyncRunRequest,
 ): Promise<SyncRunResponse> {

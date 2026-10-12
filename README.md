@@ -16,6 +16,8 @@ npm run dev
 npm run type:check
 npm run build
 pollocloud db execute --name pollo-ai --file db/0002_dashboard_response_cache.sql
+pollocloud db execute --name pollo-ai --file db/0004_sync_jobs.sql
+pollocloud db execute --name pollo-ai --file db/0005_sync_queued.sql
 pollocloud deploy
 ```
 

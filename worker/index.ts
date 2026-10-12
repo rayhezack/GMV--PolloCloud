@@ -5,7 +5,7 @@ import { MaxComputeClient } from '../server/modules/maxcompute/maxcompute.client
 import { buildDatasetSql, type DatasetKind } from '../server/modules/maxcompute/sql-templates';
 import { POLLOCLOUD_APP_OWNER_ID } from '../shared/auth.constants';
 import { reportGenerations } from './report-jobs';
-import type { DashboardAttributionsResponse, ReportGenerationRequest, ReportGenerationStatus, ReportSummary, AttributionItem, AttributionDriverItem } from '../shared/api.interface';
+import type { DashboardAttributionsResponse, ReportGenerationRequest, ReportGenerationStatus, ReportSummary, AttributionItem, AttributionDriverItem, SyncRunStatus } from '../shared/api.interface';
 
 type D1Row = Record<string, string | number | null>;
 type D1Result<T> = { results: T[] };
@@ -996,11 +996,19 @@ async function workbookPreview(env: Env, request: Request) {
 }
 
 async function latestSync(env: Env) {
-  const row = (await baseRecords(env, 'run_log'))
-    .map((record) => record.fields)
-    .sort((left, right) => asText(right.started_at).localeCompare(asText(left.started_at)))[0];
-  if (!row) return json(null);
-  return json({ runId: asText(row.run_id), status: asText(row.status), stage: asText(row.stage), startDate: asText(row.start_date), endDate: asText(row.end_date), platforms: asText(row.platforms).split(',').filter(Boolean), rowsSynced: asNumber(row.rows_synced), errorMessage: asText(row.error_message) || undefined, startedAt: asText(row.started_at), finishedAt: asText(row.finished_at) || undefined });
+  if (!env.DB) return json(null);
+  const latest = await env.DB.prepare('SELECT payload, updated_at FROM sync_jobs ORDER BY created_at DESC LIMIT 1').first<{ payload: string; updated_at: number }>();
+  if (!latest) return json(null);
+  const job = JSON.parse(latest.payload) as SyncRunStatus;
+  if ((job.status === 'queued' || job.status === 'running') && latest.updated_at < Date.now() - 180000) {
+    job.status = 'failed';
+    job.errorMessage = '同步任务已中断，请重新同步。';
+    job.finishedAt = new Date().toISOString();
+    job.steps?.forEach(step => { if (step.status === 'running') step.status = 'failed'; });
+    await env.DB.prepare("UPDATE sync_jobs SET status = 'failed', payload = ?, updated_at = ? WHERE run_id = ? AND status IN ('queued', 'running') AND updated_at < ?")
+      .bind(JSON.stringify(job), Date.now(), job.runId, Date.now() - 180000).run();
+  }
+  return json(job);
 }
 
 async function syncPlan(env: Env, mode: 'latest_day' | 'latest_week') {
@@ -1095,45 +1103,129 @@ async function replaceBaseRange(env: Env, sheet: 'pay_type_daily' | 'chain_daily
   return rows.length;
 }
 
-async function runBaseSync(env: Env, runLogId: string, runId: string, platforms: string[], startDate: string, endDate: string) {
+async function runBaseSync(env: Env, runLogId: string, job: SyncRunStatus) {
   let rowsSynced = 0;
+  const { runId, platforms, startDate, endDate } = job;
+  let writes = Promise.resolve();
+  const persist = () => {
+    job.heartbeatAt = new Date().toISOString();
+    writes = writes.catch(() => undefined).then(async () => {
+      await env.DB!.prepare('UPDATE sync_jobs SET status = ?, payload = ?, updated_at = ? WHERE run_id = ?')
+        .bind(job.status, JSON.stringify(job), Date.now(), runId).run();
+    });
+    return writes;
+  };
+  const heartbeat = setInterval(() => { void persist().catch(() => undefined); }, 10000);
   try {
     for (const platform of platforms) {
       for (const dataset of ['pay_type', 'chain', 'creative', 'renewal'] as const) {
+        const step = job.steps!.find(item => item.key === `${platform}-${dataset}`)!;
+        step.status = 'running';
+        step.detail = '正在查询业务数据库';
+        job.stage = 'pull';
+        await persist();
         const rows = await pullDailyFacts(env, platform, dataset, startDate, endDate);
+        step.detail = `已读取 ${rows.length.toLocaleString('en-US')} 行 · 正在写入 Base`;
+        job.stage = 'write';
+        await persist();
         rowsSynced += await replaceBaseRange(env, `${dataset}_daily` as 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily', platform, startDate, endDate, rows);
+        job.rowsSynced = rowsSynced;
+        step.status = 'success';
+        step.detail = `已入库 ${rows.length.toLocaleString('en-US')} 行`;
+        await persist();
       }
     }
+    const finish = job.steps!.find(item => item.key === 'finish')!;
+    finish.status = 'running';
+    job.stage = 'write';
+    await persist();
     await baseRequest(env, 'run_log', `/records/${runLogId}`, {
       fields: { status: 'success', stage: 'write', rows_synced: rowsSynced, finished_at: new Date().toISOString() },
     }, 'PUT');
+    finish.status = 'success';
+    finish.detail = `共入库 ${rowsSynced.toLocaleString('en-US')} 行`;
+    job.status = 'success';
+    job.finishedAt = new Date().toISOString();
   } catch (error) {
+    job.status = 'failed';
+    job.errorMessage = error instanceof Error ? error.message : String(error);
+    job.finishedAt = new Date().toISOString();
+    job.steps?.forEach(step => { if (step.status === 'running') { step.status = 'failed'; step.detail = undefined; } });
     await baseRequest(env, 'run_log', `/records/${runLogId}`, {
-      fields: { status: 'failed', error_message: error instanceof Error ? error.message : String(error), rows_synced: rowsSynced, finished_at: new Date().toISOString() },
+      fields: { status: 'failed', error_message: job.errorMessage, rows_synced: rowsSynced, finished_at: job.finishedAt },
     }, 'PUT').catch(() => undefined);
-    throw error;
   } finally {
+    clearInterval(heartbeat);
+    await persist();
     invalidateBaseCache('run_log');
     await invalidateDashboardCache(env);
   }
   return { runId, rowsSynced };
 }
 
-async function createSyncRun(env: Env, request: Request, context: { waitUntil(promise: Promise<unknown>): void }) {
+async function createSyncRun(env: Env, request: Request) {
+  if (!env.DB) return errorResponse('同步任务数据库未配置', 503);
+  await latestSync(env);
   const body = await request.json().catch(() => ({})) as { mode?: 'latest_day' | 'latest_week'; platforms?: string[] };
   const planResponse = await syncPlan(env, body.mode === 'latest_week' ? 'latest_week' : 'latest_day');
   const plan = await planResponse.json() as { startDate: string; endDate: string; platforms: string[]; alreadySynced?: boolean };
   const platforms = body.platforms?.filter((platform) => PLATFORMS.has(platform)) ?? plan.platforms;
+  if (!platforms.length) return errorResponse('请选择同步端口', 400);
   if (plan.alreadySynced) return json({ runId: `base-${Date.now()}`, mode: body.mode || 'latest_day', ...plan, status: 'success', rowsSynced: 0, skipped: true, skipReason: 'Base 已包含目标日期数据' });
-  const runId = `base-${Date.now()}`;
+  const runId = crypto.randomUUID();
   const startedAt = new Date().toISOString();
-  const created = await baseRequest<{ record?: { record_id?: string } }>(env, 'run_log', '/records', {
-    fields: { run_id: runId, status: 'running', stage: 'pull', start_date: plan.startDate, end_date: plan.endDate, platforms: platforms.join(','), rows_synced: 0, started_at: startedAt },
+  const labels = { pay_type: '付费类型', chain: '支付链路', creative: '创作积极性', renewal: '自动续订' };
+  const job: SyncRunStatus = {
+    runId, status: 'queued', stage: 'pull', startDate: plan.startDate, endDate: plan.endDate,
+    platforms: platforms as SyncRunStatus['platforms'], rowsSynced: 0, startedAt,
+    steps: platforms.flatMap(platform => (['pay_type', 'chain', 'creative', 'renewal'] as const)
+      .map(dataset => ({ key: `${platform}-${dataset}`, label: `${platform === 'web' ? 'Web' : 'App'} · ${labels[dataset]}`, status: 'waiting' as const })))
+      .concat({ key: 'finish', label: '完成同步', status: 'waiting' }),
+  };
+  await env.DB.prepare("INSERT OR IGNORE INTO sync_jobs (run_id, status, payload, created_at, updated_at) VALUES (?, 'queued', ?, ?, ?)")
+    .bind(runId, JSON.stringify(job), Date.now(), Date.now()).run();
+  const active = await env.DB.prepare("SELECT payload FROM sync_jobs WHERE status IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1").first<{ payload: string }>();
+  if (active && JSON.parse(active.payload).runId !== runId) return json(JSON.parse(active.payload));
+  return json(job);
+}
+
+async function executeSyncRun(env: Env, request: Request) {
+  if (!env.DB) return errorResponse('同步任务数据库未配置', 503);
+  const { runId } = await request.json() as { runId: string };
+  const claimed = await env.DB.prepare("UPDATE sync_jobs SET status = 'running', updated_at = ? WHERE run_id = ? AND status = 'queued' RETURNING payload")
+    .bind(Date.now(), runId).first<{ payload: string }>();
+  if (!claimed) return json({ message: '任务已由后台接管或已结束' });
+  const job = JSON.parse(claimed.payload) as SyncRunStatus;
+  job.status = 'running';
+  job.heartbeatAt = new Date().toISOString();
+  await env.DB.prepare("UPDATE sync_jobs SET payload = ?, updated_at = ? WHERE run_id = ?")
+    .bind(JSON.stringify(job), Date.now(), runId).run();
+  const encoder = new TextEncoder();
+  let disconnected = false;
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const pulse = setInterval(() => { if (!disconnected) controller.enqueue(encoder.encode(' ')); }, 5000);
+      try {
+        const created = await baseRequest<{ record?: { record_id?: string } }>(env, 'run_log', '/records', {
+          fields: { run_id: runId, status: 'running', stage: 'pull', start_date: job.startDate, end_date: job.endDate, platforms: job.platforms.join(','), rows_synced: 0, started_at: job.startedAt },
+        });
+        const runLogId = created.record?.record_id;
+        if (!runLogId) throw new Error('Base run_log 创建失败：未返回 record_id');
+        await runBaseSync(env, runLogId, job);
+      } catch (error) {
+        job.status = 'failed';
+        job.errorMessage = error instanceof Error ? error.message : String(error);
+        job.finishedAt = new Date().toISOString();
+        await env.DB!.prepare("UPDATE sync_jobs SET status = 'failed', payload = ?, updated_at = ? WHERE run_id = ? AND status = 'running'")
+          .bind(JSON.stringify(job), Date.now(), runId).run().catch(() => undefined);
+      } finally {
+        clearInterval(pulse);
+        if (!disconnected) { controller.enqueue(encoder.encode(JSON.stringify({ status: job.status }))); controller.close(); }
+      }
+    },
+    cancel() { disconnected = true; },
   });
-  const runLogId = created.record?.record_id;
-  if (!runLogId) throw new Error('Base run_log 创建失败：未返回 record_id');
-  context.waitUntil(runBaseSync(env, runLogId, runId, platforms, plan.startDate, plan.endDate));
-  return json({ runId, mode: body.mode || 'latest_day', startDate: plan.startDate, endDate: plan.endDate, platforms, status: 'running', rowsSynced: 0 });
+  return new Response(stream, { headers: { 'content-type': 'text/plain', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
 }
 
 type ReportProgress = (key: string, status: NonNullable<ReportGenerationStatus['steps']>[number]['status'], detail?: string) => Promise<void>;
@@ -1301,7 +1393,11 @@ export default {
       if (url.pathname === '/api/sync-runs/latest-week-plan' && request.method === 'GET') return syncPlan(env, 'latest_week');
       if (url.pathname === '/api/sync-runs' && request.method === 'POST') {
         const denial = await authorizeDashboardMutation(request);
-        return denial || createSyncRun(env, request, context);
+        return denial || createSyncRun(env, request);
+      }
+      if (url.pathname === '/api/sync-runs/run' && request.method === 'POST') {
+        const denial = await authorizeDashboardMutation(request);
+        return denial || executeSyncRun(env, request);
       }
       if (url.pathname.startsWith('/api/report-generations') && request.method === 'POST') {
         const denial = await authorizeDashboardMutation(request);
