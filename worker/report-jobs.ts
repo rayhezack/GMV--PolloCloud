@@ -10,6 +10,7 @@ type Dependencies = {
 };
 const reply = (data: unknown, status = 200) => Response.json(data, { status, headers: { 'cache-control': 'no-store' } });
 const shift = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+class PauseRequested extends Error {}
 
 export function validateReportRequest(value: unknown): ReportGenerationRequest {
   const body = value as ReportGenerationRequest;
@@ -27,7 +28,7 @@ async function save(env: Env, job: ReportGenerationStatus) {
 }
 
 async function expireInterruptedJobs(env: Env) {
-  const rows = await env.DB!.prepare("SELECT payload FROM report_jobs WHERE status IN ('queued', 'running') AND updated_at < ?")
+  const rows = await env.DB!.prepare("SELECT payload FROM report_jobs WHERE status IN ('queued', 'running', 'pausing') AND updated_at < ?")
     .bind(Date.now() - 180000).all<{ payload: string }>();
   for (const row of rows.results) {
     const job = JSON.parse(row.payload) as ReportGenerationStatus;
@@ -35,9 +36,34 @@ async function expireInterruptedJobs(env: Env) {
     job.errorMessage = '任务连接已中断，请点击「生成」重试。';
     job.finishedAt = new Date().toISOString();
     job.steps?.forEach(step => { if (step.status === 'running') step.status = 'failed'; });
-    await env.DB!.prepare("UPDATE report_jobs SET status = 'failed', payload = ?, updated_at = ? WHERE run_id = ? AND updated_at < ? AND status IN ('queued', 'running')")
+    await env.DB!.prepare("UPDATE report_jobs SET status = 'failed', payload = ?, updated_at = ? WHERE run_id = ? AND updated_at < ? AND status IN ('queued', 'running', 'pausing')")
       .bind(JSON.stringify(job), Date.now(), job.runId, Date.now() - 180000).run();
   }
+}
+
+async function controlReportJob(env: Env, request: Request, action: 'pause' | 'resume') {
+  const { runId } = await request.json().catch(() => ({})) as { runId?: string };
+  if (!runId) return reply({ message: '缺少任务 ID' }, 400);
+  const row = await env.DB!.prepare('SELECT status, payload FROM report_jobs WHERE run_id = ?')
+    .bind(runId).first<{ status: ReportGenerationStatus['status']; payload: string }>();
+  if (!row) return reply({ message: '未找到报告任务' }, 404);
+  const job = JSON.parse(row.payload) as ReportGenerationStatus;
+  if (action === 'pause') {
+    if (row.status === 'paused' || row.status === 'pausing') return reply(job);
+    if (row.status !== 'queued' && row.status !== 'running') return reply({ message: '当前任务无法暂停' }, 409);
+    if (job.stage === 'write') return reply({ message: '报告正在安全保存，该阶段不可暂停' }, 409);
+    job.status = row.status === 'queued' ? 'paused' : 'pausing';
+  } else {
+    if (row.status !== 'paused') return reply({ message: '只有已暂停的任务可以继续' }, 409);
+    job.status = 'queued';
+    job.stage = 'queued';
+    job.errorMessage = undefined;
+    job.finishedAt = undefined;
+  }
+  job.heartbeatAt = new Date().toISOString();
+  await env.DB!.prepare('UPDATE report_jobs SET status = ?, payload = ?, updated_at = ? WHERE run_id = ?')
+    .bind(job.status, JSON.stringify(job), Date.now(), job.runId).run();
+  return reply(job);
 }
 
 export async function reportGenerations(env: Env, request: Request, dependencies: Dependencies): Promise<Response> {
@@ -62,13 +88,17 @@ export async function reportGenerations(env: Env, request: Request, dependencies
         ['creative', '查询创作积极性'], ['analyze', '计算归因与整理证据'], ['model', '生成诊断正文'], ['write', '保存报告'],
       ].map(([key, label]) => ({ key, label, status: 'waiting' })),
     };
-    await env.DB.prepare('INSERT OR IGNORE INTO report_jobs (run_id, platform, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(job.runId, job.platform, job.status, JSON.stringify(job), Date.now(), Date.now()).run();
-    const active = await env.DB.prepare("SELECT payload FROM report_jobs WHERE platform = ? AND status IN ('queued', 'running')").bind(job.platform).first<{ payload: string }>();
+    const active = await env.DB.prepare("SELECT payload FROM report_jobs WHERE platform = ? AND status IN ('queued', 'running', 'pausing', 'paused') ORDER BY created_at DESC LIMIT 1")
+      .bind(job.platform).first<{ payload: string }>();
     const result = active ? JSON.parse(active.payload) as ReportGenerationStatus : job;
     if (result.periodStart !== job.periodStart || result.periodEnd !== job.periodEnd) return reply({ message: '该端有另一个业务周的报告正在生成，请完成后再试。' }, 409);
+    if (active) return reply(result, 202);
+    await env.DB.prepare('INSERT OR IGNORE INTO report_jobs (run_id, platform, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(job.runId, job.platform, job.status, JSON.stringify(job), Date.now(), Date.now()).run();
     return reply(result, 202);
   }
+  if (request.method === 'POST' && url.pathname === '/api/report-generations/pause') return controlReportJob(env, request, 'pause');
+  if (request.method === 'POST' && url.pathname === '/api/report-generations/resume') return controlReportJob(env, request, 'resume');
   if (request.method === 'POST' && url.pathname === '/api/report-generations/run') {
     const { runId } = await request.json() as { runId: string };
     const claimed = await env.DB.prepare("UPDATE report_jobs SET status = 'running', updated_at = ? WHERE run_id = ? AND status = 'queued' RETURNING payload")
@@ -104,14 +134,33 @@ async function executeReport(env: Env, job: ReportGenerationStatus, deps: Depend
     writes = writes.catch(() => undefined).then(() => save(env, job));
     return writes;
   };
+  const pauseAtCheckpoint = async () => {
+    await writes;
+    const row = await env.DB!.prepare('SELECT status FROM report_jobs WHERE run_id = ?')
+      .bind(job.runId).first<{ status: ReportGenerationStatus['status'] }>();
+    if (row?.status !== 'pausing' && row?.status !== 'paused') return;
+    job.status = 'paused';
+    job.steps?.forEach(step => {
+      if (step.status === 'running') {
+        step.status = 'waiting';
+        step.detail = undefined;
+      }
+    });
+    await persist();
+    throw new PauseRequested();
+  };
   const progress: Progress = async (key, status, detail) => {
+    await pauseAtCheckpoint();
     const step = job.steps!.find(item => item.key === key)!;
     step.status = status;
     step.detail = detail;
     if (key === 'model' || key === 'write') job.stage = key;
     await persist();
   };
-  const heartbeat = setInterval(() => { void persist().catch(() => undefined); }, 10000);
+  const heartbeat = setInterval(() => {
+    void env.DB!.prepare("UPDATE report_jobs SET updated_at = ? WHERE run_id = ? AND status IN ('running', 'pausing')")
+      .bind(Date.now(), job.runId).run().catch(() => undefined);
+  }, 10000);
   try {
     const context = await deps.collect({ platform: job.platform, granularity: 'week', startDate: job.periodStart, endDate: job.periodEnd }, progress);
     await progress('model', 'running', '正在根据本周证据生成正文');
@@ -133,12 +182,18 @@ async function executeReport(env: Env, job: ReportGenerationStatus, deps: Depend
     job.status = 'success';
     job.finishedAt = new Date().toISOString();
   } catch (error) {
-    job.status = 'failed';
-    job.errorMessage = error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name)
-      ? '模型响应超时，请稍后点击「生成」重试。'
-      : error instanceof Error ? error.message : '报告生成失败';
-    job.steps?.forEach(step => { if (step.status === 'running') { step.status = 'failed'; step.detail = undefined; } });
-    job.finishedAt = new Date().toISOString();
+    if (error instanceof PauseRequested) {
+      job.status = 'paused';
+      job.errorMessage = undefined;
+      job.finishedAt = undefined;
+    } else {
+      job.status = 'failed';
+      job.errorMessage = error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name)
+        ? '模型响应超时，请稍后点击「生成」重试。'
+        : error instanceof Error ? error.message : '报告生成失败';
+      job.steps?.forEach(step => { if (step.status === 'running') { step.status = 'failed'; step.detail = undefined; } });
+      job.finishedAt = new Date().toISOString();
+    }
   } finally { clearInterval(heartbeat); await persist(); }
 }
 

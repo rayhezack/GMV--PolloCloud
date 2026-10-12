@@ -1000,12 +1000,12 @@ async function latestSync(env: Env) {
   const latest = await env.DB.prepare('SELECT payload, updated_at FROM sync_jobs ORDER BY created_at DESC LIMIT 1').first<{ payload: string; updated_at: number }>();
   if (!latest) return json(null);
   const job = JSON.parse(latest.payload) as SyncRunStatus;
-  if ((job.status === 'queued' || job.status === 'running') && latest.updated_at < Date.now() - 180000) {
+  if (['queued', 'running', 'pausing'].includes(job.status) && latest.updated_at < Date.now() - 180000) {
     job.status = 'failed';
     job.errorMessage = '同步任务已中断，请重新同步。';
     job.finishedAt = new Date().toISOString();
     job.steps?.forEach(step => { if (step.status === 'running') step.status = 'failed'; });
-    await env.DB.prepare("UPDATE sync_jobs SET status = 'failed', payload = ?, updated_at = ? WHERE run_id = ? AND status IN ('queued', 'running') AND updated_at < ?")
+    await env.DB.prepare("UPDATE sync_jobs SET status = 'failed', payload = ?, updated_at = ? WHERE run_id = ? AND status IN ('queued', 'running', 'pausing') AND updated_at < ?")
       .bind(JSON.stringify(job), Date.now(), job.runId, Date.now() - 180000).run();
   }
   return json(job);
@@ -1148,8 +1148,8 @@ async function ensureSyncRunLog(env: Env, job: SyncJobState) {
 }
 
 async function runBaseSyncStep(env: Env, job: SyncJobState) {
-  const step = job.steps?.find(item => item.key !== 'finish' && item.status === 'waiting');
-  if (!step) {
+  const firstWaitingStep = job.steps?.find(item => item.key !== 'finish' && item.status === 'waiting');
+  if (!firstWaitingStep) {
     const dataSteps = job.steps?.filter(item => item.key !== 'finish') ?? [];
     const staged = await env.DB!.prepare('SELECT step_key, payload, row_count FROM sync_job_staging WHERE run_id = ?')
       .bind(job.runId).all<{ step_key: string; payload: string; row_count: number }>();
@@ -1190,20 +1190,43 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
     return;
   }
 
-  const separator = step.key.indexOf('-');
-  const platform = step.key.slice(0, separator);
-  const dataset = step.key.slice(separator + 1) as DatasetKind;
-  if (!PLATFORMS.has(platform) || !['pay_type', 'chain', 'creative', 'renewal'].includes(dataset)) throw new Error(`同步步骤无效：${step.key}`);
-  step.status = 'running';
-  step.detail = '正在查询业务数据库';
+  const separator = firstWaitingStep.key.indexOf('-');
+  const dataset = firstWaitingStep.key.slice(separator + 1) as DatasetKind;
+  if (!SYNC_DATASETS.includes(dataset)) throw new Error(`同步步骤无效：${firstWaitingStep.key}`);
+  const batchSteps = job.steps?.filter(item => item.status === 'waiting' && item.key.endsWith(`-${dataset}`)) ?? [];
+  for (const step of batchSteps) {
+    const platform = step.key.slice(0, step.key.indexOf('-'));
+    if (!PLATFORMS.has(platform)) throw new Error(`同步步骤无效：${step.key}`);
+    step.status = 'running';
+    step.detail = '正在并发查询业务数据库';
+  }
   job.stage = 'pull';
   await saveSyncJob(env, job);
-  const rows = await pullDailyFacts(env, platform, dataset, job.startDate, job.endDate);
-  await env.DB!.prepare('INSERT OR REPLACE INTO sync_job_staging (run_id, step_key, payload, row_count, created_at) VALUES (?, ?, ?, ?, ?)')
-    .bind(job.runId, step.key, JSON.stringify(rows), rows.length, Date.now()).run();
-  step.status = 'success';
-  step.detail = `已暂存 ${rows.length.toLocaleString('en-US')} 行`;
-  job.status = 'queued';
+
+  const results = await Promise.allSettled(batchSteps.map(async step => {
+    const platform = step.key.slice(0, step.key.indexOf('-'));
+    const rows = await pullDailyFacts(env, platform, dataset, job.startDate, job.endDate);
+    return { step, rows };
+  }));
+  let failure: unknown;
+  for (const [index, result] of results.entries()) {
+    const step = batchSteps[index];
+    if (result.status === 'rejected') {
+      step.status = 'failed';
+      step.detail = undefined;
+      failure ??= result.reason;
+      continue;
+    }
+    const { rows } = result.value;
+    await env.DB!.prepare('INSERT OR REPLACE INTO sync_job_staging (run_id, step_key, payload, row_count, created_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(job.runId, step.key, JSON.stringify(rows), rows.length, Date.now()).run();
+    step.status = 'success';
+    step.detail = `已暂存 ${rows.length.toLocaleString('en-US')} 行`;
+  }
+  if (failure) throw failure;
+  const control = await env.DB!.prepare('SELECT status FROM sync_jobs WHERE run_id = ?')
+    .bind(job.runId).first<{ status: SyncRunStatus['status'] }>();
+  job.status = control?.status === 'pausing' || control?.status === 'paused' ? 'paused' : 'queued';
   job.stage = 'pull';
   await saveSyncJob(env, job);
 }
@@ -1217,12 +1240,12 @@ async function createSyncRun(env: Env, request: Request) {
   const platforms = body.platforms?.filter((platform) => PLATFORMS.has(platform)) ?? plan.platforms;
   if (!platforms.length) return errorResponse('请选择同步端口', 400);
   if (plan.alreadySynced) return json({ runId: `base-${Date.now()}`, mode: body.mode || 'latest_day', ...plan, status: 'success', rowsSynced: 0, skipped: true, skipReason: 'Base 已包含目标日期数据' });
+  const active = await env.DB.prepare("SELECT payload FROM sync_jobs WHERE status IN ('queued', 'running', 'pausing', 'paused') ORDER BY created_at DESC LIMIT 1").first<{ payload: string }>();
+  if (active) return json(JSON.parse(active.payload));
   const job = newSyncJob(plan.startDate, plan.endDate, platforms as SyncRunStatus['platforms']);
   const { runId } = job;
   await env.DB.prepare("INSERT OR IGNORE INTO sync_jobs (run_id, status, payload, created_at, updated_at) VALUES (?, 'queued', ?, ?, ?)")
     .bind(runId, JSON.stringify(job), Date.now(), Date.now()).run();
-  const active = await env.DB.prepare("SELECT payload FROM sync_jobs WHERE status IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1").first<{ payload: string }>();
-  if (active && JSON.parse(active.payload).runId !== runId) return json(JSON.parse(active.payload));
   return json(job);
 }
 
@@ -1234,13 +1257,36 @@ async function retrySyncRun(env: Env, request: Request) {
   const sourceRow = await env.DB.prepare('SELECT payload FROM sync_jobs WHERE run_id = ?').bind(runId).first<{ payload: string }>();
   if (!sourceRow) return errorResponse('未找到原数据同步任务', 404);
   const source = JSON.parse(sourceRow.payload) as SyncJobState;
-  if (source.status === 'queued' || source.status === 'running') return errorResponse('该数据同步任务仍在运行', 409);
-  const active = await env.DB.prepare("SELECT run_id FROM sync_jobs WHERE status IN ('queued', 'running') LIMIT 1").first<{ run_id: string }>();
+  if (['queued', 'running', 'pausing', 'paused'].includes(source.status)) return errorResponse('该数据同步任务尚未结束', 409);
+  const active = await env.DB.prepare("SELECT run_id FROM sync_jobs WHERE status IN ('queued', 'running', 'pausing', 'paused') LIMIT 1").first<{ run_id: string }>();
   if (active) return errorResponse('已有数据同步任务正在运行，请完成后再试', 409);
   const job = newSyncJob(source.startDate, source.endDate, source.platforms);
   await env.DB.prepare("INSERT INTO sync_jobs (run_id, status, payload, created_at, updated_at) VALUES (?, 'queued', ?, ?, ?)")
     .bind(job.runId, JSON.stringify(job), Date.now(), Date.now()).run();
   return json(job, 202);
+}
+
+async function controlSyncRun(env: Env, request: Request, action: 'pause' | 'resume') {
+  if (!env.DB) return errorResponse('同步任务数据库未配置', 503);
+  const { runId } = await request.json().catch(() => ({})) as { runId?: string };
+  if (!runId) return errorResponse('缺少任务 ID');
+  const row = await env.DB.prepare('SELECT status, payload FROM sync_jobs WHERE run_id = ?')
+    .bind(runId).first<{ status: SyncRunStatus['status']; payload: string }>();
+  if (!row) return errorResponse('未找到数据同步任务', 404);
+  const job = JSON.parse(row.payload) as SyncJobState;
+  if (action === 'pause') {
+    if (row.status === 'paused' || row.status === 'pausing') return json(job);
+    if (row.status !== 'queued' && row.status !== 'running') return errorResponse('当前任务无法暂停', 409);
+    if (job.stage === 'write') return errorResponse('数据正在统一写入 Base，该阶段不可暂停', 409);
+    job.status = row.status === 'queued' ? 'paused' : 'pausing';
+  } else {
+    if (row.status !== 'paused') return errorResponse('只有已暂停的任务可以继续', 409);
+    job.status = 'queued';
+    job.errorMessage = undefined;
+    job.finishedAt = undefined;
+  }
+  await saveSyncJob(env, job);
+  return json(job);
 }
 
 async function executeSyncRun(env: Env, request: Request) {
@@ -1259,20 +1305,30 @@ async function executeSyncRun(env: Env, request: Request) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const pulse = setInterval(() => { if (!disconnected) controller.enqueue(encoder.encode(' ')); }, 5000);
-      const heartbeat = setInterval(() => { void saveSyncJob(env, job).catch(() => undefined); }, 10000);
+      const heartbeat = setInterval(() => {
+        void env.DB!.prepare("UPDATE sync_jobs SET updated_at = ? WHERE run_id = ? AND status IN ('running', 'pausing')")
+          .bind(Date.now(), job.runId).run().catch(() => undefined);
+      }, 10000);
       try {
         await runBaseSyncStep(env, job);
       } catch (error) {
-        job.status = 'failed';
-        job.errorMessage = error instanceof Error ? error.message : String(error);
-        job.finishedAt = new Date().toISOString();
-        job.steps?.forEach(step => { if (step.status === 'running') { step.status = 'failed'; step.detail = undefined; } });
-        if (job.runLogId) await baseRequest(env, 'run_log', `/records/${job.runLogId}`, {
-          fields: { status: 'failed', error_message: job.errorMessage, rows_synced: job.rowsSynced, finished_at: job.finishedAt },
-        }, 'PUT').catch(() => undefined);
-        if (!job.runLogId) await env.DB!.prepare('DELETE FROM sync_job_staging WHERE run_id = ?').bind(runId).run().catch(() => undefined);
-        await env.DB!.prepare("UPDATE sync_jobs SET status = 'failed', payload = ?, updated_at = ? WHERE run_id = ? AND status = 'running'")
-          .bind(JSON.stringify(job), Date.now(), runId).run().catch(() => undefined);
+        const control = await env.DB!.prepare('SELECT status FROM sync_jobs WHERE run_id = ?').bind(runId).first<{ status: SyncRunStatus['status'] }>();
+        if (control?.status === 'pausing' || control?.status === 'paused') {
+          job.status = 'paused';
+          job.steps?.forEach(step => { if (step.status === 'running' || step.status === 'failed') { step.status = 'waiting'; step.detail = undefined; } });
+          await saveSyncJob(env, job).catch(() => undefined);
+        } else {
+          job.status = 'failed';
+          job.errorMessage = error instanceof Error ? error.message : String(error);
+          job.finishedAt = new Date().toISOString();
+          job.steps?.forEach(step => { if (step.status === 'running') { step.status = 'failed'; step.detail = undefined; } });
+          if (job.runLogId) await baseRequest(env, 'run_log', `/records/${job.runLogId}`, {
+            fields: { status: 'failed', error_message: job.errorMessage, rows_synced: job.rowsSynced, finished_at: job.finishedAt },
+          }, 'PUT').catch(() => undefined);
+          if (!job.runLogId) await env.DB!.prepare('DELETE FROM sync_job_staging WHERE run_id = ?').bind(runId).run().catch(() => undefined);
+          await env.DB!.prepare("UPDATE sync_jobs SET status = 'failed', payload = ?, updated_at = ? WHERE run_id = ? AND status = 'running'")
+            .bind(JSON.stringify(job), Date.now(), runId).run().catch(() => undefined);
+        }
       } finally {
         clearInterval(heartbeat);
         clearInterval(pulse);
@@ -1454,6 +1510,14 @@ export default {
       if (url.pathname === '/api/sync-runs/retry' && request.method === 'POST') {
         const denial = await authorizeDashboardMutation(request);
         return denial || retrySyncRun(env, request);
+      }
+      if (url.pathname === '/api/sync-runs/pause' && request.method === 'POST') {
+        const denial = await authorizeDashboardMutation(request);
+        return denial || controlSyncRun(env, request, 'pause');
+      }
+      if (url.pathname === '/api/sync-runs/resume' && request.method === 'POST') {
+        const denial = await authorizeDashboardMutation(request);
+        return denial || controlSyncRun(env, request, 'resume');
       }
       if (url.pathname === '/api/sync-runs/run' && request.method === 'POST') {
         const denial = await authorizeDashboardMutation(request);

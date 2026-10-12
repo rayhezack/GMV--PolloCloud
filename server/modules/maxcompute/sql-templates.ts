@@ -14,38 +14,47 @@ function safe(value: string): string {
 }
 
 function buildEventPlatformCondition(platform: string): string {
-  return platform === 'web'
-    ? "platform_type = 'web'"
-    : "COALESCE(platform_type, '') <> 'web'";
+  if (platform === 'web') return "platform_type = 'web'";
+  if (platform === 'all') return '1 = 1';
+  return "COALESCE(platform_type, '') <> 'web'";
 }
 
 function buildChainEventPlatformCondition(platform: string): string {
-  return platform === 'web'
-    ? "platform_type = 'web'"
-    : "LOWER(COALESCE(platform_type, '')) IN ('ios', 'android')";
+  if (platform === 'web') return "platform_type = 'web'";
+  if (platform === 'all') return '1 = 1';
+  return "LOWER(COALESCE(platform_type, '')) IN ('ios', 'android')";
 }
 
 function buildCreationPlatformCondition(platform: string): string {
-  return platform === 'web'
-    ? "app_platform = 'web'"
-    : "app_platform IN ('android', 'ios')";
+  if (platform === 'web') return "app_platform = 'web'";
+  if (platform === 'all') return '1 = 1';
+  return "app_platform IN ('android', 'ios')";
+}
+
+function buildCreationDeviceJoinCondition(platform: string): string {
+  return platform === 'all'
+    ? '1 = 1'
+    : 'LOWER(c.app_platform) = a.device_type';
 }
 
 function buildPaymentPlatformCondition(platform: string): string {
-  return platform === 'web'
-    ? [
-        "LOWER(COALESCE(s.platform_name, '')) NOT IN ('apple', 'google')",
-        "LOWER(COALESCE(p.price_id, '')) NOT LIKE '%ios%'",
-        "LOWER(COALESCE(p.price_id, '')) NOT LIKE '%android%'",
-      ].join(' AND ')
-    : [
-        "LOWER(COALESCE(s.platform_name, '')) IN ('apple', 'google')",
-        "OR LOWER(COALESCE(p.price_id, '')) LIKE '%ios%'",
-        "OR LOWER(COALESCE(p.price_id, '')) LIKE '%android%'",
-      ].join(' ');
+  if (platform === 'all') return '1 = 1';
+  if (platform === 'web') {
+    return [
+      "LOWER(COALESCE(s.platform_name, '')) NOT IN ('apple', 'google')",
+      "LOWER(COALESCE(p.price_id, '')) NOT LIKE '%ios%'",
+      "LOWER(COALESCE(p.price_id, '')) NOT LIKE '%android%'",
+    ].join(' AND ');
+  }
+  return [
+    "LOWER(COALESCE(s.platform_name, '')) IN ('apple', 'google')",
+    "OR LOWER(COALESCE(p.price_id, '')) LIKE '%ios%'",
+    "OR LOWER(COALESCE(p.price_id, '')) LIKE '%android%'",
+  ].join(' ');
 }
 
 function buildPaymentDeviceTypeExpression(platform: string): string {
+  if (platform === 'all') return "'all'";
   return platform === 'web'
     ? "'web'"
     : [
@@ -57,22 +66,28 @@ function buildPaymentDeviceTypeExpression(platform: string): string {
 }
 
 function buildEventDeviceTypeExpression(platform: string): string {
+  if (platform === 'all') return "'all'";
   return platform === 'web' ? "'web'" : 'LOWER(platform_type)';
 }
 
 function buildPaywallExposureCondition(platform: string): string {
-  return platform === 'web'
-    ? [
-        "(event_id = 'page_view' AND page_name IN ('account/billing', 'pricing'))",
-        "OR event_id = 'sub_start'",
-      ].join(' ')
-    : "event_id = 'sub_start_expose'";
+  const webCondition = [
+    "(event_id = 'page_view' AND page_name IN ('account/billing', 'pricing'))",
+    "OR event_id = 'sub_start'",
+  ].join(' ');
+  if (platform === 'web') return webCondition;
+  if (platform === 'all') {
+    return `${webCondition} OR event_id = 'sub_start_expose'`;
+  }
+  return "event_id = 'sub_start_expose'";
 }
 
 function buildRenewalPlatformCondition(platform: string): string {
-  return platform === 'web'
-    ? "UPPER(platform_type) = 'WEB'"
-    : "UPPER(platform_type) <> 'WEB'";
+  if (platform === 'web') return "UPPER(platform_type) = 'WEB'";
+  if (platform === 'all') {
+    return "UPPER(platform_type) IN ('WEB', 'APP')";
+  }
+  return "UPPER(platform_type) = 'APP'";
 }
 
 export function buildDatasetSql(
@@ -87,6 +102,8 @@ export function buildDatasetSql(
       ? buildChainEventPlatformCondition(platform)
       : buildEventPlatformCondition(platform);
   const creationPlatformCondition = buildCreationPlatformCondition(platform);
+  const creationDeviceJoinCondition =
+    buildCreationDeviceJoinCondition(platform);
   const paymentPlatformCondition = buildPaymentPlatformCondition(platform);
   const paymentDeviceTypeExpression =
     buildPaymentDeviceTypeExpression(platform);
@@ -661,7 +678,7 @@ user_30d_creation AS (
        AND CAST(c.created_date AS DATE) >= DATE_ADD(a.week_start, -30)
        AND CAST(c.created_date AS DATE) < a.week_start
        AND ${creationPlatformCondition}
-       AND LOWER(c.app_platform) = a.device_type
+       AND ${creationDeviceJoinCondition}
        AND c.user_id IS NOT NULL
        AND c.user_id <> ''
        AND c.p_date = MAX_PT(

@@ -14,9 +14,9 @@ export interface MaxComputeQueryResult {
 
 const CONTENT_TYPE = 'application/xml';
 const DEFAULT_QUERY_TIMEOUT_MS = 10 * 60 * 1000;
-const POLL_INTERVAL_MS = 1000;
+const POLL_INTERVALS_MS = [1000, 2000, 5000, 10_000] as const;
 const REQUEST_TIMEOUT_MS = 60_000;
-const REQUEST_MAX_ATTEMPTS = 3;
+const REQUEST_MAX_ATTEMPTS = 2;
 const RETRYABLE_HTTP_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 
 export class MaxComputeClient {
@@ -47,6 +47,7 @@ export class MaxComputeClient {
   private async waitForSuccess(instanceUrl: string): Promise<void> {
     const timeoutMs = this.readQueryTimeout();
     const deadline = Date.now() + timeoutMs;
+    let pollCount = 0;
 
     while (Date.now() < deadline) {
       const response = await this.request(
@@ -69,7 +70,9 @@ export class MaxComputeClient {
       if (status && status !== 'Running' && status !== 'Suspended') {
         throw new Error(`MaxCompute 返回未知实例状态：${status}`);
       }
-      await this.sleep(POLL_INTERVAL_MS);
+      const interval = POLL_INTERVALS_MS[Math.min(pollCount, POLL_INTERVALS_MS.length - 1)];
+      pollCount += 1;
+      await this.sleep(interval);
     }
 
     throw new Error(

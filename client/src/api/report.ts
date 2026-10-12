@@ -12,6 +12,20 @@ export async function executeReportGeneration(runId: string): Promise<void> {
   await apiRequest('/api/report-generations/run', { method: 'POST', body: JSON.stringify({ runId }) });
 }
 
+export async function pauseReportGeneration(runId: string): Promise<ReportGenerationStatus> {
+  const response = await apiRequest<ReportGenerationStatus>('/api/report-generations/pause', {
+    method: 'POST', body: JSON.stringify({ runId }),
+  });
+  return response.data as ReportGenerationStatus;
+}
+
+export async function resumeReportGeneration(runId: string): Promise<ReportGenerationStatus> {
+  const response = await apiRequest<ReportGenerationStatus>('/api/report-generations/resume', {
+    method: 'POST', body: JSON.stringify({ runId }),
+  });
+  return response.data as ReportGenerationStatus;
+}
+
 export async function generateReport(
   req: ReportGenerationRequest,
 ): Promise<ReportGenerationStatus> {

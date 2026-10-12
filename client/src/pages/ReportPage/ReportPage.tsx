@@ -31,7 +31,8 @@ export default function ReportPage() {
   const [reload, setReload] = useState(0);
   const isAdmin = canManagePollocloudApp(user);
   const weeks = useMemo(() => reportWeekOptions(history), [history]);
-  const generating = submitting || generation?.status === 'queued' || generation?.status === 'running';
+  const generationPending = ['queued', 'running', 'pausing', 'paused'].includes(generation?.status ?? '');
+  const generating = submitting || ['queued', 'running', 'pausing'].includes(generation?.status ?? '');
   const matchesSelection = (item: ReportHistoryItem | ReportSummary) => item.platform === platform && item.periodStart === periodStart && item.periodEnd === periodEnd;
   const hasReport = Boolean(report && matchesSelection(report)) || history.some(matchesSelection);
 
@@ -99,8 +100,8 @@ export default function ReportPage() {
           <Tabs value={platform} onValueChange={value => { const next = new URLSearchParams(searchParams); next.set('platform', value); setSearchParams(next); }}>
             <TabsList className="rounded-full"><TabsTrigger value="web" className="rounded-full">Web 端</TabsTrigger><TabsTrigger value="app" className="rounded-full">App 端</TabsTrigger></TabsList>
           </Tabs>
-          <Button onClick={() => void generate()} disabled={generating || loading || Boolean(loadError) || accessLoading || !isAdmin} className="rounded-full" title={isAdmin ? undefined : '仅管理员和协作者可以生成报告'}>
-            <RefreshCw size={16} className={generating ? 'animate-spin' : ''} />{generating ? '生成中' : hasReport ? '重新生成' : '生成'}
+          <Button onClick={() => void generate()} disabled={generationPending || loading || Boolean(loadError) || accessLoading || !isAdmin} className="rounded-full" title={isAdmin ? undefined : '仅管理员和协作者可以生成报告'}>
+            <RefreshCw size={16} className={generating ? 'animate-spin' : ''} />{generation?.status === 'paused' ? '已暂停' : generation?.status === 'pausing' ? '暂停中' : generating ? '生成中' : hasReport ? '重新生成' : '生成'}
           </Button>
         </div>
       </section>

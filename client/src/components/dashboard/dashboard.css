@@ -1623,8 +1623,9 @@
 .report-task-toggle strong { display: block; font-size: 13px; font-weight: 600; }
 .report-task-toggle small { display: block; margin-top: 3px; font-size: 11px; color: var(--ui-muted); }
 .report-task-summary[data-state='failed'] .report-task-toggle > svg:first-child { color: #c4515b; }
-.report-task-dismiss, .report-task-details header button { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; color: var(--ui-muted); }
-.report-task-dismiss:hover, .report-task-details header button:hover { background: #efedf5; }
+.report-task-control, .report-task-dismiss, .report-task-details header button { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px; cursor: pointer; color: var(--ui-muted); }
+.report-task-control:hover, .report-task-dismiss:hover, .report-task-details header button:hover { background: #efedf5; }
+.report-task-control:disabled { cursor: wait; opacity: .55; }
 .report-progress, .report-step-progress { height: 3px; background: #efedf5; border-radius: 8px; overflow: hidden; }
 .report-progress { position: absolute; bottom: 0; left: 0; right: 0; }
 .report-progress i { display: block; height: 100%; background: var(--ui-purple); transition: width .3s; }

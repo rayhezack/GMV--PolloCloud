@@ -71,16 +71,19 @@ const Layout = () => {
   const [syncJob, setSyncJob] = useState<SyncRunStatus | null>(null);
   const executingJobs = useRef(new Set<string>());
   const executingSyncJobs = useRef(new Set<string>());
+  const trackReport = useCallback((job: ReportGenerationStatus) => { setJobs(current => [...current.filter(item => item.platform !== job.platform), job]); }, []);
+  const trackSync = useCallback((job: SyncRunStatus) => { setSyncJob(job); }, []);
   useEffect(() => {
     if (!canManagePollocloudApp(userInfo)) return;
     for (const job of jobs) {
       if (job.status !== 'queued' || executingJobs.current.has(job.runId)) continue;
       executingJobs.current.add(job.runId);
-      void executeReportGeneration(job.runId).catch(() => undefined).finally(() => executingJobs.current.delete(job.runId));
+      void executeReportGeneration(job.runId).catch(() => undefined).finally(() => {
+        executingJobs.current.delete(job.runId);
+        void getLatestReportGeneration(job.platform).then(latest => { if (latest) trackReport(latest); }).catch(() => undefined);
+      });
     }
-  }, [jobs, userInfo]);
-  const trackReport = useCallback((job: ReportGenerationStatus) => { setJobs(current => [...current.filter(item => item.platform !== job.platform), job]); }, []);
-  const trackSync = useCallback((job: SyncRunStatus) => { setSyncJob(job); }, []);
+  }, [jobs, trackReport, userInfo]);
   useEffect(() => {
     if (!canManagePollocloudApp(userInfo) || syncJob?.status !== 'queued' || executingSyncJobs.current.has(syncJob.runId)) return;
     executingSyncJobs.current.add(syncJob.runId);
@@ -92,7 +95,10 @@ const Layout = () => {
         setSyncJob(current);
       }
     };
-    void executeStages().catch(() => undefined).finally(() => executingSyncJobs.current.delete(syncJob.runId));
+    void executeStages().catch(() => undefined).finally(() => {
+      executingSyncJobs.current.delete(syncJob.runId);
+      void getLatestSyncRun().then(latest => { if (latest) setSyncJob(latest); }).catch(() => undefined);
+    });
   }, [syncJob, userInfo]);
   const location = useLocation();
   const currentView = dashboardView(location.pathname, location.search);

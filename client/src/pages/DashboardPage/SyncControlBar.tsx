@@ -59,7 +59,7 @@ function statusFromResponse(response: SyncRunResponse): SyncRunStatus {
   return {
     runId: response.runId,
     status: response.status,
-    stage: response.status === 'running' || response.status === 'queued' ? 'pull' : 'write',
+    stage: ['running', 'queued', 'pausing', 'paused'].includes(response.status) ? 'pull' : 'write',
     startDate: response.startDate,
     endDate: response.endDate,
     platforms: response.platforms,
@@ -67,7 +67,7 @@ function statusFromResponse(response: SyncRunResponse): SyncRunStatus {
     errorMessage: response.errorMessage,
     startedAt: new Date().toISOString(),
     finishedAt:
-      response.status === 'running' || response.status === 'queued' ? undefined : new Date().toISOString(),
+      ['running', 'queued', 'pausing', 'paused'].includes(response.status) ? undefined : new Date().toISOString(),
     skipped: response.skipped,
   };
 }
@@ -134,7 +134,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
       getLatestSyncRun()
         .then((latest: SyncRunStatus | null) => {
           if (latest) { setStatus(latest); trackSync(latest); }
-          if (latest && latest.status !== 'running' && latest.status !== 'queued') {
+          if (latest && !['running', 'queued', 'pausing'].includes(latest.status)) {
             stopPolling();
             setSyncing(false);
             void refreshPlan();
@@ -153,7 +153,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
         if (latestResult.status === 'fulfilled' && latestResult.value) {
           setStatus(latestResult.value);
           trackSync(latestResult.value);
-          if (latestResult.value.status === 'running' || latestResult.value.status === 'queued') {
+          if (['running', 'queued', 'pausing'].includes(latestResult.value.status)) {
             setSyncing(true);
             startPolling();
           }
@@ -189,7 +189,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
         mode: 'latest_day',
         platforms: plan.platforms,
       });
-      if (response.status === 'running' || response.status === 'queued') {
+      if (['running', 'queued', 'pausing'].includes(response.status)) {
         startedAsync = true;
         const latest = await getLatestSyncRun().catch(() => null);
         const started = latest?.runId === response.runId ? latest : statusFromResponse(response);
@@ -240,7 +240,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
   ]);
 
   const running =
-    syncing || status?.status === 'queued' || status?.status === 'running' || Boolean(plan?.running);
+    syncing || ['queued', 'running', 'pausing', 'paused'].includes(status?.status ?? '') || Boolean(plan?.running);
   const isAdmin = canManagePollocloudApp(user);
   const canSync = isAdmin && Boolean(plan?.canSync) && !running && !planLoading;
   const planStatusLabel = planLoading

@@ -12,6 +12,20 @@ export async function executeSyncRun(runId: string): Promise<void> {
   await apiRequest('/api/sync-runs/run', { method: 'POST', body: JSON.stringify({ runId }) });
 }
 
+export async function pauseSyncRun(runId: string): Promise<SyncRunStatus> {
+  const response = await apiRequest<SyncRunStatus>('/api/sync-runs/pause', {
+    method: 'POST', body: JSON.stringify({ runId }),
+  });
+  return response.data as SyncRunStatus;
+}
+
+export async function resumeSyncRun(runId: string): Promise<SyncRunStatus> {
+  const response = await apiRequest<SyncRunStatus>('/api/sync-runs/resume', {
+    method: 'POST', body: JSON.stringify({ runId }),
+  });
+  return response.data as SyncRunStatus;
+}
+
 export async function createSyncRun(
   req: SyncRunRequest,
 ): Promise<SyncRunResponse> {

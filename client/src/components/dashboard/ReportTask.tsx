@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import type { ReportGenerationStatus, SyncRunStatus } from '@shared/api.interface';
-import { CheckCircle2, Loader2, AlertCircle, Circle, ChevronUp, ChevronDown, X, ArrowUpRight, RotateCcw } from 'lucide-react';
+import { CheckCircle2, Loader2, AlertCircle, Circle, ChevronUp, ChevronDown, X, ArrowUpRight, RotateCcw, Pause, Play, PauseCircle } from 'lucide-react';
 import { formatAnalysisWeekLabel, formatGeneratedAt, getReportPeriodKey } from '@/pages/ReportPage/report-page.utils';
-import { generateReport } from '@/api/report';
-import { retrySyncRun } from '@/api/sync';
+import { generateReport, pauseReportGeneration, resumeReportGeneration } from '@/api/report';
+import { pauseSyncRun, resumeSyncRun, retrySyncRun } from '@/api/sync';
 import { toast } from 'sonner';
 
 type Step = { key: string; label: string; status: 'waiting' | 'running' | 'success' | 'failed'; detail?: string };
@@ -13,7 +13,7 @@ type Task = {
   kind: 'report' | 'sync';
   name: string;
   context: string;
-  status: 'queued' | 'running' | 'success' | 'failed';
+  status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed';
   startedAt: string;
   updatedAt: string;
   steps: Step[];
@@ -43,7 +43,9 @@ export function ReportTask({
   onTrackReport: (job: ReportGenerationStatus) => void;
   onTrackSync: (job: SyncRunStatus) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const location = useLocation();
+  const dockRef = useRef<HTMLElement>(null);
+  const [expandedTaskId, setExpandedTaskId] = useState('');
   const [selected, setSelected] = useState('');
   const [dismissed, setDismissed] = useState(readDismissedTasks);
   const [retrying, setRetrying] = useState('');
@@ -62,8 +64,12 @@ export function ReportTask({
       steps: syncJob.steps ?? [], errorMessage: syncJob.errorMessage, href: '/?tab=data',
     }] : []),
   ];
-  const active = (task: Task) => task.status === 'queued' || task.status === 'running';
+  const active = (task: Task) => ['queued', 'running', 'pausing', 'paused'].includes(task.status);
+  const executing = (task: Task) => ['queued', 'running', 'pausing'].includes(task.status);
   const visible = tasks.filter(task => !dismissed.includes(task.id));
+  const job = visible.find(item => item.id === selected) ?? visible.filter(active).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]
+    ?? [...visible].sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+  const expanded = Boolean(job && expandedTaskId === job.id);
   useEffect(() => {
     try {
       window.localStorage.setItem(DISMISSED_TASKS_KEY, JSON.stringify(dismissed));
@@ -79,15 +85,24 @@ export function ReportTask({
       return currentTask?.id ?? [...visible].sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]?.id ?? '';
     });
   }, [jobs, syncJob, dismissed]);
-  const job = visible.find(item => item.id === selected) ?? visible.filter(active).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]
-    ?? [...visible].sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+  useEffect(() => {
+    setExpandedTaskId('');
+  }, [location.pathname, location.search]);
+  useEffect(() => {
+    if (!expanded) return undefined;
+    const collapseOutside = (event: PointerEvent) => {
+      if (dockRef.current && !event.composedPath().includes(dockRef.current)) setExpandedTaskId('');
+    };
+    window.addEventListener('pointerdown', collapseOutside, true);
+    return () => window.removeEventListener('pointerdown', collapseOutside, true);
+  }, [expanded]);
   if (!job) return null;
   const done = job.steps.filter(step => step.status === 'success').length;
   const progress = job.steps.length ? Math.round(done / job.steps.length * 100) : job.status === 'success' ? 100 : 0;
   const label = job.kind === 'sync'
-    ? job.status === 'failed' ? '数据同步失败' : job.status === 'success' ? '数据已同步' : '数据同步中'
-    : job.status === 'failed' ? '报告生成失败' : job.status === 'success' ? '报告已生成' : '报告生成中';
-  const StatusIcon = job.status === 'failed' ? AlertCircle : job.status === 'success' ? CheckCircle2 : Loader2;
+    ? job.status === 'failed' ? '数据同步失败' : job.status === 'success' ? '数据已同步' : job.status === 'paused' ? '数据同步已暂停' : job.status === 'pausing' ? '数据同步暂停中' : '数据同步中'
+    : job.status === 'failed' ? '报告生成失败' : job.status === 'success' ? '报告已生成' : job.status === 'paused' ? '报告生成已暂停' : job.status === 'pausing' ? '报告生成暂停中' : '报告生成中';
+  const StatusIcon = job.status === 'failed' ? AlertCircle : job.status === 'success' ? CheckCircle2 : job.status === 'paused' ? PauseCircle : Loader2;
   const rerun = async () => {
     if (active(job) || retrying) return;
     setRetrying(job.id);
@@ -111,10 +126,26 @@ export function ReportTask({
       setRetrying('');
     }
   };
+  const pauseOrResume = async () => {
+    if (retrying || job.status === 'pausing') return;
+    setRetrying(job.id);
+    try {
+      const next = job.kind === 'report'
+        ? job.status === 'paused' ? await resumeReportGeneration(job.id) : await pauseReportGeneration(job.id)
+        : job.status === 'paused' ? await resumeSyncRun(job.id) : await pauseSyncRun(job.id);
+      if (job.kind === 'report') onTrackReport(next as ReportGenerationStatus);
+      else onTrackSync(next as SyncRunStatus);
+      toast.info(job.status === 'paused' ? '任务已继续运行' : next.status === 'paused' ? '任务已暂停' : '将在当前阶段完成后暂停');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '任务状态更新失败');
+    } finally {
+      setRetrying('');
+    }
+  };
   return (
-    <aside className="report-task-dock" aria-label="后台任务" data-expanded={expanded}>
+    <aside ref={dockRef} className="report-task-dock" aria-label="后台任务" data-expanded={expanded}>
       {expanded && <section id="report-task-details" className="report-task-details">
-        <header><strong>{job.kind === 'sync' ? '数据同步任务' : '报告任务'}</strong><button type="button" aria-label="收起任务详情" onClick={() => setExpanded(false)}><ChevronDown size={18} /></button></header>
+        <header><strong>{job.kind === 'sync' ? '数据同步任务' : '报告任务'}</strong><button type="button" aria-label="收起任务详情" onClick={() => setExpandedTaskId('')}><ChevronDown size={18} /></button></header>
         {visible.length > 1 && <div className="report-task-platforms">{visible.map(item => <button type="button" key={item.id} aria-pressed={item.id === job.id} onClick={() => setSelected(item.id)}>{item.name}</button>)}</div>}
         <p className="report-task-period">{job.context}</p>
         <ol className="report-task-list">
@@ -130,18 +161,25 @@ export function ReportTask({
           {job.status === 'failed' && <p role="alert">{job.errorMessage}</p>}
           <span>更新于 {formatGeneratedAt(job.updatedAt)}</span>
           <div className="report-task-actions">
+            {active(job) && <button type="button" onClick={() => void pauseOrResume()} disabled={retrying === job.id || job.status === 'pausing'}>
+              {job.status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
+              {retrying === job.id ? '处理中' : job.status === 'paused' ? '继续运行' : job.status === 'pausing' ? '暂停中' : '暂停'}
+            </button>}
             {!active(job) && <button type="button" onClick={() => void rerun()} disabled={retrying === job.id}><RotateCcw size={14} className={retrying === job.id ? 'animate-spin' : ''} />{retrying === job.id ? '启动中' : '重新运行'}</button>}
             <Link to={job.href}>{job.kind === 'sync' ? '查看数据与口径' : job.status === 'success' ? '查看报告' : '前往报告'}<ArrowUpRight size={14} /></Link>
           </div>
         </footer>
       </section>}
       <div className="report-task-summary" data-state={job.status}>
-        <button className="report-task-toggle" type="button" aria-expanded={expanded} aria-controls="report-task-details" onClick={() => setExpanded(value => !value)}>
-          <StatusIcon size={18} className={active(job) ? 'animate-spin' : ''} />
+        <button className="report-task-toggle" type="button" aria-expanded={expanded} aria-controls="report-task-details" onClick={() => setExpandedTaskId(current => current === job.id ? '' : job.id)}>
+          <StatusIcon size={18} className={executing(job) ? 'animate-spin' : ''} />
           <span><strong>{label}</strong><small>{active(job) ? `${done} / ${job.steps.length} 步骤 · 点击查看进度` : `${job.name} · 点击查看详情`}</small></span>
           {expanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
         </button>
-        <button className="report-task-dismiss" type="button" aria-label="关闭任务提醒" onClick={() => setDismissed(current => [...new Set([...current, job.id])])}><X size={16} /></button>
+        {active(job) && <button className="report-task-control" type="button" aria-label={job.status === 'paused' ? '继续运行任务' : '暂停任务'} title={job.status === 'paused' ? '继续运行' : '暂停'} disabled={retrying === job.id || job.status === 'pausing'} onClick={() => void pauseOrResume()}>
+          {job.status === 'paused' ? <Play size={16} /> : <Pause size={16} />}
+        </button>}
+        <button className="report-task-dismiss" type="button" aria-label="关闭任务提醒" onClick={() => { setExpandedTaskId(''); setDismissed(current => [...new Set([...current, job.id])]); }}><X size={16} /></button>
         <div className="report-progress" role="progressbar" aria-label="任务已完成步骤" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${progress}%` }} /></div>
       </div>
     </aside>
