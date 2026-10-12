@@ -340,7 +340,6 @@ const CHAIN_METRIC_DEFINITIONS = [
 ] as const;
 
 const RENEWAL_METRIC_DEFINITIONS = [
-  { label: '续订 GMV', formula: '到期用户数 * 续订率 * 续订客单价' },
   { label: '续订率', formula: '续订用户数 / 到期用户数' },
   { label: '续订客单价', formula: '续订金额 / 续订用户数' },
 ] as const;
@@ -962,123 +961,92 @@ function GmvCoverageExplanation({
     : [];
 
   return (
-    <>
-      <section className={`${SURFACE_CARD_CLASS} dashboard-coverage dashboard-formula-panel`}>
-        <div className="dashboard-coverage-header">
-          <div className="flex items-center gap-2">
-            <Info className="size-4 text-primary" />
-            <h2 className="text-lg font-semibold tracking-tight text-gray-900">
-              口径说明
-            </h2>
-          </div>
-          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
-            最近四个完整业务周，每周先算日均
-          </span>
-        </div>
-        <div className="dashboard-formula">
-          <div className="text-xs text-muted-foreground">主动付费 GMV 关系</div>
-          <div className="mt-1 text-sm font-medium leading-6 text-foreground">
-            主动付费 GMV = DAU * 付费墙曝光率 * 付费墙提交率 * 提交支付率 *
-            客单价
-          </div>
-          <dl className="mt-2 grid gap-x-5 gap-y-1 text-xs leading-5 text-muted-foreground sm:grid-cols-2">
+    <article className="dashboard-methodology">
+      <aside className="dashboard-methodology-rail">
+        <span>数据口径</span>
+        <nav aria-label="数据口径目录">
+          <a href="#method-window">统计窗口</a>
+          <a href="#method-active">主动付费</a>
+          <a href="#method-renewal">自动续订</a>
+          <a href="#method-payment">支付与归因</a>
+          <a href="#method-creative">创作分层</a>
+          <a href="#method-coverage">覆盖差异</a>
+        </nav>
+      </aside>
+      <div className="dashboard-methodology-body">
+        <header className="dashboard-methodology-header">
+          <Info size={20} aria-hidden="true" />
+          <h2>口径说明</h2>
+        </header>
+        <section id="method-window" className="dashboard-methodology-section">
+          <h3>统计窗口</h3>
+          <p>归因表按各分析页的业务周选择器比较；单指标趋势使用独立趋势窗口。</p>
+          <p>覆盖差异使用最近四个完整业务周的数据，每周先计算日均。</p>
+        </section>
+        <section id="method-active" className="dashboard-methodology-section">
+          <h3>主动付费 GMV</h3>
+          <p className="dashboard-methodology-formula">主动付费 GMV = DAU × 付费墙曝光率 × 付费墙提交率 × 提交支付率 × 客单价</p>
+          <dl className="dashboard-methodology-definitions">
             {CHAIN_METRIC_DEFINITIONS.map((item) => (
-              <div key={item.label} className="flex min-w-0 gap-1.5">
-                <dt className="shrink-0 font-medium text-foreground">
-                  {item.label}：
-                </dt>
-                <dd>{item.formula}</dd>
-              </div>
+              <div key={item.label}><dt>{item.label}</dt><dd>{item.formula}</dd></div>
             ))}
           </dl>
-          <div className="mt-1 text-xs leading-5 text-muted-foreground">
-            归因表按各分析页的业务周选择器比较；单指标趋势使用独立趋势窗口。
-          </div>
-        </div>
-        <div className="dashboard-formula mt-4">
-          <div className="text-xs text-muted-foreground">自动续订 GMV 关系</div>
-          <div className="mt-1 text-sm font-medium leading-6 text-foreground">
-            续订 GMV = 到期用户数 * 续订率 * 续订客单价
-          </div>
-          <dl className="mt-2 grid gap-x-5 gap-y-1 text-xs leading-5 text-muted-foreground sm:grid-cols-2">
+        </section>
+        <section id="method-renewal" className="dashboard-methodology-section">
+          <h3>自动续订 GMV</h3>
+          <p className="dashboard-methodology-formula">续订 GMV = 到期用户数 × 续订率 × 续订客单价</p>
+          <dl className="dashboard-methodology-definitions">
             {RENEWAL_METRIC_DEFINITIONS.map((item) => (
-              <div key={item.label} className="flex min-w-0 gap-1.5">
-                <dt className="shrink-0 font-medium text-foreground">
-                  {item.label}：
-                </dt>
-                <dd>{item.formula}</dd>
-              </div>
+              <div key={item.label}><dt>{item.label}</dt><dd>{item.formula}</dd></div>
             ))}
           </dl>
-        </div>
-        <div className="dashboard-coverage-notes">
-          <div>
-            <span className="font-medium text-foreground">付费类型表：</span>
-            主动付费支付记录直接汇总，作为 GMV 结果口径。
-          </div>
-          <div>
-            <span className="font-medium text-foreground">大盘 GMV：</span>
-            不统计 API Credits 订单。
-          </div>
-          <div>
-            <span className="font-medium text-foreground">支付链路表：</span>从
-            DAU 出发，按访问、曝光、提交、支付的时间戳顺序归因。
-          </div>
-          <div>
-            <span className="font-medium text-foreground">差额含义：</span>
-            支付记录未能被行为时间顺序串联的主动付费 GMV。
-          </div>
-          <div>
-            <span className="font-medium text-foreground">创作积极性：</span>
-            创作 UV、任务数按业务日均展示，渗透率为创作 UV ÷ 活跃 UV，不计算贡献度。
-          </div>
-          <div>
-            <span className="font-medium text-foreground">创作分层：</span>
-            按分析期开始前 30 日的创作次数划分；“分析期前 30 日无创作用户”仅表示该窗口内创作次数为 0，创作 UV、创作渗透率等指标统计的是这批用户在分析期内的行为。
-          </div>
-        </div>
-      </section>
-
-      <section className={`${SURFACE_CARD_CLASS} dashboard-coverage dashboard-coverage-panel`}>
-        <div className="dashboard-coverage-header">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight text-gray-900">GMV 覆盖差异</h2>
-            <p className="mt-1 text-xs text-muted-foreground">支付结果表与链路归因表按平台对齐比较。</p>
-          </div>
-          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">Web · App</span>
-        </div>
-        <div className="h-full min-w-0">
-          {loading ? (
-            <div className="flex h-full min-h-[160px] items-center rounded-2xl bg-gray-50 px-5 py-4 text-sm text-muted-foreground">
-              正在计算最近四个完整业务周的 GMV 覆盖差异…
-            </div>
-          ) : error ? (
-            <div className="flex h-full min-h-[160px] items-center rounded-2xl border border-destructive/30 bg-destructive/5 px-5 py-4 text-sm text-destructive">
-              口径差异暂时无法读取：{error}
-            </div>
-          ) : platformRows.length === 0 ? (
-            <div className="flex h-full min-h-[160px] items-center rounded-2xl bg-gray-50 px-5 py-4 text-sm text-muted-foreground">
-              暂无最近四个共同业务周数据。
-            </div>
-          ) : (
-            <div className="dashboard-coverage-table">
-              <div className="hidden grid-cols-[minmax(76px,0.45fr)_repeat(4,minmax(0,1fr))] gap-3 px-2 py-2 text-xs text-muted-foreground md:grid">
-                <div>端口</div>
-                <div>付费类型表，四周日均</div>
-                <div>链路归因表，四周日均</div>
-                <div>未归因差额，四周日均</div>
-                <div>未归因占比</div>
+        </section>
+        <section id="method-payment" className="dashboard-methodology-section">
+          <h3>支付结果与链路归因</h3>
+          <dl className="dashboard-methodology-definitions">
+            <div><dt>付费类型表</dt><dd>主动付费支付记录直接汇总，作为 GMV 结果口径。</dd></div>
+            <div><dt>大盘 GMV</dt><dd>不统计 API Credits 订单。</dd></div>
+            <div><dt>支付链路表</dt><dd>从 DAU 出发，按访问、曝光、提交、支付的时间戳顺序归因。</dd></div>
+            <div><dt>差额含义</dt><dd>支付记录未能被行为时间顺序串联的主动付费 GMV。</dd></div>
+          </dl>
+        </section>
+        <section id="method-creative" className="dashboard-methodology-section">
+          <h3>创作积极性与分层</h3>
+          <dl className="dashboard-methodology-definitions">
+            <div><dt>创作积极性</dt><dd>创作 UV、任务数按业务日均展示，渗透率为创作 UV ÷ 活跃 UV，不计算贡献度。</dd></div>
+            <div><dt>创作分层</dt><dd>按分析期开始前 30 日的创作次数划分；“分析期前 30 日无创作用户”仅表示该窗口内创作次数为 0，创作 UV、创作渗透率等指标统计的是这批用户在分析期内的行为。</dd></div>
+          </dl>
+        </section>
+        <section id="method-coverage" className="dashboard-methodology-section">
+          <h3>GMV 覆盖差异</h3>
+          <p>支付结果表与链路归因表按 Web、App 分别对齐比较。</p>
+          <div className="dashboard-methodology-coverage">
+            {loading ? (
+              <p className="dashboard-methodology-status">正在计算最近四个完整业务周的 GMV 覆盖差异…</p>
+            ) : error ? (
+              <p className="dashboard-methodology-status text-destructive">口径差异暂时无法读取：{error}</p>
+            ) : platformRows.length === 0 ? (
+              <p className="dashboard-methodology-status">暂无最近四个共同业务周数据。</p>
+            ) : (
+              <div className="dashboard-coverage-table">
+                <div className="hidden grid-cols-[minmax(76px,0.45fr)_repeat(4,minmax(0,1fr))] gap-3 px-2 py-2 text-xs text-muted-foreground md:grid">
+                  <div>端口</div>
+                  <div>付费类型表，四周日均</div>
+                  <div>链路归因表，四周日均</div>
+                  <div>未归因差额，四周日均</div>
+                  <div>未归因占比</div>
+                </div>
+                <div className="flex flex-1 flex-col divide-y divide-gray-100">
+                  {platformRows.map((summary) => (
+                    <GmvCoverageRow key={summary.platform} summary={summary} />
+                  ))}
+                </div>
               </div>
-              <div className="flex flex-1 flex-col divide-y divide-gray-100">
-                {platformRows.map((summary) => (
-                  <GmvCoverageRow key={summary.platform} summary={summary} />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
-    </>
+            )}
+          </div>
+        </section>
+      </div>
+    </article>
   );
 }
 
@@ -1092,20 +1060,20 @@ function GmvCoverageRow({
     <div className="grid flex-1 gap-4 px-3 py-4 md:grid-cols-[minmax(90px,0.5fr)_repeat(4,minmax(0,1fr))] md:items-center">
       <div className="font-medium text-foreground">{platformLabel}</div>
       <CoverageValue
-        label="四周日均"
+        label="付费类型表，四周日均"
         value={formatCurrency(summary.payTypeDailyAvg)}
       />
       <CoverageValue
-        label="四周日均"
+        label="链路归因表，四周日均"
         value={formatCurrency(summary.chainDailyAvg)}
       />
       <CoverageValue
-        label="四周日均"
+        label="未归因差额，四周日均"
         value={formatCurrency(summary.unattributedDailyAvg)}
         tone={summary.unattributedDailyAvg > 0 ? 'muted' : 'positive'}
       />
       <CoverageValue
-        label="链路未归因"
+        label="未归因占比"
         value={
           summary.unattributedRate === null
             ? '-'
