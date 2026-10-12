@@ -1105,6 +1105,30 @@ async function replaceBaseRange(env: Env, sheet: 'pay_type_daily' | 'chain_daily
 }
 
 type SyncJobState = SyncRunStatus & { runLogId?: string };
+const SYNC_DATASETS = ['pay_type', 'chain', 'creative', 'renewal'] as const;
+const SYNC_DATASET_LABELS = { pay_type: '付费类型', chain: '支付链路', creative: '创作积极性', renewal: '自动续订' };
+
+function newSyncJob(startDate: string, endDate: string, platforms: SyncRunStatus['platforms']): SyncJobState {
+  const runId = crypto.randomUUID();
+  return {
+    runId,
+    status: 'queued',
+    stage: 'pull',
+    startDate,
+    endDate,
+    platforms,
+    rowsSynced: 0,
+    startedAt: new Date().toISOString(),
+    steps: [
+      ...platforms.flatMap(platform => SYNC_DATASETS.map(dataset => ({
+        key: `${platform}-${dataset}`,
+        label: `${platform === 'web' ? 'Web' : 'App'} · ${SYNC_DATASET_LABELS[dataset]}`,
+        status: 'waiting' as const,
+      }))),
+      { key: 'finish', label: '完成同步', status: 'waiting' as const },
+    ],
+  };
+}
 
 async function saveSyncJob(env: Env, job: SyncJobState) {
   job.heartbeatAt = new Date().toISOString();
@@ -1193,21 +1217,30 @@ async function createSyncRun(env: Env, request: Request) {
   const platforms = body.platforms?.filter((platform) => PLATFORMS.has(platform)) ?? plan.platforms;
   if (!platforms.length) return errorResponse('请选择同步端口', 400);
   if (plan.alreadySynced) return json({ runId: `base-${Date.now()}`, mode: body.mode || 'latest_day', ...plan, status: 'success', rowsSynced: 0, skipped: true, skipReason: 'Base 已包含目标日期数据' });
-  const runId = crypto.randomUUID();
-  const startedAt = new Date().toISOString();
-  const labels = { pay_type: '付费类型', chain: '支付链路', creative: '创作积极性', renewal: '自动续订' };
-  const job: SyncJobState = {
-    runId, status: 'queued', stage: 'pull', startDate: plan.startDate, endDate: plan.endDate,
-    platforms: platforms as SyncRunStatus['platforms'], rowsSynced: 0, startedAt,
-    steps: platforms.flatMap(platform => (['pay_type', 'chain', 'creative', 'renewal'] as const)
-      .map(dataset => ({ key: `${platform}-${dataset}`, label: `${platform === 'web' ? 'Web' : 'App'} · ${labels[dataset]}`, status: 'waiting' as const })))
-      .concat({ key: 'finish', label: '完成同步', status: 'waiting' }),
-  };
+  const job = newSyncJob(plan.startDate, plan.endDate, platforms as SyncRunStatus['platforms']);
+  const { runId } = job;
   await env.DB.prepare("INSERT OR IGNORE INTO sync_jobs (run_id, status, payload, created_at, updated_at) VALUES (?, 'queued', ?, ?, ?)")
     .bind(runId, JSON.stringify(job), Date.now(), Date.now()).run();
   const active = await env.DB.prepare("SELECT payload FROM sync_jobs WHERE status IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1").first<{ payload: string }>();
   if (active && JSON.parse(active.payload).runId !== runId) return json(JSON.parse(active.payload));
   return json(job);
+}
+
+async function retrySyncRun(env: Env, request: Request) {
+  if (!env.DB) return errorResponse('同步任务数据库未配置', 503);
+  await latestSync(env);
+  const { runId } = await request.json().catch(() => ({})) as { runId?: string };
+  if (!runId) return errorResponse('缺少原任务 ID');
+  const sourceRow = await env.DB.prepare('SELECT payload FROM sync_jobs WHERE run_id = ?').bind(runId).first<{ payload: string }>();
+  if (!sourceRow) return errorResponse('未找到原数据同步任务', 404);
+  const source = JSON.parse(sourceRow.payload) as SyncJobState;
+  if (source.status === 'queued' || source.status === 'running') return errorResponse('该数据同步任务仍在运行', 409);
+  const active = await env.DB.prepare("SELECT run_id FROM sync_jobs WHERE status IN ('queued', 'running') LIMIT 1").first<{ run_id: string }>();
+  if (active) return errorResponse('已有数据同步任务正在运行，请完成后再试', 409);
+  const job = newSyncJob(source.startDate, source.endDate, source.platforms);
+  await env.DB.prepare("INSERT INTO sync_jobs (run_id, status, payload, created_at, updated_at) VALUES (?, 'queued', ?, ?, ?)")
+    .bind(job.runId, JSON.stringify(job), Date.now(), Date.now()).run();
+  return json(job, 202);
 }
 
 async function executeSyncRun(env: Env, request: Request) {
@@ -1417,6 +1450,10 @@ export default {
       if (url.pathname === '/api/sync-runs' && request.method === 'POST') {
         const denial = await authorizeDashboardMutation(request);
         return denial || createSyncRun(env, request);
+      }
+      if (url.pathname === '/api/sync-runs/retry' && request.method === 'POST') {
+        const denial = await authorizeDashboardMutation(request);
+        return denial || retrySyncRun(env, request);
       }
       if (url.pathname === '/api/sync-runs/run' && request.method === 'POST') {
         const denial = await authorizeDashboardMutation(request);

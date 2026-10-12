@@ -324,7 +324,7 @@ const Layout = () => {
           <Outlet context={{ trackReport, trackSync }} />
         </main>
       </div>
-      {isAdmin && <ReportTask jobs={jobs} syncJob={syncJob} />}
+      {isAdmin && <ReportTask jobs={jobs} syncJob={syncJob} onTrackReport={trackReport} onTrackSync={trackSync} />}
     </div>
   );
 };

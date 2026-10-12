@@ -35,6 +35,15 @@ export async function createSyncRun(
   return response.data as SyncRunResponse;
 }
 
+export async function retrySyncRun(runId: string): Promise<SyncRunStatus> {
+  if (STATIC_DEMO_MODE) return getDemoSyncRun();
+  const response = await apiRequest<SyncRunStatus>('/api/sync-runs/retry', {
+    method: 'POST',
+    body: JSON.stringify({ runId }),
+  });
+  return response.data as SyncRunStatus;
+}
+
 export async function getLatestSyncRun(): Promise<SyncRunStatus | null> {
   if (STATIC_DEMO_MODE) return getDemoSyncRun();
   const response = await apiRequest<SyncRunStatus | null>('/api/sync-runs/latest');
