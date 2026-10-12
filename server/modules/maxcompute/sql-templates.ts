@@ -218,7 +218,7 @@ all_paid_orders AS (
             'mc_prd.dwd_video_pollo_payment_records_sub_dfp'
         )
       AND s.amount > 0
-      AND LOWER(s.order_risk_tag) <> 'risk_order'
+      AND LOWER(COALESCE(s.order_risk_tag, 'NORMAL_ORDER')) <> 'risk_order'
       AND LOWER(COALESCE(s.description, '')) <> 'api credits'
       AND CAST(s.date_created AS DATE) < DATE_ADD(
             CAST(TO_DATE('${endKey}', 'yyyymmdd') AS DATE),
@@ -296,7 +296,8 @@ classified_paid_orders AS (
         CASE
             WHEN o.description = 'subscription_cycle'
                 THEN '自动续订'
-            WHEN CAST(fs.first_subscription_time AS DATE) >= o.week_start
+            WHEN o.description = 'subscription_create'
+             AND CAST(fs.first_subscription_time AS DATE) >= o.week_start
              AND CAST(fs.first_subscription_time AS DATE) < DATE_ADD(o.week_start, 7)
                 THEN '首订'
             WHEN o.description = 'subscription_create'
@@ -497,7 +498,7 @@ payments AS (
     WHERE s.p_date = MAX_PT(
             'mc_prd.dwd_video_pollo_payment_records_sub_dfp'
         )
-      AND LOWER(s.order_risk_tag) <> 'risk_order'
+      AND LOWER(COALESCE(s.order_risk_tag, 'NORMAL_ORDER')) <> 'risk_order'
       AND LOWER(COALESCE(s.description, '')) NOT IN (
             'api credits',
             'subscription_cycle',

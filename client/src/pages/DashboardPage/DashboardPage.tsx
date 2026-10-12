@@ -1008,6 +1008,10 @@ function GmvCoverageExplanation({
             主动付费支付记录直接汇总，作为 GMV 结果口径。
           </div>
           <div>
+            <span className="font-medium text-foreground">大盘 GMV：</span>
+            不统计 API Credits 订单。
+          </div>
+          <div>
             <span className="font-medium text-foreground">支付链路表：</span>从
             DAU 出发，按访问、曝光、提交、支付的时间戳顺序归因。
           </div>
