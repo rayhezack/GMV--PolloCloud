@@ -1054,6 +1054,7 @@ const MAXCOMPUTE_NUMBER_FIELDS = new Set([
   'sub_submit_uv', 'chain_pay_uv', 'chain_gmv_usd', 'sub_expose_rate',
   'sub_submit_rate', 'chain_pay_success_rate', 'chain_arppu', 'creation_uv',
   'creation_task_cnt', 'creation_penetration_rate', 'avg_creation_task_cnt_per_creator',
+  'expire_user_cnt', 'renew_user_cnt', 'renew_amount_usd',
 ]);
 
 function maxComputeConnection(env: Env) {
@@ -1103,64 +1104,84 @@ async function replaceBaseRange(env: Env, sheet: 'pay_type_daily' | 'chain_daily
   return rows.length;
 }
 
-async function runBaseSync(env: Env, runLogId: string, job: SyncRunStatus) {
-  let rowsSynced = 0;
-  const { runId, platforms, startDate, endDate } = job;
-  let writes = Promise.resolve();
-  const persist = () => {
-    job.heartbeatAt = new Date().toISOString();
-    writes = writes.catch(() => undefined).then(async () => {
-      await env.DB!.prepare('UPDATE sync_jobs SET status = ?, payload = ?, updated_at = ? WHERE run_id = ?')
-        .bind(job.status, JSON.stringify(job), Date.now(), runId).run();
-    });
-    return writes;
-  };
-  const heartbeat = setInterval(() => { void persist().catch(() => undefined); }, 10000);
-  try {
-    for (const platform of platforms) {
-      for (const dataset of ['pay_type', 'chain', 'creative', 'renewal'] as const) {
-        const step = job.steps!.find(item => item.key === `${platform}-${dataset}`)!;
-        step.status = 'running';
-        step.detail = '正在查询业务数据库';
-        job.stage = 'pull';
-        await persist();
-        const rows = await pullDailyFacts(env, platform, dataset, startDate, endDate);
-        step.detail = `已读取 ${rows.length.toLocaleString('en-US')} 行 · 正在写入 Base`;
-        job.stage = 'write';
-        await persist();
-        rowsSynced += await replaceBaseRange(env, `${dataset}_daily` as 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily', platform, startDate, endDate, rows);
-        job.rowsSynced = rowsSynced;
-        step.status = 'success';
-        step.detail = `已入库 ${rows.length.toLocaleString('en-US')} 行`;
-        await persist();
-      }
+type SyncJobState = SyncRunStatus & { runLogId?: string };
+
+async function saveSyncJob(env: Env, job: SyncJobState) {
+  job.heartbeatAt = new Date().toISOString();
+  await env.DB!.prepare('UPDATE sync_jobs SET status = ?, payload = ?, updated_at = ? WHERE run_id = ?')
+    .bind(job.status, JSON.stringify(job), Date.now(), job.runId).run();
+}
+
+async function ensureSyncRunLog(env: Env, job: SyncJobState) {
+  if (job.runLogId) return job.runLogId;
+  const created = await baseRequest<{ record?: { record_id?: string } }>(env, 'run_log', '/records', {
+    fields: { run_id: job.runId, status: 'running', stage: 'pull', start_date: job.startDate, end_date: job.endDate, platforms: job.platforms.join(','), rows_synced: 0, started_at: job.startedAt },
+  });
+  job.runLogId = created.record?.record_id;
+  if (!job.runLogId) throw new Error('Base run_log 创建失败：未返回 record_id');
+  await saveSyncJob(env, job);
+  return job.runLogId;
+}
+
+async function runBaseSyncStep(env: Env, job: SyncJobState) {
+  const step = job.steps?.find(item => item.key !== 'finish' && item.status === 'waiting');
+  if (!step) {
+    const dataSteps = job.steps?.filter(item => item.key !== 'finish') ?? [];
+    const staged = await env.DB!.prepare('SELECT step_key, payload, row_count FROM sync_job_staging WHERE run_id = ?')
+      .bind(job.runId).all<{ step_key: string; payload: string; row_count: number }>();
+    if (staged.results.length !== dataSteps.length || dataSteps.some(item => item.status !== 'success')) {
+      throw new Error(`同步暂存结果不完整：应有 ${dataSteps.length} 份，实际 ${staged.results.length} 份`);
     }
-    const finish = job.steps!.find(item => item.key === 'finish')!;
-    finish.status = 'running';
-    job.stage = 'write';
-    await persist();
-    await baseRequest(env, 'run_log', `/records/${runLogId}`, {
-      fields: { status: 'success', stage: 'write', rows_synced: rowsSynced, finished_at: new Date().toISOString() },
-    }, 'PUT');
-    finish.status = 'success';
-    finish.detail = `共入库 ${rowsSynced.toLocaleString('en-US')} 行`;
+    const finish = job.steps?.find(item => item.key === 'finish');
+    if (finish) {
+      finish.status = 'running';
+      finish.detail = `${staged.results.length} 份查询结果已就绪 · 正在统一写入 Base`;
+      job.stage = 'write';
+      await saveSyncJob(env, job);
+      const runLogId = await ensureSyncRunLog(env, job);
+      const batches = new Map(staged.results.map(item => [item.step_key, JSON.parse(item.payload) as D1Row[]]));
+      job.rowsSynced = 0;
+      for (const item of dataSteps) {
+        const separator = item.key.indexOf('-');
+        const platform = item.key.slice(0, separator);
+        const dataset = item.key.slice(separator + 1) as DatasetKind;
+        const rows = batches.get(item.key);
+        if (!rows) throw new Error(`同步暂存结果缺失：${item.label}`);
+        job.rowsSynced += await replaceBaseRange(env, `${dataset}_daily` as 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily', platform, job.startDate, job.endDate, rows);
+        finish.detail = `正在统一写入 Base · ${job.rowsSynced.toLocaleString('en-US')} 行`;
+        await saveSyncJob(env, job);
+      }
+      await baseRequest(env, 'run_log', `/records/${runLogId}`, {
+        fields: { status: 'success', stage: 'write', rows_synced: job.rowsSynced, finished_at: new Date().toISOString() },
+      }, 'PUT');
+      finish.status = 'success';
+      finish.detail = `共入库 ${job.rowsSynced.toLocaleString('en-US')} 行`;
+    }
     job.status = 'success';
     job.finishedAt = new Date().toISOString();
-  } catch (error) {
-    job.status = 'failed';
-    job.errorMessage = error instanceof Error ? error.message : String(error);
-    job.finishedAt = new Date().toISOString();
-    job.steps?.forEach(step => { if (step.status === 'running') { step.status = 'failed'; step.detail = undefined; } });
-    await baseRequest(env, 'run_log', `/records/${runLogId}`, {
-      fields: { status: 'failed', error_message: job.errorMessage, rows_synced: rowsSynced, finished_at: job.finishedAt },
-    }, 'PUT').catch(() => undefined);
-  } finally {
-    clearInterval(heartbeat);
-    await persist();
+    await saveSyncJob(env, job);
+    await env.DB!.prepare('DELETE FROM sync_job_staging WHERE run_id = ?').bind(job.runId).run();
     invalidateBaseCache('run_log');
     await invalidateDashboardCache(env);
+    return;
   }
-  return { runId, rowsSynced };
+
+  const separator = step.key.indexOf('-');
+  const platform = step.key.slice(0, separator);
+  const dataset = step.key.slice(separator + 1) as DatasetKind;
+  if (!PLATFORMS.has(platform) || !['pay_type', 'chain', 'creative', 'renewal'].includes(dataset)) throw new Error(`同步步骤无效：${step.key}`);
+  step.status = 'running';
+  step.detail = '正在查询业务数据库';
+  job.stage = 'pull';
+  await saveSyncJob(env, job);
+  const rows = await pullDailyFacts(env, platform, dataset, job.startDate, job.endDate);
+  await env.DB!.prepare('INSERT OR REPLACE INTO sync_job_staging (run_id, step_key, payload, row_count, created_at) VALUES (?, ?, ?, ?, ?)')
+    .bind(job.runId, step.key, JSON.stringify(rows), rows.length, Date.now()).run();
+  step.status = 'success';
+  step.detail = `已暂存 ${rows.length.toLocaleString('en-US')} 行`;
+  job.status = 'queued';
+  job.stage = 'pull';
+  await saveSyncJob(env, job);
 }
 
 async function createSyncRun(env: Env, request: Request) {
@@ -1175,7 +1196,7 @@ async function createSyncRun(env: Env, request: Request) {
   const runId = crypto.randomUUID();
   const startedAt = new Date().toISOString();
   const labels = { pay_type: '付费类型', chain: '支付链路', creative: '创作积极性', renewal: '自动续订' };
-  const job: SyncRunStatus = {
+  const job: SyncJobState = {
     runId, status: 'queued', stage: 'pull', startDate: plan.startDate, endDate: plan.endDate,
     platforms: platforms as SyncRunStatus['platforms'], rowsSynced: 0, startedAt,
     steps: platforms.flatMap(platform => (['pay_type', 'chain', 'creative', 'renewal'] as const)
@@ -1195,7 +1216,7 @@ async function executeSyncRun(env: Env, request: Request) {
   const claimed = await env.DB.prepare("UPDATE sync_jobs SET status = 'running', updated_at = ? WHERE run_id = ? AND status = 'queued' RETURNING payload")
     .bind(Date.now(), runId).first<{ payload: string }>();
   if (!claimed) return json({ message: '任务已由后台接管或已结束' });
-  const job = JSON.parse(claimed.payload) as SyncRunStatus;
+  const job = JSON.parse(claimed.payload) as SyncJobState;
   job.status = 'running';
   job.heartbeatAt = new Date().toISOString();
   await env.DB.prepare("UPDATE sync_jobs SET payload = ?, updated_at = ? WHERE run_id = ?")
@@ -1205,20 +1226,22 @@ async function executeSyncRun(env: Env, request: Request) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const pulse = setInterval(() => { if (!disconnected) controller.enqueue(encoder.encode(' ')); }, 5000);
+      const heartbeat = setInterval(() => { void saveSyncJob(env, job).catch(() => undefined); }, 10000);
       try {
-        const created = await baseRequest<{ record?: { record_id?: string } }>(env, 'run_log', '/records', {
-          fields: { run_id: runId, status: 'running', stage: 'pull', start_date: job.startDate, end_date: job.endDate, platforms: job.platforms.join(','), rows_synced: 0, started_at: job.startedAt },
-        });
-        const runLogId = created.record?.record_id;
-        if (!runLogId) throw new Error('Base run_log 创建失败：未返回 record_id');
-        await runBaseSync(env, runLogId, job);
+        await runBaseSyncStep(env, job);
       } catch (error) {
         job.status = 'failed';
         job.errorMessage = error instanceof Error ? error.message : String(error);
         job.finishedAt = new Date().toISOString();
+        job.steps?.forEach(step => { if (step.status === 'running') { step.status = 'failed'; step.detail = undefined; } });
+        if (job.runLogId) await baseRequest(env, 'run_log', `/records/${job.runLogId}`, {
+          fields: { status: 'failed', error_message: job.errorMessage, rows_synced: job.rowsSynced, finished_at: job.finishedAt },
+        }, 'PUT').catch(() => undefined);
+        if (!job.runLogId) await env.DB!.prepare('DELETE FROM sync_job_staging WHERE run_id = ?').bind(runId).run().catch(() => undefined);
         await env.DB!.prepare("UPDATE sync_jobs SET status = 'failed', payload = ?, updated_at = ? WHERE run_id = ? AND status = 'running'")
           .bind(JSON.stringify(job), Date.now(), runId).run().catch(() => undefined);
       } finally {
+        clearInterval(heartbeat);
         clearInterval(pulse);
         if (!disconnected) { controller.enqueue(encoder.encode(JSON.stringify({ status: job.status }))); controller.close(); }
       }

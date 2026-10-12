@@ -334,8 +334,8 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
             <AlertDialogHeader>
               <AlertDialogTitle>确认拉取最新数据</AlertDialogTitle>
               <AlertDialogDescription>
-                当前看板已切换为业务数据库数据源。此操作会检查数据库中的最新日期，
-                不再读取或写回 Feishu Base。
+                系统会先完成全部 MaxCompute 查询并暂存结果；确认全部成功后，
+                再统一替换 Base 中对应日期的数据。
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="grid gap-3 rounded-2xl bg-gray-50 p-4 text-sm">

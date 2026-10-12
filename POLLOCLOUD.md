@@ -8,6 +8,7 @@ npm run build
 pollocloud login
 pollocloud db execute --name pollo-ai --file db/0002_dashboard_response_cache.sql
 pollocloud db execute --name pollo-ai --file db/0003_report_jobs.sql
+pollocloud db execute --name pollo-ai --file db/0006_sync_staging.sql
 pollocloud deploy
 ```
 
@@ -29,7 +30,7 @@ KIMI_API_KEY
 
 The Feishu app must have record read/write API scopes and document-level access to Base `OjCAbXDNbavIU9seAzVcqUHanHg`. Record reads, creates, updates, and deletes have all been verified against this Base.
 
-Dashboard endpoints push platform and date filters into Base, merge identical in-flight reads, and cache successful responses in the app's D1 database for ten minutes. An expired response can be served for up to one hour while Base refreshes in the background. `POST /api/sync-runs` queries MaxCompute for the selected daily range, replaces matching `web` and `app` records in the four daily fact tables, and clears the response cache when the run finishes.
+Dashboard endpoints push platform and date filters into Base, merge identical in-flight reads, and cache successful responses in the app's D1 database for ten minutes. An expired response can be served for up to one hour while Base refreshes in the background. `POST /api/sync-runs` stages each MaxCompute query result in D1. Only after every query succeeds does the Worker replace the matching `web` and `app` records in the four Base fact tables and clear the response cache.
 
 The top three GMV cards read `pay_type_daily`. The trend chart reads `chain_daily` for active payment and `renewal_daily` for renewal; the chain attribution tab uses the same respective fact tables.
 
