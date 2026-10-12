@@ -4031,7 +4031,6 @@ const DashboardPage = () => {
           <PageSection
             title="收入趋势"
             description="查看收入及付费链路指标的变化。"
-            className="dashboard-panel-flat"
           >
             <div className="grid min-w-0 gap-4">
               {loadingBySection.overview && !overview ? (
