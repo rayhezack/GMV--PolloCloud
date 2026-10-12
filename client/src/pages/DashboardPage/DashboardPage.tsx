@@ -1032,6 +1032,10 @@ function GmvCoverageExplanation({
             <span className="font-medium text-foreground">创作积极性：</span>
             创作 UV、任务数按业务日均展示，渗透率为创作 UV ÷ 活跃 UV，不计算贡献度。
           </div>
+          <div>
+            <span className="font-medium text-foreground">创作分层：</span>
+            按分析期开始前 30 日的创作次数划分；“分析期前 30 日无创作用户”仅表示该窗口内创作次数为 0，创作 UV、创作渗透率等指标统计的是这批用户在分析期内的行为。
+          </div>
         </div>
       </section>
 

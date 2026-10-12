@@ -76,6 +76,8 @@ If active payment is not the main driver, still state total daily average GMV, t
 ## Argument Writing
 
 - Every numbered argument must start with a concrete business sub-claim, not a template label. The bold prefix before `：` summarizes the evidence that follows.
+- Bold every section conclusion and numbered argument's business sub-claim. Keep supporting explanation in regular text. Do not use light-text conventions for core judgments.
+- Use italic Markdown for at most one decisive metric movement in each numbered argument. Italics are reserved for this restrained visual emphasis; do not emphasize entire sentences or decorate secondary numbers.
 - Do not output literal meta labels such as `事实论点`, `数据论点`, `核心论点`, `观点`, `结论`, or `推测` as the bold prefix of a numbered argument.
 - Good numbered-argument prefixes look like: `主动付费GMV是GMV下滑的核心驱动因素`, `首订收缩解释了主动付费下滑的主要部分`, `分析期前30日无创作用户是主动付费下滑的主要贡献分层`, `支付提交率是该分层链路下滑的核心过程因子，客单价是次要拖累因素`.
 - After the bold sub-claim and colon, write the quantitative inline evidence and business meaning. The inline evidence should support the sub-claim rather than repeat table rows mechanically.
@@ -149,8 +151,6 @@ The output must be Markdown and must use this exact structure:
 
 **章节结论。必须明确这是在主动付费GMV基础上的进一步拆解。**
 
-**口径说明：支付链路只在主动付费GMV内继续拆解；DAU、GMV和创作分层的活跃UV按业务日均展示，付费墙曝光率、支付提交率、提交支付率按汇总UV计算，客单价=主动付费GMV/支付UV；支付链路指标贡献度分母为所选创作分层的主动付费GMV变化。**
-
 1. **{用一句业务判断总结创作分层贡献证据}：** 主动付费GMV按创作分层拆解后的贡献数据与业务含义。
 <!-- CHAIN_TIER_TABLE -->
 2. **{用一句业务判断总结核心与次要过程因子证据}：** 核心创作分层的主动付费GMV支付链路指标数据与业务含义；有第二个同向贡献因子时，必须同时说明核心和次要因素及其贡献度排序。
@@ -159,8 +159,6 @@ The output must be Markdown and must use this exact structure:
 ## 三、创作积极性侧证
 
 **章节结论。**
-
-Before discussing the creative metrics, include this clarification in the section: `口径说明：创作分层按分析期开始前30日的创作次数划分；分析期前30日无创作用户仅表示该窗口内创作次数为0，表内创作UV、创作渗透率等指标统计的是这批用户在分析期内的行为，不代表分析期内没有创作。`
 
 1. **{用一句业务判断总结整体创作原子指标证据}：** 整体创作原子指标变化与业务含义。
 <!-- CREATIVE_OVERALL_TABLE -->
@@ -176,4 +174,4 @@ Before discussing the creative metrics, include this clarification in the sectio
 - **创作侧：** 仅作为侧面证据，不直接证明付费类型结果的原因；如因果证据不足，在句内写明待验证。
 ```
 
-The model must not output evidence tables, modify table markers, add external background, output optimization suggestions, mention raw schema field names, write literal labels such as `事实论点：` or `推测：`, or spend narrative space explaining dimensional-boundary rules.
+The model must not output evidence tables, modify table markers, add external background, output optimization suggestions, mention raw schema field names, write literal labels such as `事实论点：` or `推测：`, output paragraphs beginning with `口径说明：`, explain metric or creative-tier definitions, or spend narrative space explaining dimensional-boundary rules. Metric and tier definitions belong to the dashboard's data-definition tab.
