@@ -5,7 +5,7 @@ import { MaxComputeClient } from '../server/modules/maxcompute/maxcompute.client
 import { buildDatasetSql, type DatasetKind } from '../server/modules/maxcompute/sql-templates';
 import { POLLOCLOUD_APP_OWNER_ID } from '../shared/auth.constants';
 import { reportGenerations } from './report-jobs';
-import type { DashboardAttributionsResponse, ReportGenerationRequest, ReportGenerationStatus, ReportSummary, AttributionItem, AttributionDriverItem, SyncRunStatus } from '../shared/api.interface';
+import type { DashboardAttributionsResponse, ReportGenerationRequest, ReportGenerationStatus, ReportSummary, AttributionItem, AttributionDriverItem, SyncMode, SyncRunStatus } from '../shared/api.interface';
 
 type D1Row = Record<string, string | number | null>;
 type D1Result<T> = { results: T[] };
@@ -63,7 +63,10 @@ const baseLoads = new Map<string, Promise<BaseRecord[]>>();
 const dashboardLoads = new Map<string, Promise<Response>>();
 
 const WEEK_DAYS = 7;
-const PLATFORMS = new Set(['web', 'app']);
+const REPORT_PLATFORMS = new Set(['web', 'app']);
+const DASHBOARD_PLATFORMS = new Set(['all', 'web', 'app']);
+const FULL_REFRESH_START_DATE = '2026-01-01';
+const STAGING_CHUNK_SIZE = 250;
 const TABLES = new Set([
   'pay_type_daily',
   'chain_daily',
@@ -459,6 +462,7 @@ function chainMetrics(row: ReturnType<typeof sumChain>) {
 }
 
 function renewalPlatformRows(rows: D1Row[], platform: string, deviceType?: string) {
+  if (platform === 'all') return rows;
   const platformType = platform === 'web' ? 'WEB' : deviceType ? deviceType.toUpperCase() : 'APP';
   return rows.filter((row) => asText(row.platform_type).toUpperCase() === platformType);
 }
@@ -673,7 +677,7 @@ async function overview(env: Env, request: Request) {
   const deviceType = url.searchParams.get('deviceType') || undefined;
   const trendUserTag = url.searchParams.get('trendUserTag') || undefined;
   const planTier = url.searchParams.get('planTier')?.toUpperCase() || undefined;
-  if (!PLATFORMS.has(platform)) return errorResponse('platform 必须是 web / app 之一');
+  if (!DASHBOARD_PLATFORMS.has(platform)) return errorResponse('platform 必须是 all / web / app 之一');
   const [chain, pay, renewalRecords] = await Promise.all([
     dailyRows(env, 'chain_daily', { platform, startDate, endDate, deviceType }),
     dailyRows(env, 'pay_type_daily', { platform, startDate, endDate, deviceType }),
@@ -776,7 +780,7 @@ async function attributions(env: Env, request: Request) {
   const deviceType = url.searchParams.get('deviceType') || undefined;
   const chainType = url.searchParams.get('chainType') || 'active';
   const planTier = url.searchParams.get('planTier')?.toUpperCase() || undefined;
-  if (!PLATFORMS.has(platform)) return errorResponse('platform 必须是 web / app 之一');
+  if (!DASHBOARD_PLATFORMS.has(platform)) return errorResponse('platform 必须是 all / web / app 之一');
   if (!['pay_type', 'chain', 'creative'].includes(dimension)) return errorResponse('dimension 必须是 pay_type / chain / creative 之一');
   if (!['active', 'renewal'].includes(chainType)) return errorResponse('chainType 必须是 active / renewal 之一');
   if (planTier && !['LITE', 'PRO', 'ULTRA'].includes(planTier)) return errorResponse('planTier 必须是 LITE / PRO / ULTRA 之一');
@@ -1011,10 +1015,24 @@ async function latestSync(env: Env) {
   return json(job);
 }
 
-async function syncPlan(env: Env, mode: 'latest_day' | 'latest_week') {
+async function syncPlan(env: Env, mode: SyncMode) {
   const sheets = ['pay_type_daily', 'chain_daily', 'creative_daily', 'renewal_daily'] as const;
-  const latestStoredDate = (await latestDailyPeriod(env, 'chain_daily')) || null;
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const platforms = ['all', 'web', 'app'];
+  if (mode === 'full_refresh') {
+    return json({
+      mode,
+      startDate: FULL_REFRESH_START_DATE,
+      endDate: yesterday,
+      latestStoredDate: null,
+      platforms,
+      alreadySynced: false,
+      canSync: true,
+      running: false,
+      missingItems: [],
+    });
+  }
+  const latestStoredDate = (await latestDailyPeriod(env, 'chain_daily')) || null;
   if (mode === 'latest_day') {
     const startDate = latestStoredDate && latestStoredDate < yesterday
       ? shiftDate(latestStoredDate, 1)
@@ -1024,11 +1042,11 @@ async function syncPlan(env: Env, mode: 'latest_day' | 'latest_week') {
       await dailyRows(env, sheet, { startDate, endDate: startDate }),
     ] as const));
     const rowsBySheet = new Map(entries);
-    const missingItems = ['web', 'app'].flatMap((platform) => sheets
+    const missingItems = platforms.flatMap((platform) => sheets
       .filter((sheet) => !(rowsBySheet.get(sheet) ?? []).some((row) => asText(row.platform) === platform && asText(row.period) === startDate))
       .map((sheet) => ({ sheet, platform, datasetKind: 'daily', expectedPeriod: startDate, recordCount: 0 })));
     const alreadySynced = startDate === yesterday && missingItems.length === 0;
-    return json({ mode, startDate, endDate: yesterday, latestStoredDate, platforms: ['web', 'app'], alreadySynced, canSync: !alreadySynced, running: false, missingItems });
+    return json({ mode, startDate, endDate: yesterday, latestStoredDate, platforms, alreadySynced, canSync: !alreadySynced, running: false, missingItems });
   }
   const date = new Date(`${yesterday}T00:00:00Z`);
   const day = date.getUTCDay();
@@ -1042,11 +1060,11 @@ async function syncPlan(env: Env, mode: 'latest_day' | 'latest_week') {
     await dailyRows(env, sheet, { startDate, endDate }),
   ] as const));
   const rowsBySheet = new Map(entries);
-  const missingItems = ['web', 'app'].flatMap((platform) => sheets.flatMap((sheet) => {
+  const missingItems = platforms.flatMap((platform) => sheets.flatMap((sheet) => {
     const days = new Set((rowsBySheet.get(sheet) ?? []).filter((row) => asText(row.platform) === platform && asText(row.period) >= startDate && asText(row.period) <= endDate).map((row) => asText(row.period)));
     return days.size === 7 ? [] : [{ sheet, platform, datasetKind: 'daily', expectedPeriod: `${startDate} ~ ${endDate}`, recordCount: days.size }];
   }));
-  return json({ mode, startDate, endDate, platforms: ['web', 'app'], alreadySynced: missingItems.length === 0, canSync: missingItems.length > 0, running: false, missingItems });
+  return json({ mode, startDate, endDate, platforms, alreadySynced: missingItems.length === 0, canSync: missingItems.length > 0, running: false, missingItems });
 }
 
 const MAXCOMPUTE_NUMBER_FIELDS = new Set([
@@ -1083,11 +1101,13 @@ async function pullDailyFacts(env: Env, platform: string, dataset: DatasetKind, 
   });
 }
 
-async function replaceBaseRange(env: Env, sheet: 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily', platform: string, startDate: string, endDate: string, rows: D1Row[]) {
+type DailySheet = 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily';
+
+async function clearBaseRange(env: Env, sheet: DailySheet, startDate: string, endDate: string, platform?: string) {
   const existing = (await baseRecords(env, sheet, true, {
     filter: buildBaseFilterFormula({ platform, startDate, endDate }),
   })).filter((record) =>
-    asText(record.fields.platform) === platform &&
+    (!platform || asText(record.fields.platform) === platform) &&
     asText(record.fields.dataset_kind) === 'daily' &&
     asText(record.fields.period) >= startDate &&
     asText(record.fields.period) <= endDate,
@@ -1095,6 +1115,11 @@ async function replaceBaseRange(env: Env, sheet: 'pay_type_daily' | 'chain_daily
   for (let index = 0; index < existing.length; index += 500) {
     await baseRequest(env, sheet, '/records/batch_delete', { records: existing.slice(index, index + 500).map((record) => record.id) });
   }
+  invalidateBaseCache(sheet);
+  return existing.length;
+}
+
+async function createBaseRows(env: Env, sheet: DailySheet, rows: D1Row[]) {
   for (let index = 0; index < rows.length; index += 500) {
     await baseRequest(env, sheet, '/records/batch_create', {
       records: rows.slice(index, index + 500).map((fields) => ({ fields })),
@@ -1104,14 +1129,20 @@ async function replaceBaseRange(env: Env, sheet: 'pay_type_daily' | 'chain_daily
   return rows.length;
 }
 
+async function replaceBaseRange(env: Env, sheet: DailySheet, platform: string, startDate: string, endDate: string, rows: D1Row[]) {
+  await clearBaseRange(env, sheet, startDate, endDate, platform);
+  return createBaseRows(env, sheet, rows);
+}
+
 type SyncJobState = SyncRunStatus & { runLogId?: string };
 const SYNC_DATASETS = ['pay_type', 'chain', 'creative', 'renewal'] as const;
 const SYNC_DATASET_LABELS = { pay_type: '付费类型', chain: '支付链路', creative: '创作积极性', renewal: '自动续订' };
 
-function newSyncJob(startDate: string, endDate: string, platforms: SyncRunStatus['platforms']): SyncJobState {
+function newSyncJob(mode: SyncMode, startDate: string, endDate: string, platforms: SyncRunStatus['platforms']): SyncJobState {
   const runId = crypto.randomUUID();
   return {
     runId,
+    mode,
     status: 'queued',
     stage: 'pull',
     startDate,
@@ -1122,12 +1153,32 @@ function newSyncJob(startDate: string, endDate: string, platforms: SyncRunStatus
     steps: [
       ...platforms.flatMap(platform => SYNC_DATASETS.map(dataset => ({
         key: `${platform}-${dataset}`,
-        label: `${platform === 'web' ? 'Web' : 'App'} · ${SYNC_DATASET_LABELS[dataset]}`,
+        label: `${platform === 'all' ? '全端' : platform === 'web' ? 'Web' : 'App'} · ${SYNC_DATASET_LABELS[dataset]}`,
         status: 'waiting' as const,
       }))),
       { key: 'finish', label: '完成同步', status: 'waiting' as const },
     ],
   };
+}
+
+async function stageSyncRows(env: Env, runId: string, stepKey: string, rows: D1Row[]) {
+  await env.DB!.prepare('DELETE FROM sync_job_staging_chunks WHERE run_id = ? AND step_key = ?')
+    .bind(runId, stepKey).run();
+  for (let index = 0; index < rows.length; index += STAGING_CHUNK_SIZE) {
+    const chunk = rows.slice(index, index + STAGING_CHUNK_SIZE);
+    await env.DB!.prepare('INSERT INTO sync_job_staging_chunks (run_id, step_key, chunk_index, payload, row_count, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(runId, stepKey, index / STAGING_CHUNK_SIZE, JSON.stringify(chunk), chunk.length, Date.now()).run();
+  }
+  if (rows.length === 0) {
+    await env.DB!.prepare('INSERT INTO sync_job_staging_chunks (run_id, step_key, chunk_index, payload, row_count, created_at) VALUES (?, ?, 0, ?, 0, ?)')
+      .bind(runId, stepKey, '[]', Date.now()).run();
+  }
+}
+
+async function loadStagedRows(env: Env, runId: string, stepKey: string) {
+  const chunks = await env.DB!.prepare('SELECT payload FROM sync_job_staging_chunks WHERE run_id = ? AND step_key = ? ORDER BY chunk_index')
+    .bind(runId, stepKey).all<{ payload: string }>();
+  return chunks.results.flatMap((chunk) => JSON.parse(chunk.payload) as D1Row[]);
 }
 
 async function saveSyncJob(env: Env, job: SyncJobState) {
@@ -1151,8 +1202,8 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
   const firstWaitingStep = job.steps?.find(item => item.key !== 'finish' && item.status === 'waiting');
   if (!firstWaitingStep) {
     const dataSteps = job.steps?.filter(item => item.key !== 'finish') ?? [];
-    const staged = await env.DB!.prepare('SELECT step_key, payload, row_count FROM sync_job_staging WHERE run_id = ?')
-      .bind(job.runId).all<{ step_key: string; payload: string; row_count: number }>();
+    const staged = await env.DB!.prepare('SELECT step_key, SUM(row_count) AS row_count FROM sync_job_staging_chunks WHERE run_id = ? GROUP BY step_key')
+      .bind(job.runId).all<{ step_key: string; row_count: number }>();
     if (staged.results.length !== dataSteps.length || dataSteps.some(item => item.status !== 'success')) {
       throw new Error(`同步暂存结果不完整：应有 ${dataSteps.length} 份，实际 ${staged.results.length} 份`);
     }
@@ -1163,15 +1214,23 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
       job.stage = 'write';
       await saveSyncJob(env, job);
       const runLogId = await ensureSyncRunLog(env, job);
-      const batches = new Map(staged.results.map(item => [item.step_key, JSON.parse(item.payload) as D1Row[]]));
       job.rowsSynced = 0;
+      if (job.mode === 'full_refresh') {
+        for (const dataset of SYNC_DATASETS) {
+          const sheet = `${dataset}_daily` as DailySheet;
+          const deleted = await clearBaseRange(env, sheet, job.startDate, job.endDate);
+          finish.detail = `正在清理 Base · 已删除 ${deleted.toLocaleString('en-US')} 行 ${SYNC_DATASET_LABELS[dataset]}数据`;
+          await saveSyncJob(env, job);
+        }
+      }
       for (const item of dataSteps) {
         const separator = item.key.indexOf('-');
         const platform = item.key.slice(0, separator);
         const dataset = item.key.slice(separator + 1) as DatasetKind;
-        const rows = batches.get(item.key);
-        if (!rows) throw new Error(`同步暂存结果缺失：${item.label}`);
-        job.rowsSynced += await replaceBaseRange(env, `${dataset}_daily` as 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily', platform, job.startDate, job.endDate, rows);
+        const rows = await loadStagedRows(env, job.runId, item.key);
+        job.rowsSynced += job.mode === 'full_refresh'
+          ? await createBaseRows(env, `${dataset}_daily` as DailySheet, rows)
+          : await replaceBaseRange(env, `${dataset}_daily` as DailySheet, platform, job.startDate, job.endDate, rows);
         finish.detail = `正在统一写入 Base · ${job.rowsSynced.toLocaleString('en-US')} 行`;
         await saveSyncJob(env, job);
       }
@@ -1184,7 +1243,7 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
     job.status = 'success';
     job.finishedAt = new Date().toISOString();
     await saveSyncJob(env, job);
-    await env.DB!.prepare('DELETE FROM sync_job_staging WHERE run_id = ?').bind(job.runId).run();
+    await env.DB!.prepare('DELETE FROM sync_job_staging_chunks WHERE run_id = ?').bind(job.runId).run();
     invalidateBaseCache('run_log');
     await invalidateDashboardCache(env);
     return;
@@ -1196,7 +1255,7 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
   const batchSteps = job.steps?.filter(item => item.status === 'waiting' && item.key.endsWith(`-${dataset}`)) ?? [];
   for (const step of batchSteps) {
     const platform = step.key.slice(0, step.key.indexOf('-'));
-    if (!PLATFORMS.has(platform)) throw new Error(`同步步骤无效：${step.key}`);
+    if (!DASHBOARD_PLATFORMS.has(platform)) throw new Error(`同步步骤无效：${step.key}`);
     step.status = 'running';
     step.detail = '正在并发查询业务数据库';
   }
@@ -1218,8 +1277,7 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
       continue;
     }
     const { rows } = result.value;
-    await env.DB!.prepare('INSERT OR REPLACE INTO sync_job_staging (run_id, step_key, payload, row_count, created_at) VALUES (?, ?, ?, ?, ?)')
-      .bind(job.runId, step.key, JSON.stringify(rows), rows.length, Date.now()).run();
+    await stageSyncRows(env, job.runId, step.key, rows);
     step.status = 'success';
     step.detail = `已暂存 ${rows.length.toLocaleString('en-US')} 行`;
   }
@@ -1234,15 +1292,16 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
 async function createSyncRun(env: Env, request: Request) {
   if (!env.DB) return errorResponse('同步任务数据库未配置', 503);
   await latestSync(env);
-  const body = await request.json().catch(() => ({})) as { mode?: 'latest_day' | 'latest_week'; platforms?: string[] };
-  const planResponse = await syncPlan(env, body.mode === 'latest_week' ? 'latest_week' : 'latest_day');
+  const body = await request.json().catch(() => ({})) as { mode?: SyncMode; platforms?: string[] };
+  const mode: SyncMode = body.mode === 'full_refresh' ? 'full_refresh' : body.mode === 'latest_week' ? 'latest_week' : 'latest_day';
+  const planResponse = await syncPlan(env, mode);
   const plan = await planResponse.json() as { startDate: string; endDate: string; platforms: string[]; alreadySynced?: boolean };
-  const platforms = body.platforms?.filter((platform) => PLATFORMS.has(platform)) ?? plan.platforms;
+  const platforms = body.platforms?.filter((platform) => DASHBOARD_PLATFORMS.has(platform)) ?? plan.platforms;
   if (!platforms.length) return errorResponse('请选择同步端口', 400);
-  if (plan.alreadySynced) return json({ runId: `base-${Date.now()}`, mode: body.mode || 'latest_day', ...plan, status: 'success', rowsSynced: 0, skipped: true, skipReason: 'Base 已包含目标日期数据' });
+  if (plan.alreadySynced) return json({ runId: `base-${Date.now()}`, mode, ...plan, status: 'success', rowsSynced: 0, skipped: true, skipReason: 'Base 已包含目标日期数据' });
   const active = await env.DB.prepare("SELECT payload FROM sync_jobs WHERE status IN ('queued', 'running', 'pausing', 'paused') ORDER BY created_at DESC LIMIT 1").first<{ payload: string }>();
   if (active) return json(JSON.parse(active.payload));
-  const job = newSyncJob(plan.startDate, plan.endDate, platforms as SyncRunStatus['platforms']);
+  const job = newSyncJob(mode, plan.startDate, plan.endDate, platforms as SyncRunStatus['platforms']);
   const { runId } = job;
   await env.DB.prepare("INSERT OR IGNORE INTO sync_jobs (run_id, status, payload, created_at, updated_at) VALUES (?, 'queued', ?, ?, ?)")
     .bind(runId, JSON.stringify(job), Date.now(), Date.now()).run();
@@ -1260,7 +1319,7 @@ async function retrySyncRun(env: Env, request: Request) {
   if (['queued', 'running', 'pausing', 'paused'].includes(source.status)) return errorResponse('该数据同步任务尚未结束', 409);
   const active = await env.DB.prepare("SELECT run_id FROM sync_jobs WHERE status IN ('queued', 'running', 'pausing', 'paused') LIMIT 1").first<{ run_id: string }>();
   if (active) return errorResponse('已有数据同步任务正在运行，请完成后再试', 409);
-  const job = newSyncJob(source.startDate, source.endDate, source.platforms);
+  const job = newSyncJob(source.mode ?? 'latest_day', source.startDate, source.endDate, source.platforms);
   await env.DB.prepare("INSERT INTO sync_jobs (run_id, status, payload, created_at, updated_at) VALUES (?, 'queued', ?, ?, ?)")
     .bind(job.runId, JSON.stringify(job), Date.now(), Date.now()).run();
   return json(job, 202);
@@ -1325,7 +1384,7 @@ async function executeSyncRun(env: Env, request: Request) {
           if (job.runLogId) await baseRequest(env, 'run_log', `/records/${job.runLogId}`, {
             fields: { status: 'failed', error_message: job.errorMessage, rows_synced: job.rowsSynced, finished_at: job.finishedAt },
           }, 'PUT').catch(() => undefined);
-          if (!job.runLogId) await env.DB!.prepare('DELETE FROM sync_job_staging WHERE run_id = ?').bind(runId).run().catch(() => undefined);
+          if (!job.runLogId) await env.DB!.prepare('DELETE FROM sync_job_staging_chunks WHERE run_id = ?').bind(runId).run().catch(() => undefined);
           await env.DB!.prepare("UPDATE sync_jobs SET status = 'failed', payload = ?, updated_at = ? WHERE run_id = ? AND status = 'running'")
             .bind(JSON.stringify(job), Date.now(), runId).run().catch(() => undefined);
         }
@@ -1466,7 +1525,7 @@ async function reportHandler(env: Env, request: Request) {
     collect: (body, progress) => collectReportEvidence(env, body, progress),
     persist: report => persistGeneratedReport(env, report),
   });
-  if (platform && !PLATFORMS.has(platform)) return errorResponse('platform 必须是 web / app 之一');
+  if (platform && !REPORT_PLATFORMS.has(platform)) return errorResponse('platform 必须是 web / app 之一');
   const reportFilter = platform ? `CurrentValue.[platform]="${platform}"` : undefined;
   if (request.method === 'GET' && url.pathname === '/api/report-latest') {
     const row = (await baseRecords(env, 'latest_report', false, { filter: reportFilter, sort: ['generated_at DESC'], limit: 1 })).map((record) => record.fields)

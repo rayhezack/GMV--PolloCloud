@@ -1,5 +1,6 @@
 import type {
   AttributionDimension,
+  DashboardPlatform,
   DashboardAttributionsResponse,
   DashboardGmvCoverageResponse,
   DashboardOverviewResponse,
@@ -48,14 +49,14 @@ function averageTrendRows(rows: OverviewTrendPoint[], period: string): OverviewT
 }
 
 function buildOverview(
-  platform: Platform,
+  platform: DashboardPlatform,
   startDate: string,
   endDate: string,
   granularity: Granularity = 'day',
   trendUserTag?: string,
   planTier?: RenewalPlanTier,
 ): DashboardOverviewResponse {
-  const multiplier = platform === 'web' ? 1 : 0.48;
+  const multiplier = platform === 'all' ? 1.48 : platform === 'web' ? 1 : 0.48;
   const userScale = trendUserTag === '新用户' ? 0.58 : trendUserTag === '老用户' ? 0.42 : 1;
   const renewalTierScale = planTier === 'LITE' ? 0.26 : planTier === 'PRO' ? 0.56 : planTier === 'ULTRA' ? 0.18 : 1;
   const trend: OverviewTrendPoint[] = days.filter((period) => period >= startDate && period <= endDate).map((period) => {
@@ -143,10 +144,10 @@ function item(key: string, baseline: number, delta: number, metrics: Record<stri
 
 function buildAttribution(
   dimension: AttributionDimension,
-  platform: Platform,
+  platform: DashboardPlatform,
   options: { creationTier?: string; userTag?: string; chainType?: PaymentChainType; planTier?: RenewalPlanTier } = {},
 ): DashboardAttributionsResponse {
-  const scale = platform === 'web' ? 1 : 0.48;
+  const scale = platform === 'all' ? 1.48 : platform === 'web' ? 1 : 0.48;
   const common = {
     baselinePeriod: '2026-09-26',
     analysisPeriod: '2026-10-03',
@@ -253,12 +254,12 @@ function buildAttribution(
   };
 }
 
-export function getDemoOverview(platform: Platform, startDate: string, endDate: string, granularity: Granularity = 'day', trendUserTag?: string, planTier?: RenewalPlanTier) {
+export function getDemoOverview(platform: DashboardPlatform, startDate: string, endDate: string, granularity: Granularity = 'day', trendUserTag?: string, planTier?: RenewalPlanTier) {
   return buildOverview(platform, startDate, endDate, granularity, trendUserTag, planTier);
 }
 export function getDemoAttributions(
   dimension: AttributionDimension,
-  platform: Platform,
+  platform: DashboardPlatform,
   options: { creationTier?: string; userTag?: string; chainType?: PaymentChainType; planTier?: RenewalPlanTier } = {},
 ) {
   return buildAttribution(dimension, platform, options);
@@ -283,7 +284,7 @@ export function getDemoSyncRun(): SyncRunStatus {
     stage: 'write',
     startDate: '2026-10-09',
     endDate: '2026-10-09',
-    platforms: ['web', 'app'],
+    platforms: ['all', 'web', 'app'],
     rowsSynced: 420,
     startedAt: '2026-10-09T08:25:00.000Z',
     finishedAt: '2026-10-09T08:25:04.000Z',

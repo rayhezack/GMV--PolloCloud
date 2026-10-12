@@ -19,6 +19,8 @@ pollocloud db execute --name pollo-ai --file db/0002_dashboard_response_cache.sq
 pollocloud db execute --name pollo-ai --file db/0004_sync_jobs.sql
 pollocloud db execute --name pollo-ai --file db/0005_sync_queued.sql
 pollocloud db execute --name pollo-ai --file db/0006_sync_staging.sql
+pollocloud db execute --name pollo-ai --file db/0007_paused_job_indexes.sql
+pollocloud db execute --name pollo-ai --file db/0008_sync_staging_chunks.sql
 pollocloud deploy
 ```
 

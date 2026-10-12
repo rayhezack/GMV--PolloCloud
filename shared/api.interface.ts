@@ -3,6 +3,9 @@
 export const PLATFORMS = ['web', 'app'] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
+export const DASHBOARD_PLATFORMS = ['all', ...PLATFORMS] as const;
+export type DashboardPlatform = (typeof DASHBOARD_PLATFORMS)[number];
+
 export const APP_DEVICE_TYPES = ['ios', 'android'] as const;
 export type AppDeviceType = (typeof APP_DEVICE_TYPES)[number];
 
@@ -45,11 +48,11 @@ export type PaymentChainType = 'active' | 'renewal';
 
 /* ===== 同步链路 ===== */
 
-export type SyncMode = 'latest_day' | 'latest_week';
+export type SyncMode = 'latest_day' | 'latest_week' | 'full_refresh';
 
 export interface SyncRunRequest {
   mode?: SyncMode;
-  platforms?: Platform[];
+  platforms?: DashboardPlatform[];
 }
 
 export interface SyncRunResponse {
@@ -57,7 +60,7 @@ export interface SyncRunResponse {
   mode?: SyncMode;
   startDate: string;
   endDate: string;
-  platforms: Platform[];
+  platforms: DashboardPlatform[];
   status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed';
   rowsSynced: number;
   skipped?: boolean;
@@ -67,11 +70,12 @@ export interface SyncRunResponse {
 
 export interface SyncRunStatus {
   runId: string;
+  mode?: SyncMode;
   status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed';
   stage: SyncStage;
   startDate: string;
   endDate: string;
-  platforms: Platform[];
+  platforms: DashboardPlatform[];
   rowsSynced: number;
   errorMessage?: string;
   startedAt: string;
@@ -83,7 +87,7 @@ export interface SyncRunStatus {
 
 export interface SyncPlanMissingItem {
   sheet: WorkbookSheet;
-  platform: Platform;
+  platform: DashboardPlatform;
   datasetKind: DatasetKind;
   expectedPeriod: string;
   recordCount: number;
@@ -93,7 +97,7 @@ export interface LatestWeekSyncPlan {
   mode: 'latest_week';
   startDate: string;
   endDate: string;
-  platforms: Platform[];
+  platforms: DashboardPlatform[];
   alreadySynced: boolean;
   canSync: boolean;
   running: boolean;
@@ -105,7 +109,7 @@ export interface LatestDaySyncPlan {
   startDate: string;
   endDate: string;
   latestStoredDate: string | null;
-  platforms: Platform[];
+  platforms: DashboardPlatform[];
   alreadySynced: boolean;
   canSync: boolean;
   running: boolean;

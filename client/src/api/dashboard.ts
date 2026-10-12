@@ -3,6 +3,7 @@ import { getDemoAttributions, getDemoCoverage, getDemoOverview, STATIC_DEMO_MODE
 import type {
   AppDeviceType,
   AttributionDimension,
+  DashboardPlatform,
   DashboardAttributionsResponse,
   DashboardGmvCoverageResponse,
   DashboardOverviewResponse,
@@ -36,7 +37,7 @@ export async function getGmvCoverage(): Promise<DashboardGmvCoverageResponse> {
 }
 
 export async function getDashboardOverview(params: {
-  platform: Platform;
+  platform: DashboardPlatform;
   deviceType?: AppDeviceType;
   granularity: Granularity;
   startDate: string;
@@ -54,7 +55,7 @@ export async function getDashboardOverview(params: {
 }
 
 export async function getDashboardAttributions(params: {
-  platform: Platform;
+  platform: DashboardPlatform;
   deviceType?: AppDeviceType;
   granularity: Granularity;
   dimension: AttributionDimension;

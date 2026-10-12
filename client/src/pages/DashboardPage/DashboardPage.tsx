@@ -20,6 +20,7 @@ import {
   ChevronRight,
   ChevronUp,
   Info,
+  LayoutDashboard,
   Loader2,
   Monitor,
   RefreshCw,
@@ -96,6 +97,7 @@ import type {
   DashboardAttributionsResponse,
   DashboardGmvCoveragePlatform,
   DashboardGmvCoverageResponse,
+  DashboardPlatform,
   DashboardOverviewResponse,
   Granularity,
   OverviewTrendPoint,
@@ -113,7 +115,8 @@ const DEFAULT_TREND_POINTS = WINDOW_DAYS + 1;
 const WEEK_DAYS = 7;
 const TREND_DATA_START_DATE = '2026-01-01';
 
-const PLATFORM_LABELS: Record<Platform, string> = {
+const PLATFORM_LABELS: Record<DashboardPlatform, string> = {
+  all: '全端汇总',
   web: 'Web 端',
   app: 'App 端',
 };
@@ -1986,15 +1989,15 @@ function GlobalDashboardControls({
   loading,
   onRefresh,
 }: {
-  platform: Platform;
-  onPlatformChange: (value: Platform) => void;
+  platform: DashboardPlatform;
+  onPlatformChange: (value: DashboardPlatform) => void;
   onAppDeviceChange: (value: DeviceFilter) => void;
   deviceType: DeviceFilter;
   loading: boolean;
   onRefresh: () => void;
 }) {
   const [platformOpen, setPlatformOpen] = useState(false);
-  const [pendingPlatform, setPendingPlatform] = useState<Platform>(platform);
+  const [pendingPlatform, setPendingPlatform] = useState<DashboardPlatform>(platform);
   const controlsRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => setPendingPlatform(platform), [platform]);
   useEffect(() => {
@@ -2019,13 +2022,13 @@ function GlobalDashboardControls({
           title="端类型"
           onClick={() => setPlatformOpen((open) => !open)}
         >
-          {pendingPlatform === 'web' ? <Monitor size={17} /> : <Smartphone size={17} />}
+          {pendingPlatform === 'all' ? <LayoutDashboard size={17} /> : pendingPlatform === 'web' ? <Monitor size={17} /> : <Smartphone size={17} />}
           <span className="icon-control-tooltip">端类型</span>
         </button>
         {platformOpen ? (
           <div className="icon-control-popover" role="menu" aria-label="端类型选择">
             <div className="icon-control-popover-title">端类型</div>
-            {(['web', 'app'] as const).map((value) => (
+            {(['all', 'web', 'app'] as const).map((value) => (
               <button
                 key={value}
                 type="button"
@@ -2034,13 +2037,13 @@ function GlobalDashboardControls({
                 className={cn('icon-control-option', pendingPlatform === value && 'is-active')}
                 onClick={() => {
                   setPendingPlatform(value);
-                  if (value === 'web') {
+                  if (value !== 'app') {
                     onPlatformChange(value);
                     setPlatformOpen(false);
                   }
                 }}
               >
-                {value === 'web' ? <Monitor size={15} /> : <Smartphone size={15} />}
+                {value === 'all' ? <LayoutDashboard size={15} /> : value === 'web' ? <Monitor size={15} /> : <Smartphone size={15} />}
                 {PLATFORM_LABELS[value]}
               </button>
             ))}
@@ -3256,8 +3259,12 @@ const DashboardPage = () => {
   }, [searchParams, setSearchParams]);
 
   const platform = (
-    searchParams.get('platform') === 'app' ? 'app' : 'web'
-  ) as Platform;
+    searchParams.get('platform') === 'all'
+      ? 'all'
+      : searchParams.get('platform') === 'app'
+        ? 'app'
+        : 'web'
+  ) as DashboardPlatform;
   const deviceTypeParam = searchParams.get('deviceType');
   const deviceType: DeviceFilter =
     platform === 'app' &&
@@ -3909,7 +3916,7 @@ const DashboardPage = () => {
             onPlatformChange={(value) =>
               updateSearchParams(
                 { platform: value },
-                value === 'web' ? ['deviceType'] : [],
+                value !== 'app' ? ['deviceType'] : [],
               )
             }
             onAppDeviceChange={(value) =>
