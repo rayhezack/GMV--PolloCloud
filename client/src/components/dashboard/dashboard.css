@@ -1181,6 +1181,7 @@
 .driver-channel-outcome .driver-channel-value { color: var(--ui-ink); font-weight: 700; }
 .driver-channel-outcome .driver-channel-wow.is-positive { color: #327b69; }
 .driver-channel-outcome .driver-channel-wow.is-negative { color: #ad625e; }
+.driver-channel-outcome-tag { justify-self: end; padding: 3px 7px; border-radius: 5px; background: #eceaf7; color: #625a80; font-size: 10px; font-weight: 600; white-space: nowrap; }
 .driver-channel-baseline { color: #7e8a89; font-size: 11px; }
 .driver-channel-contribution.is-positive { color: #327b69; }
 .driver-channel-contribution.is-negative { color: #ad625e; }
@@ -1221,6 +1222,7 @@
 .driver-detail-row { display: grid; grid-template-columns: minmax(140px, 1.2fr) minmax(180px, 1fr) minmax(100px, .5fr); align-items: center; gap: 14px; min-height: 75px; border-bottom: 1px solid #e9efec; font-variant-numeric: tabular-nums; }
 .driver-detail-row:last-child { border-bottom: 0; }
 .driver-detail-outcome { padding-inline: 10px; background: #f7f8fc; }
+.driver-detail-outcome-tag { justify-self: end; padding: 4px 8px; border-radius: 5px; background: #eceaf7; color: #625a80; font-size: 10px; font-weight: 600; }
 .driver-detail-main, .driver-detail-result, .driver-detail-contribution { display: grid; gap: 5px; }
 .driver-detail-main strong { color: #34464b; font-size: 13px; }
 .driver-detail-result, .driver-detail-contribution { text-align: right; }
@@ -1245,7 +1247,7 @@
 .payment-summary-items { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; min-width: 0; }
 .payment-summary-primary .payment-summary-items { grid-template-columns: 1fr; gap: 0; border-left: 1px solid var(--ui-line); }
 .payment-summary-item { min-width: 0; overflow: hidden; border: 1px solid var(--ui-line); border-radius: 10px; background: #fff; }
-.payment-summary-item-head { padding: 12px 16px; border-bottom: 1px solid var(--ui-line); background: var(--ui-surface-subtle); color: var(--ui-ink); font-size: 13px; font-weight: 650; }
+.payment-summary-item-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--ui-line); background: var(--ui-surface-subtle); color: var(--ui-ink); font-size: 13px; font-weight: 650; }
 .payment-summary-item-head[data-index='1'],
 .payment-summary-item-head[data-index='2'],
 .payment-summary-item-head[data-index='3'] { background: var(--ui-surface-subtle); color: var(--ui-ink); }
@@ -1253,16 +1255,23 @@
 .payment-summary-primary .payment-summary-item { display: grid; align-content: center; min-height: 148px; padding: 20px 24px; border: 0; border-radius: 0; }
 .payment-summary-primary .payment-summary-item + .payment-summary-item { border-top: 1px solid var(--ui-line); }
 .payment-summary-primary .payment-summary-item-head { padding: 0; border: 0; background: transparent; color: var(--ui-ink); }
+.payment-chain-link { display: inline-flex; align-items: center; gap: 4px; padding: 3px 5px; border-radius: 5px; color: #746e8e; font-size: 11px; font-weight: 500; white-space: nowrap; }
+.payment-chain-link:hover { background: var(--ui-purple-soft); color: var(--ui-purple-hover); }
+.payment-chain-link:focus-visible { outline: 2px solid #a99cff; outline-offset: 2px; }
 .payment-summary-primary .payment-summary-item-body { gap: 9px; padding: 11px 0 0; }
-.payment-summary-main { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-variant-numeric: tabular-nums; }
+.payment-summary-main { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; font-variant-numeric: tabular-nums; }
 .payment-summary-main strong { color: var(--ui-ink); font-size: 24px; font-weight: 650; white-space: nowrap; }
-.payment-summary-main span { color: var(--ui-muted); font-size: 11px; white-space: nowrap; }
+.payment-summary-wow { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border-radius: 6px; background: #f2f4f3; color: var(--ui-muted); font-size: 11px; line-height: 1; white-space: nowrap; }
+.payment-summary-wow b { font-size: 12px; font-weight: 700; }
+.payment-summary-wow.is-positive { background: #edf7f3; color: #26735f; }
+.payment-summary-wow.is-negative { background: #fff0ef; color: #b84f55; }
 .payment-summary-baseline { color: var(--ui-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .payment-summary-track { display: block; height: 6px; overflow: hidden; border-radius: 3px; background: #efeff5; }
 .payment-summary-track > span { display: block; height: 100%; border-radius: inherit; background: var(--ui-purple); }
 .payment-summary-track > span.is-negative { background: var(--ui-negative); }
 .payment-summary-contribution { display: flex; justify-content: space-between; gap: 8px; color: var(--ui-muted); font-size: 12px; }
-.payment-summary-contribution strong { font-variant-numeric: tabular-nums; }
+.payment-summary-contribution-value { color: #65716f; font-weight: 500; font-variant-numeric: tabular-nums; }
+.payment-summary-contribution-value.is-negative { color: #a96768; }
 .payment-donut-wrap { display: grid; grid-template-columns: 164px minmax(160px, 1fr); align-items: center; gap: 24px; min-width: 0; min-height: 296px; padding: 30px 34px; background: #fff; }
 .payment-donut-graphic { position: relative; width: 158px; height: 158px; }
 .payment-donut { display: block; width: 100%; height: 100%; overflow: visible; }
@@ -1766,6 +1775,23 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+::view-transition-old(root) {
+  animation: dashboard-view-old 180ms ease-in both;
+}
+::view-transition-new(root) {
+  animation: dashboard-view-new 260ms cubic-bezier(.22, 1, .36, 1) both;
+}
+@keyframes dashboard-view-old {
+  to { opacity: 0; transform: translateX(-8px); }
+}
+@keyframes dashboard-view-new {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation-duration: 1ms; }
 }
 @media (min-width: 1100px) {
   .dashboard-shell table th,

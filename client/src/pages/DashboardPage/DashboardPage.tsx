@@ -13,6 +13,7 @@ import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { AnimatePresence, motion, useInView, useReducedMotion } from 'framer-motion';
 import {
+  ArrowUpRight,
   BarChart3,
   Check,
   ChevronLeft,
@@ -22,13 +23,18 @@ import {
   Info,
   LayoutDashboard,
   Loader2,
+  Minus,
   Monitor,
   RefreshCw,
+  Route,
   SlidersHorizontal,
   Smartphone,
+  TrendingDown,
+  TrendingUp,
   UsersRound,
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { flushSync } from 'react-dom';
 import { FileText } from 'lucide-react';
 import { CanvasToolbar } from '@/components/bencho';
 import {
@@ -2352,6 +2358,7 @@ function ContributionTable({
   expandedSelectedKey,
   onSelectExpandedItem,
   onClearExpandedSelection,
+  onOpenChainAttribution,
 }: {
   section: AttributionSection;
   comparison: DashboardAttributionsResponse['comparison'];
@@ -2361,6 +2368,7 @@ function ContributionTable({
   expandedSelectedKey?: string;
   onSelectExpandedItem?: (key: string) => void;
   onClearExpandedSelection?: () => void;
+  onOpenChainAttribution?: (chainType: PaymentChainType) => void;
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const [hoveredSegment, setHoveredSegment] = useState<number | null>(null);
@@ -2384,7 +2392,7 @@ function ContributionTable({
   return (
     <div className="payment-section">
       <div className="payment-section-heading">
-        <SectionHeaderLine title={section.title} description={section.description} count={section.items.length} />
+        <SectionHeaderLine title={section.title} description={section.description} />
         <button type="button" onClick={() => setShowDetails((current) => !current)}>{showDetails ? '返回概览' : '查看明细'}<ChevronRight size={15} aria-hidden="true" /></button>
       </div>
       <AnimatePresence mode="wait" initial={false}>
@@ -2527,14 +2535,43 @@ function ContributionTable({
         <div className="payment-summary-items">
           {section.items.map((item, index) => {
             const contribution = item.contribution ?? 0;
+            const wowChange = item.wowChange ?? 0;
+            const itemChainType: PaymentChainType = item.key.includes('续订') ? 'renewal' : 'active';
             return (
               <div key={item.key} className="payment-summary-item">
-                <div className="payment-summary-item-head" data-index={index}>{item.key}</div>
+                <div className="payment-summary-item-head" data-index={index}>
+                  <span>{item.key}</span>
+                  {isPrimary && onOpenChainAttribution ? (
+                    <motion.button
+                      type="button"
+                      className="payment-chain-link"
+                      onClick={() => onOpenChainAttribution(itemChainType)}
+                      whileHover={{ x: 2 }}
+                      whileTap={{ scale: 0.97 }}
+                      transition={{ duration: 0.16 }}
+                      aria-label={`查看${item.key}链路归因`}
+                    >
+                      <Route size={13} aria-hidden="true" />
+                      <span>链路归因</span>
+                      <ArrowUpRight size={12} aria-hidden="true" />
+                    </motion.button>
+                  ) : null}
+                </div>
                 <div className="payment-summary-item-body">
-                  <div className="payment-summary-main"><strong>{formatContributionValue(item.analysisDailyAvg, section.valueLabel)}</strong><span>{formatSignedPercent(item.wowChange)}</span></div>
+                  <div className="payment-summary-main">
+                    <strong>{formatContributionValue(item.analysisDailyAvg, section.valueLabel)}</strong>
+                    <span className={cn('payment-summary-wow', wowChange > 0 && 'is-positive', wowChange < 0 && 'is-negative')}>
+                      {wowChange > 0 ? <TrendingUp size={14} aria-hidden="true" /> : wowChange < 0 ? <TrendingDown size={14} aria-hidden="true" /> : <Minus size={14} aria-hidden="true" />}
+                      <span>周环比</span>
+                      <b>{formatSignedPercent(item.wowChange)}</b>
+                    </span>
+                  </div>
                   <div className="payment-summary-baseline">基准期 {formatContributionValue(item.baselineDailyAvg, section.valueLabel)}</div>
                   <span className="payment-summary-track"><span className={contribution < 0 ? 'is-negative' : ''} style={{ width: `${Math.min(100, Math.abs(contribution) * 100)}%` }} /></span>
-                  <div className="payment-summary-contribution"><span>贡献度</span><strong className={contribution < 0 ? 'text-red-600' : 'text-emerald-700'}>{formatSignedPercent(item.contribution)}</strong></div>
+                  <div className="payment-summary-contribution">
+                    <span>贡献度</span>
+                    <span className={cn('payment-summary-contribution-value', contribution < 0 ? 'is-negative' : 'is-positive')}>{formatSignedPercent(item.contribution)}</span>
+                  </div>
                 </div>
               </div>
             );
@@ -2873,11 +2910,11 @@ function ContributionRow({
 function DriverTable({
   drivers,
   comparison,
-  showRenewalOutcome = false,
+  outcomeType,
 }: {
   drivers: AttributionDriverItem[];
   comparison: DashboardAttributionsResponse['comparison'];
-  showRenewalOutcome?: boolean;
+  outcomeType: PaymentChainType;
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const channelRef = useRef<HTMLDivElement | null>(null);
@@ -2893,16 +2930,19 @@ function DriverTable({
 
   const changeLabel = getChangeColumnLabel(comparison);
   const maxAbsoluteContribution = Math.max(...drivers.map((driver) => Math.abs(driver.contribution ?? 0)), 0.01);
-  const renewalFactors = ['expireUserCnt', 'renewalRate', 'renewalAov'].map((key) => drivers.find((driver) => driver.metricKey === key));
-  const renewalOutcome = showRenewalOutcome && renewalFactors.every((factor) => factor !== undefined)
+  const outcomeDefinition = outcomeType === 'renewal'
+    ? { label: '自动续订 GMV', keys: ['expireUserCnt', 'renewalRate', 'renewalAov'] }
+    : { label: '主动付费 GMV', keys: ['activeUv', 'subExposeRate', 'subSubmitRate', 'chainPaySuccessRate', 'chainArppu'] };
+  const outcomeFactors = outcomeDefinition.keys.map((key) => drivers.find((driver) => driver.metricKey === key));
+  const outcome = outcomeFactors.every((factor) => factor !== undefined)
     ? {
-        value: renewalFactors.reduce((product, factor) => product * factor!.value, 1),
-        previousValue: renewalFactors.reduce((product, factor) => product * factor!.previousValue, 1),
+        value: outcomeFactors.reduce((product, factor) => product * factor!.value, 1),
+        previousValue: outcomeFactors.reduce((product, factor) => product * factor!.previousValue, 1),
       }
     : null;
-  const renewalChange = renewalOutcome ? renewalOutcome.value - renewalOutcome.previousValue : 0;
-  const renewalWow = renewalOutcome && renewalOutcome.previousValue > 0
-    ? renewalChange / renewalOutcome.previousValue
+  const outcomeChange = outcome ? outcome.value - outcome.previousValue : 0;
+  const outcomeWow = outcome && outcome.previousValue > 0
+    ? outcomeChange / outcome.previousValue
     : null;
 
   return (
@@ -2925,13 +2965,13 @@ function DriverTable({
           <span role="columnheader">贡献度</span>
           <span role="columnheader">贡献度对比</span>
         </div>
-        {renewalOutcome && (
+        {outcome && (
           <div className="driver-channel driver-channel-outcome" role="row">
-            <strong className="driver-channel-label" role="cell">自动续订 GMV</strong>
-            <strong className="driver-channel-value" role="cell">{formatCurrency(renewalOutcome.value)}</strong>
-            <strong className={cn('driver-channel-wow', renewalChange < 0 ? 'is-negative' : 'is-positive')} role="cell">{formatSignedPercent(renewalWow)}</strong>
-            <span className="driver-channel-contribution" role="cell">—</span>
-            <span className="driver-channel-baseline" role="cell">基准期日均 {formatCurrency(renewalOutcome.previousValue)}</span>
+            <strong className="driver-channel-label" role="cell">{outcomeDefinition.label}</strong>
+            <strong className="driver-channel-value" role="cell">{formatCurrency(outcome.value)}</strong>
+            <strong className={cn('driver-channel-wow', outcomeChange < 0 ? 'is-negative' : 'is-positive')} role="cell">{formatSignedPercent(outcomeWow)}</strong>
+            <span className="driver-channel-outcome-tag" role="cell">结果指标</span>
+            <span className="driver-channel-baseline" role="cell">基准期日均 {formatCurrency(outcome.previousValue)}</span>
           </div>
         )}
         {drivers.map((driver, index) => {
@@ -2969,10 +3009,11 @@ function DriverTable({
           <span>链路指标明细</span>
           <span>{comparison?.baselinePeriod ?? '-'} → {comparison?.analysisPeriod ?? '-'}</span>
         </div>
-        {renewalOutcome && (
+        {outcome && (
           <div className="driver-detail-row driver-detail-outcome">
-            <div className="driver-detail-main"><strong>自动续订 GMV</strong><span>基准期 {formatCurrency(renewalOutcome.previousValue)}</span></div>
-            <div className="driver-detail-result"><strong>{formatCurrency(renewalOutcome.value)}</strong><span>增量 {renewalChange >= 0 ? '+' : ''}{formatCurrency(renewalChange)} · {changeLabel} {formatSignedPercent(renewalWow)}</span></div>
+            <div className="driver-detail-main"><strong>{outcomeDefinition.label}</strong><span>基准期 {formatCurrency(outcome.previousValue)}</span></div>
+            <div className="driver-detail-result"><strong>{formatCurrency(outcome.value)}</strong><span>增量 {outcomeChange >= 0 ? '+' : ''}{formatCurrency(outcomeChange)} · {changeLabel} {formatSignedPercent(outcomeWow)}</span></div>
+            <div className="driver-detail-outcome-tag">结果指标</div>
           </div>
         )}
         {drivers.map((driver) => (
@@ -3417,6 +3458,29 @@ const DashboardPage = () => {
         else next.set(key, value);
       });
       startTransition(() => setSearchParams(next, { replace: true }));
+    },
+    [searchParams, setSearchParams],
+  );
+
+  const openChainAttribution = useCallback(
+    (nextChainType: PaymentChainType) => {
+      const next = new URLSearchParams(searchParams);
+      next.set('tab', 'chain');
+      if (nextChainType === 'renewal') next.set('chainType', 'renewal');
+      else next.delete('chainType');
+      ['creationTier', 'userTag', 'planTier'].forEach((key) => next.delete(key));
+
+      const commitNavigation = () => {
+        flushSync(() => setSearchParams(next, { replace: true }));
+      };
+      const transitionDocument = document as Document & {
+        startViewTransition?: (callback: () => void) => unknown;
+      };
+      if (transitionDocument.startViewTransition) {
+        transitionDocument.startViewTransition(commitNavigation);
+      } else {
+        commitNavigation();
+      }
     },
     [searchParams, setSearchParams],
   );
@@ -4042,6 +4106,7 @@ const DashboardPage = () => {
                     <ContributionTable
                       section={section}
                       comparison={attributions.payType?.comparison ?? null}
+                      onOpenChainAttribution={section.title.includes('一级') ? openChainAttribution : undefined}
                     />
                   </div>
                 ))}
@@ -4113,7 +4178,7 @@ const DashboardPage = () => {
                   <DriverTable
                     drivers={chainDrivers}
                     comparison={attributions.chain.comparison}
-                    showRenewalOutcome={isRenewalChain}
+                    outcomeType={chainType}
                   />
                 </div>
               </div>
