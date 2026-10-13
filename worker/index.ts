@@ -1403,7 +1403,7 @@ type ReportProgress = (key: string, status: NonNullable<ReportGenerationStatus['
 
 async function collectReportEvidence(env: Env, request: ReportGenerationRequest, progress: ReportProgress) {
   const { platform, startDate, endDate } = request;
-  const analysisPeriod = shiftDate(endDate, -6);
+  const analysisPeriod = shiftDate(startDate, 7);
   const params = new URLSearchParams({ platform, startDate, endDate, baselinePeriod: startDate, analysisPeriod });
   const readAttribution = async (dimension: string, extra: Record<string, string> = {}) => {
     const query = new URLSearchParams(params);
@@ -1417,10 +1417,11 @@ async function collectReportEvidence(env: Env, request: ReportGenerationRequest,
     await progress(key, 'running');
     const rows = await dailyRows(env, table, { platform, startDate, endDate });
     const dates = new Set(rows.map(row => asText(row.period)));
-    const missing = Array.from({ length: 14 }, (_, i) => shiftDate(startDate, i)).filter(date => !dates.has(date));
+    const expectedDays = Math.floor((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86400000) + 1;
+    const missing = Array.from({ length: expectedDays }, (_, i) => shiftDate(startDate, i)).filter(date => !dates.has(date));
     if (missing.length) throw new Error(`${table} 缺少 ${missing.join('、')} 的数据，请先同步后再生成。`);
     const data = await readAttribution(dimension, extra);
-    await progress(key, 'success', `已读取 ${rows.length.toLocaleString('en-US')} 条记录 · 14 个业务日`);
+    await progress(key, 'success', `已读取 ${rows.length.toLocaleString('en-US')} 条记录 · ${expectedDays} 个业务日`);
     return data;
   };
   const results = await Promise.allSettled([

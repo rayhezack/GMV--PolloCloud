@@ -14,10 +14,15 @@ class PauseRequested extends Error {}
 
 export function validateReportRequest(value: unknown): ReportGenerationRequest {
   const body = value as ReportGenerationRequest;
-  if (!body || !['web', 'app'].includes(body.platform) || body.granularity !== 'week') throw new Error('请选择 Web / App 和完整业务周');
+  if (!body || !['web', 'app'].includes(body.platform) || body.granularity !== 'week') throw new Error('请选择 Web / App 和业务周');
   if (![body.startDate, body.endDate].every(date => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date)) && new Date(date).toISOString().slice(0, 10) === date)) throw new Error('业务周日期无效');
   const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
-  if (new Date(body.endDate).getUTCDay() !== 5 || shift(body.endDate, -13) !== body.startDate || body.endDate >= today) throw new Error('请选择已结束的周六至周五业务周，并包含前一周作为基准');
+  const latestAvailableDate = shift(today, -1);
+  const analysisStart = shift(body.startDate, 7);
+  const isBaselineSaturday = new Date(`${body.startDate}T00:00:00Z`).getUTCDay() === 6;
+  const isCompleteWeek = new Date(`${body.endDate}T00:00:00Z`).getUTCDay() === 5 && shift(body.endDate, -13) === body.startDate && body.endDate <= latestAvailableDate;
+  const isIncompleteWeek = body.endDate >= analysisStart && body.endDate < shift(analysisStart, 6) && body.endDate <= latestAvailableDate;
+  if (!isBaselineSaturday || (!isCompleteWeek && !isIncompleteWeek)) throw new Error('请选择已结束或进行中的周六至周五业务周，并包含前一周作为基准');
   return body;
 }
 

@@ -9,7 +9,7 @@ metadata:
 
 ## Purpose
 
-Write a weekly diagnostic attribution report for one Pollo platform using only supplied evidence. The report must explain the latest complete business week versus the prior complete business week, identify the GMV driver, drill into active-payment behavior when relevant, and mark any product-action explanation as a hypothesis rather than a proven cause.
+Write a business-week diagnostic attribution report for one Pollo platform using only supplied evidence. The report compares either two complete business weeks or the latest incomplete business week against the immediately preceding week, using daily averages over the actual observed business days in an incomplete week. Identify the GMV driver, drill into active-payment behavior when relevant, and mark any product-action explanation as a hypothesis rather than a proven cause.
 
 The model does not recompute metrics, alter evidence tables, invent product actions, or add outside business context.
 
@@ -42,7 +42,7 @@ If active payment is not the main driver, still state total daily average GMV, t
 
 ## Evidence Rules
 
-- Only analyze the baseline week and analysis week. The dashboard and report use daily fact records as the sole analytical source; `weekly` tables are not analytical evidence. Weekly GMV, DAU, and creative activity metrics are daily averages computed after aggregating the daily records within the business week.
+- Only analyze the baseline week and analysis week. The dashboard and report use daily fact records as the sole analytical source; `weekly` tables are not analytical evidence. Weekly GMV, DAU, and creative activity metrics are daily averages computed after aggregating the daily records within the business week. For an incomplete analysis week, divide additive metrics by the actual number of observed business days through the latest available date.
 - For weekly aggregation, sum additive GMV, UV, and count fields first, divide GMV, DAU, active UV, creation UV, and creation task count by the actual number of compared business days, and recompute ratios, AOV, and average creation tasks per active user from the aggregated numerators and denominators. Never sum or directly average daily ratios/AOV, never use `creative_weekly`, and never divide a weekly-deduplicated UV by seven.
 - Total daily average GMV is the sum of active payment and auto renewal in the level-1 pay-type table.
 - Active-payment process factors come from the active-payment chain table.
@@ -55,7 +55,7 @@ If active payment is not the main driver, still state total daily average GMV, t
 - The label `分析期前30日无创作用户` means users whose creation count was zero in that pre-analysis 30-day window. Metrics such as active UV, creation UV, creation penetration rate, and average creation tasks for this tier are measured during the analysis period.
 - Never write contradictory phrases such as `未创作分层创作UV`, `未创作用户创作渗透率`, or `未创作用户在分析期内没有创作`. Write `分析期前30日无创作用户在分析期内的创作UV` or `分析期前30日无创作用户在分析期内的创作渗透率` instead.
 - Contribution denominators differ by table: level-1 pay type uses total GMV change; active-payment result type uses active-payment GMV change; creative tier uses active-payment GMV change; chain driver uses the selected creative tier's active-payment GMV change. Never compare contribution values across these tables as if they share one denominator. Always state whether a chain-driver contribution explains growth or decline in the selected tier. The core/secondary ranking only compares factors within the same selected chain-driver table.
-- Sections 2 and 3 may only state data facts and business meaning. Cause hypotheses belong only in cause diagnosis.
+- Sections 2 and 3 may only state data facts and business meaning. Cause hypotheses belong only in cause diagnosis. Do not call auto renewal or any pay type “一级口径”; use the business name directly, such as “自动续订”.
 - Active-payment result type and creative tier are separate drilldown dimensions under active payment. Do not claim that a creative-tier chain result directly explains first-subscription change. This is a reasoning rule, not report content; do not write dimensional-boundary explanations in the final narrative.
 - Creative activity evidence only describes creation supply, creation behavior, and user composition. Do not infer content attractiveness, content quality, user interest, demand strength, or content-side competitiveness from creation UV, creation task count, creation penetration rate, or average creation tasks.
 - In the current phase, App is analyzed as one aggregate platform. Do not infer iOS/Android, App Store, Google Play, or store-specific causes unless the run explicitly supplies iOS/Android evidence. iOS/Android decomposition is reserved for the next phase.
@@ -141,7 +141,7 @@ The output must be Markdown and must use this exact structure:
 
 **章节结论。**
 
-1. **{用一句业务判断总结一级付费类型证据}：** 客观数据与业务含义。
+1. **{用一句业务判断总结付费类型证据}：** 客观数据与业务含义。
 <!-- PAY_TYPE_PRIMARY_TABLE -->
 2. **{用一句业务判断总结主动付费内部下钻证据}：** 主动付费内部下钻的客观数据与业务含义。
 <!-- PAY_TYPE_DRILL_TABLE -->

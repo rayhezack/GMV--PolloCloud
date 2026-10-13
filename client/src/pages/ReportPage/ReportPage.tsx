@@ -85,7 +85,7 @@ export default function ReportPage() {
   return (
     <div className="dashboard-content report-reading-page">
       <div className="dashboard-heading">
-        <div><h1>诊断报告</h1><p>从核心结论到证据，回溯完整业务周的变化。</p></div>
+        <div><h1>诊断报告</h1><p>从核心结论到证据，回溯业务周的变化。</p></div>
         {report && <Button variant="outline" size="sm" className="rounded-xl" onClick={() => void copyAnalysis(report.markdown)}><Copy size={14} />复制报告</Button>}
       </div>
       <section className="report-controls">

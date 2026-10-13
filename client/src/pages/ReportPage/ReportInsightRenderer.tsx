@@ -66,10 +66,11 @@ function formatSummary(summary: string) {
     .join('\n\n');
 }
 const sectionTitle = (title: string) => title.replace(/^[一二三四五六七八九十]+[、．.]\s*/, '');
-const weekStart = (end: string) => new Date(Date.parse(`${end}T00:00:00Z`) - 6 * 86400000).toISOString().slice(0, 10);
+const normalizeReportNarrative = (markdown: string) => markdown.replace(/自动续订一级口径/g, '自动续订').replace(/一级口径/g, '');
+const analysisWeekStart = (baselineStart: string) => new Date(Date.parse(`${baselineStart}T00:00:00Z`) + 7 * 86400000).toISOString().slice(0, 10);
 
 export function ReportInsightArticle({ report }: { report: ReportSummary }) {
-  const { summary, sections } = parseReport(report.markdown);
+  const { summary, sections } = parseReport(normalizeReportNarrative(report.markdown));
   const cause = sections.find(section => /原因诊断/.test(section.title));
   const advice = sections.find(section => /行动建议|优化建议|建议/.test(section.title));
   const evidence = sections.filter(section => section !== cause && section !== advice);
@@ -79,7 +80,7 @@ export function ReportInsightArticle({ report }: { report: ReportSummary }) {
       <aside className="report-reading-rail">
         <div className="report-edition">
           <span>{report.platform === 'web' ? 'Web' : 'App'} 端 · 业务周报</span>
-          <strong>{weekStart(report.periodEnd)}<br /><span className="report-date-to">至</span> {report.periodEnd}</strong>
+          <strong>{analysisWeekStart(report.periodStart)}<br /><span className="report-date-to">至</span> {report.periodEnd}</strong>
           <p>对比前一业务周</p>
         </div>
         <nav aria-label="报告目录">
@@ -87,6 +88,7 @@ export function ReportInsightArticle({ report }: { report: ReportSummary }) {
           {cause && <a href="#report-cause">原因判断</a>}
           <a href="#report-actions">行动建议</a>
           <a href="#report-evidence">数据与论证</a>
+          <a href={`/?tab=data&platform=${report.platform}`}>数据口径</a>
         </nav>
         <p className="report-update">更新于<br />{formatGeneratedAt(report.generatedAt)}</p>
       </aside>
