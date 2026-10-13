@@ -1293,8 +1293,9 @@
 .payment-drill-chart-wow.is-negative { color: var(--ui-negative); }
 .payment-drill-chart-contribution { display: grid; grid-template-columns: minmax(80px, 1fr) 70px; align-items: center; gap: 12px; }
 .payment-drill-chart-track { position: relative; display: block; height: 8px; overflow: visible; border-radius: 4px; background: #efeff5; outline: none; }
-.payment-drill-chart-track > span:first-child { display: block; height: 100%; border-radius: inherit; background: var(--ui-purple); }
-.payment-drill-chart-track > span:first-child.is-negative { background: var(--ui-negative); }
+.payment-drill-chart-track::before { content: ''; position: absolute; left: calc(50% - .5px); top: -3px; bottom: -3px; width: 1px; background: #b8b8c6; }
+.payment-drill-chart-track > span:first-child { position: absolute; top: 0; left: 50%; display: block; height: 100%; border-radius: 0 4px 4px 0; background: var(--ui-purple); transform-origin: left; }
+.payment-drill-chart-track > span:first-child.is-negative { right: 50%; left: auto; border-radius: 4px 0 0 4px; background: var(--ui-negative); transform-origin: right; }
 .payment-drill-chart-tooltip { position: absolute; z-index: 2; left: 50%; bottom: calc(100% + 8px); display: block; width: max-content; padding: 5px 7px; border-radius: 5px; background: var(--ui-ink); color: #fff; font-size: 11px; font-weight: 550; line-height: 1; opacity: 0; pointer-events: none; transform: translate(-50%, 4px); transition: opacity .16s ease, transform .16s ease; }
 .payment-drill-chart-track:hover .payment-drill-chart-tooltip,
 .payment-drill-chart-track:focus-visible .payment-drill-chart-tooltip { opacity: 1; transform: translate(-50%, 0); }

@@ -2630,7 +2630,7 @@ function PaymentDrillChart({
                 tabIndex={0}
                 aria-label={`${item.key}贡献度 ${formatSignedPercent(item.contribution)}`}
               >
-                <span className={cn(contribution < 0 && 'is-negative')} style={{ width: `${Math.min(100, Math.abs(contribution) / maxContribution * 100)}%` }} />
+                <span className={cn(contribution < 0 && 'is-negative')} style={{ width: `${Math.min(50, Math.abs(contribution) / maxContribution * 50)}%` }} />
                 <span className="payment-drill-chart-tooltip" role="tooltip">贡献度 {formatSignedPercent(item.contribution)}</span>
               </span>
               <strong className={cn(contribution < 0 ? 'is-negative' : 'is-positive')}>{formatSignedPercent(item.contribution)}</strong>
