@@ -29,6 +29,7 @@ import {
   Route,
   SlidersHorizontal,
   Smartphone,
+  Table2,
   TrendingDown,
   TrendingUp,
   UsersRound,
@@ -2343,6 +2344,7 @@ function ContributionTable({
   onOpenChainAttribution?: (chainType: PaymentChainType) => void;
 }) {
   const [showDetails, setShowDetails] = useState(false);
+  const [drillLayout, setDrillLayout] = useState<'chart' | 'table'>('chart');
   const [hoveredSegment, setHoveredSegment] = useState<number | null>(null);
   if (section.items.length === 0) {
     return (
@@ -2365,11 +2367,39 @@ function ContributionTable({
     <div className="payment-section">
       <div className="payment-section-heading">
         <SectionHeaderLine title={section.title} description={section.description} />
-        <button type="button" onClick={() => setShowDetails((current) => !current)}>{showDetails ? '返回概览' : '查看明细'}<ChevronRight size={15} aria-hidden="true" /></button>
+        {isPrimary ? (
+          <button type="button" onClick={() => setShowDetails((current) => !current)}>{showDetails ? '返回概览' : '查看明细'}<ChevronRight size={15} aria-hidden="true" /></button>
+        ) : (
+          <div className="payment-layout-switch" role="tablist" aria-label="主动付费下钻展示方式">
+              <motion.button
+                type="button"
+                role="tab"
+                aria-selected={drillLayout === 'chart'}
+                className={cn(drillLayout === 'chart' && 'is-active')}
+                onClick={() => setDrillLayout('chart')}
+                whileTap={{ scale: 0.96 }}
+              >
+                {drillLayout === 'chart' && <motion.span layoutId="payment-drill-layout-active" className="payment-layout-switch-active" transition={{ type: 'spring', stiffness: 480, damping: 34 }} />}
+                <span className="payment-layout-switch-label"><BarChart3 size={14} aria-hidden="true" />图表</span>
+              </motion.button>
+            <motion.button
+              type="button"
+              role="tab"
+              aria-selected={drillLayout === 'table'}
+              className={cn(drillLayout === 'table' && 'is-active')}
+              onClick={() => setDrillLayout('table')}
+              whileTap={{ scale: 0.96 }}
+            >
+              {drillLayout === 'table' && <motion.span layoutId="payment-drill-layout-active" className="payment-layout-switch-active" transition={{ type: 'spring', stiffness: 480, damping: 34 }} />}
+              <span className="payment-layout-switch-label"><Table2 size={14} aria-hidden="true" />表格</span>
+            </motion.button>
+          </div>
+        )}
       </div>
-      <AnimatePresence mode="wait" initial={false}>
-      {showDetails ? (
-      <motion.div key="details" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.24 }}>
+      <motion.div layout className="payment-layout-content" transition={{ layout: { type: 'spring', stiffness: 360, damping: 34 } }}>
+      <AnimatePresence mode="sync" initial={false}>
+      {(isPrimary ? showDetails : drillLayout === 'table') ? (
+      <motion.div layout key="details" initial={{ opacity: 0, scale: 0.985 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.985 }} transition={{ layout: { type: 'spring', stiffness: 360, damping: 32 }, opacity: { duration: 0.16 }, scale: { type: 'spring', stiffness: 360, damping: 32 } }}>
       <div className="hidden overflow-hidden rounded-2xl bg-white lg:block">
         <Table className="dashboard-data-table w-full table-fixed [&_th]:whitespace-normal">
           <TableHeader className="[&_tr]:border-gray-100">
@@ -2459,7 +2489,7 @@ function ContributionTable({
       </div>
       </motion.div>
       ) : (
-      <motion.div key="summary" className={cn('payment-summary', isPrimary && 'payment-summary-primary')} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.24 }}>
+      <motion.div layout key={isPrimary ? 'summary' : 'chart'} className={cn('payment-summary', isPrimary && 'payment-summary-primary')} initial={{ opacity: 0, scale: 0.985 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.985 }} transition={{ layout: { type: 'spring', stiffness: 360, damping: 32 }, opacity: { duration: 0.16 }, scale: { type: 'spring', stiffness: 360, damping: 32 } }}>
         {isPrimary && (
           <div className="payment-donut-wrap">
             <div className="payment-donut-graphic">
@@ -2504,7 +2534,7 @@ function ContributionTable({
             </div>
           </div>
         )}
-        <div className="payment-summary-items">
+        {isPrimary ? <div className="payment-summary-items">
           {section.items.map((item, index) => {
             const contribution = item.contribution ?? 0;
             const wowChange = item.wowChange ?? 0;
@@ -2548,10 +2578,67 @@ function ContributionTable({
               </div>
             );
           })}
-        </div>
+        </div> : <PaymentDrillChart section={section} changeLabel={changeLabel} />}
       </motion.div>
       )}
       </AnimatePresence>
+      </motion.div>
+    </div>
+  );
+}
+
+function PaymentDrillChart({
+  section,
+  changeLabel,
+}: {
+  section: AttributionSection;
+  changeLabel: string;
+}) {
+  const maxContribution = Math.max(...section.items.map((item) => Math.abs(item.contribution ?? 0)), 0.01);
+  return (
+    <div className="payment-drill-chart" role="table" aria-label="主动付费结果类型贡献图">
+      <div className="payment-drill-chart-head" role="row">
+        <span role="columnheader">付费类型</span>
+        <span role="columnheader">分析期日均 GMV</span>
+        <span role="columnheader">{changeLabel}</span>
+        <span role="columnheader">贡献度</span>
+      </div>
+      {section.items.map((item, index) => {
+        const contribution = item.contribution ?? 0;
+        const wowChange = item.wowChange ?? 0;
+        return (
+          <motion.div
+            key={item.key}
+            className="payment-drill-chart-row"
+            role="row"
+            layout
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ layout: { type: 'spring', stiffness: 420, damping: 34 }, opacity: { duration: 0.18, delay: index * 0.035 }, y: { type: 'spring', stiffness: 420, damping: 34, delay: index * 0.035 } }}
+          >
+            <div className="payment-drill-chart-label" role="cell">
+              <strong>{item.key}</strong>
+              <small>基准期 {formatContributionValue(item.baselineDailyAvg, section.valueLabel)}</small>
+            </div>
+            <strong className="payment-drill-chart-value" role="cell">{formatContributionValue(item.analysisDailyAvg, section.valueLabel)}</strong>
+            <span className={cn('payment-drill-chart-wow', wowChange > 0 && 'is-positive', wowChange < 0 && 'is-negative')} role="cell">
+              {wowChange > 0 ? <TrendingUp size={14} aria-hidden="true" /> : wowChange < 0 ? <TrendingDown size={14} aria-hidden="true" /> : <Minus size={14} aria-hidden="true" />}
+              {formatSignedPercent(item.wowChange)}
+            </span>
+            <div className="payment-drill-chart-contribution" role="cell">
+              <span
+                className="payment-drill-chart-track"
+                tabIndex={0}
+                aria-label={`${item.key}贡献度 ${formatSignedPercent(item.contribution)}`}
+              >
+                <span className={cn(contribution < 0 && 'is-negative')} style={{ width: `${Math.min(100, Math.abs(contribution) / maxContribution * 100)}%` }} />
+                <span className="payment-drill-chart-tooltip" role="tooltip">贡献度 {formatSignedPercent(item.contribution)}</span>
+              </span>
+              <strong className={cn(contribution < 0 ? 'is-negative' : 'is-positive')}>{formatSignedPercent(item.contribution)}</strong>
+            </div>
+          </motion.div>
+        );
+      })}
     </div>
   );
 }

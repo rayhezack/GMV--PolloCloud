@@ -1269,6 +1269,39 @@
 .payment-summary-contribution { display: flex; justify-content: space-between; gap: 8px; color: var(--ui-muted); font-size: 12px; }
 .payment-summary-contribution-value { color: #65716f; font-weight: 500; font-variant-numeric: tabular-nums; }
 .payment-summary-contribution-value.is-negative { color: #a96768; }
+.payment-layout-switch { position: relative; display: inline-flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--ui-line); }
+.payment-layout-switch button { position: relative; display: inline-flex; align-items: center; min-height: 32px; padding: 4px 10px; border-radius: 999px; color: var(--ui-muted); font-size: 12px; font-weight: 550; transition: color .18s ease; }
+.payment-layout-switch button:hover { color: var(--ui-ink); }
+.payment-layout-switch button.is-active { color: var(--ui-purple-hover); }
+.payment-layout-switch-active { position: absolute; z-index: 0; inset: 0; border-radius: inherit; background: var(--ui-purple-soft); }
+.payment-layout-switch-label { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 6px; }
+.payment-layout-switch button:focus-visible { outline: 2px solid #a99cff; outline-offset: 2px; }
+.payment-layout-content { min-width: 0; overflow: hidden; }
+.payment-drill-chart { min-width: 0; padding: 10px 0 0; }
+.payment-drill-chart-head,
+.payment-drill-chart-row { display: grid; grid-template-columns: minmax(150px, 1.2fr) minmax(120px, .8fr) minmax(100px, .7fr) minmax(220px, 1.6fr); align-items: center; gap: 20px; }
+.payment-drill-chart-head { padding: 0 0 10px; color: var(--ui-muted); font-size: 11px; }
+.payment-drill-chart-head span:not(:first-child),
+.payment-drill-chart-row > :not(:first-child) { text-align: right; }
+.payment-drill-chart-row { min-height: 72px; border-top: 1px solid var(--ui-line); font-variant-numeric: tabular-nums; }
+.payment-drill-chart-label { display: grid; gap: 4px; min-width: 0; }
+.payment-drill-chart-label strong { overflow: hidden; color: var(--ui-ink); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.payment-drill-chart-label small { color: var(--ui-muted); font-size: 11px; }
+.payment-drill-chart-value { color: var(--ui-ink); font-size: 18px; font-weight: 650; }
+.payment-drill-chart-wow { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; color: var(--ui-muted); font-size: 12px; }
+.payment-drill-chart-wow.is-positive { color: var(--ui-positive); }
+.payment-drill-chart-wow.is-negative { color: var(--ui-negative); }
+.payment-drill-chart-contribution { display: grid; grid-template-columns: minmax(80px, 1fr) 70px; align-items: center; gap: 12px; }
+.payment-drill-chart-track { position: relative; display: block; height: 8px; overflow: visible; border-radius: 4px; background: #efeff5; outline: none; }
+.payment-drill-chart-track > span:first-child { display: block; height: 100%; border-radius: inherit; background: var(--ui-purple); }
+.payment-drill-chart-track > span:first-child.is-negative { background: var(--ui-negative); }
+.payment-drill-chart-tooltip { position: absolute; z-index: 2; left: 50%; bottom: calc(100% + 8px); display: block; width: max-content; padding: 5px 7px; border-radius: 5px; background: var(--ui-ink); color: #fff; font-size: 11px; font-weight: 550; line-height: 1; opacity: 0; pointer-events: none; transform: translate(-50%, 4px); transition: opacity .16s ease, transform .16s ease; }
+.payment-drill-chart-track:hover .payment-drill-chart-tooltip,
+.payment-drill-chart-track:focus-visible .payment-drill-chart-tooltip { opacity: 1; transform: translate(-50%, 0); }
+.payment-drill-chart-track:focus-visible { outline: 2px solid #a99cff; outline-offset: 3px; }
+.payment-drill-chart-contribution strong { font-size: 13px; }
+.payment-drill-chart-contribution .is-positive { color: var(--ui-positive); }
+.payment-drill-chart-contribution .is-negative { color: var(--ui-negative); }
 .payment-donut-wrap { display: grid; grid-template-columns: 164px minmax(160px, 1fr); align-items: center; gap: 24px; min-width: 0; min-height: 296px; padding: 30px 34px; background: #fff; }
 .payment-donut-graphic { position: relative; width: 158px; height: 158px; }
 .payment-donut { display: block; width: 100%; height: 100%; overflow: visible; }
@@ -1300,6 +1333,14 @@
   .payment-donut-wrap { grid-template-columns: 120px minmax(0, 1fr); gap: 14px; min-height: 0; padding: 24px 18px; }
   .payment-donut-graphic { width: 120px; height: 120px; }
   .payment-section-heading { flex-wrap: wrap; }
+  .payment-layout-switch { order: 3; width: 100%; }
+  .payment-layout-switch button { flex: 1; justify-content: center; }
+  .payment-drill-chart-head { display: none; }
+  .payment-drill-chart-row { grid-template-columns: minmax(0, 1fr) auto; gap: 7px 14px; min-height: 88px; padding: 14px 0; }
+  .payment-drill-chart-label { grid-column: 1; grid-row: 1; }
+  .payment-drill-chart-value { grid-column: 2; grid-row: 1; font-size: 16px; }
+  .payment-drill-chart-wow { grid-column: 1; grid-row: 2; justify-content: flex-start; }
+  .payment-drill-chart-contribution { grid-column: 2; grid-row: 2; grid-template-columns: 54px auto; gap: 8px; }
 }
 .driver-channel-track::before {
   content: '';
