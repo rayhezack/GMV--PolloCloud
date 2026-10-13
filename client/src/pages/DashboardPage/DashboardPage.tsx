@@ -2622,7 +2622,6 @@ function PaymentDrillChart({
             </div>
             <strong className="payment-drill-chart-value" role="cell">{formatContributionValue(item.analysisDailyAvg, section.valueLabel)}</strong>
             <span className={cn('payment-drill-chart-wow', wowChange > 0 && 'is-positive', wowChange < 0 && 'is-negative')} role="cell">
-              {wowChange > 0 ? <TrendingUp size={14} aria-hidden="true" /> : wowChange < 0 ? <TrendingDown size={14} aria-hidden="true" /> : <Minus size={14} aria-hidden="true" />}
               {formatSignedPercent(item.wowChange)}
             </span>
             <div className="payment-drill-chart-contribution" role="cell">

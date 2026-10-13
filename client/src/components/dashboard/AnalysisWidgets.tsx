@@ -73,6 +73,26 @@ function formatTrendDate(period: string) {
   return period.length >= 10 ? period.slice(5).replace('-', '/') : period;
 }
 
+function resolveTrendDialogYAxisDomain(
+  rows: OverviewTrendPoint[],
+  metric: RevenueMetric | null,
+): [number, number] {
+  const key = metric ?? 'totalGmv';
+  const values = rows
+    .map((row) => Number(row[key] ?? 0))
+    .filter((value) => Number.isFinite(value));
+  if (values.length === 0) return [0, 1];
+
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const span = Math.max(maxValue - minValue, Math.abs(maxValue) * 0.04, 1);
+  const padding = span * 0.2;
+  const lower = minValue >= 0 ? Math.max(0, minValue - padding) : minValue - padding;
+  const upper = maxValue + padding;
+
+  return lower === upper ? [lower - 1, upper + 1] : [lower, upper];
+}
+
 function rangeRows(
   rows: OverviewTrendPoint[],
   days: number,
@@ -352,6 +372,7 @@ function TrendDialog({
   const definition = definitions.find((item) => item.metric === metric);
   const title = definition?.key ?? '趋势';
   const money = (value: number) => '$' + Math.round(value).toLocaleString('en-US');
+  const yAxisDomain = resolveTrendDialogYAxisDomain(rows, metric);
   return (
     <Dialog open={metric !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-4xl border-[#e7e7ef] bg-white p-6">
@@ -364,7 +385,7 @@ function TrendDialog({
             <AreaChart data={rows} margin={{ top: 12, right: 20, left: 4, bottom: 4 }}>
               <CartesianGrid vertical={false} stroke="#ececf3" />
               <XAxis dataKey="period" tickLine={false} axisLine={false} tickFormatter={formatTrendDate} />
-              <YAxis tickLine={false} axisLine={false} tickFormatter={(value) => money(Number(value))} width={78} />
+              <YAxis domain={yAxisDomain} tickLine={false} axisLine={false} tickFormatter={(value) => money(Number(value))} width={78} />
               <Tooltip
                 labelFormatter={(label) => formatTrendDate(String(label))}
                 formatter={(value) => [money(Number(value)), title]}
