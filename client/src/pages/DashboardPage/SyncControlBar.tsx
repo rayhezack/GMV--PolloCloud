@@ -330,57 +330,58 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
                     : '仅管理员可同步'}
             </Button>
           </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
+          <AlertDialogContent className="sync-confirm-dialog">
+            <AlertDialogHeader className="sync-confirm-header">
               <AlertDialogTitle>确认拉取最新数据</AlertDialogTitle>
-              <AlertDialogDescription>
+              <AlertDialogDescription className="sync-confirm-description">
                 系统会先完成全部 MaxCompute 查询并暂存结果；确认全部成功后，
                 再统一替换 Base 中对应日期的数据。
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <div className="grid gap-3 rounded-2xl bg-gray-50 p-4 text-sm">
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">数据库已有数据至</span>
-                <span className="font-mono text-foreground">
+            <div className="sync-confirm-summary">
+              <div className="sync-confirm-meta-row">
+                <span>数据库已有数据至</span>
+                <strong>
                   {plan?.latestStoredDate ?? '暂无已入库日期'}
-                </span>
+                </strong>
               </div>
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">本次拉取日期</span>
-                <span className="font-mono text-foreground">
+              <div className="sync-confirm-meta-row">
+                <span>本次拉取日期</span>
+                <strong>
                   {plan ? `${plan.startDate} ~ ${plan.endDate}` : '-'}
-                </span>
+                </strong>
               </div>
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">同步端口</span>
-                <span className="font-mono text-foreground">
+              <div className="sync-confirm-meta-row">
+                <span>同步端口</span>
+                <strong>
                   {formatPlatforms(plan)}
-                </span>
+                </strong>
               </div>
-              <div>
-                <div className="text-muted-foreground">本次待更新</div>
-                <div className="mt-2 flex flex-wrap gap-2">
+              <div className="sync-confirm-updates">
+                <div className="sync-confirm-updates-label">本次待更新</div>
+                <div className="sync-confirm-tags">
                   {plan?.missingItems.slice(0, 8).map((item) => (
                     <Badge
                       key={`${item.platform}-${item.sheet}`}
                       variant="outline"
-                      className="rounded-full bg-white"
+                      className="sync-confirm-tag"
                     >
                       {item.platform} · {SHEET_LABELS[item.sheet]}
                     </Badge>
                   ))}
                   {plan && plan.missingItems.length > 8 ? (
-                    <Badge variant="outline" className="rounded-full bg-white">
+                    <Badge variant="outline" className="sync-confirm-tag">
                       +{plan.missingItems.length - 8}
                     </Badge>
                   ) : null}
                 </div>
               </div>
             </div>
-            <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogFooter className="sync-confirm-footer">
+              <AlertDialogCancel className="sync-confirm-cancel">取消</AlertDialogCancel>
               <AlertDialogAction
                 disabled={!canSync}
+                className="sync-confirm-action"
                 onClick={() => {
                   void handleSync();
                 }}
