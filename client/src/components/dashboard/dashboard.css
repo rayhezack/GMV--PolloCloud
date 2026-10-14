@@ -2410,43 +2410,30 @@
 .creative-detail-table .creative-table-scroll {
   max-height: 420px;
   overflow: auto;
-  border: 1px solid var(--ui-line);
-  border-radius: 8px;
 }
 .creative-detail-table thead {
   position: sticky;
   top: 0;
   z-index: 1;
 }
-.creative-detail-cell {
-  vertical-align: top;
+.creative-detail-tier-head {
+  min-width: 160px;
 }
-.creative-detail-current,
-.creative-detail-previous,
-.creative-detail-change {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-  line-height: 1.35;
+.creative-detail-metric-head {
+  min-width: 180px;
+}
+.creative-detail-value,
+.creative-detail-change-value {
+  min-width: 60px;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
-.creative-detail-current span,
-.creative-detail-previous span:first-child,
-.creative-detail-change span:first-child {
-  color: var(--ui-muted);
-  font-size: 10px;
-  font-family: inherit;
-  font-weight: 500;
-}
-.creative-detail-current strong {
+.creative-detail-current-value {
   color: var(--ui-ink);
   font-weight: 650;
 }
-.creative-detail-previous,
-.creative-detail-change {
-  margin-top: 3px;
-  color: var(--ui-muted);
-  font-size: 11px;
+.creative-detail-change-value {
+  color: var(--ui-positive);
 }
 .creative-detail-caption {
   margin-bottom: 10px;
@@ -2462,4 +2449,15 @@
   .creative-block-heading { display: grid; gap: 12px; }
   .creative-layer-actions { justify-content: space-between; }
   .creative-metric-select { flex: 1; }
+}
+
+/* Keep the canvas open and rely on spacing for grouping. */
+.dashboard-panel,
+.dashboard-action-bar,
+.metric-menu-trigger {
+  border: 0 !important;
+}
+.dashboard-panel,
+.dashboard-action-bar {
+  box-shadow: none !important;
 }

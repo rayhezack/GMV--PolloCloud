@@ -3176,23 +3176,6 @@ function CreativeMetricsTable({
     ]),
     1,
   );
-  const renderCreativeDetailCell = (metricKey: CreativeMetricKey, value: number, previousValue: number) => (
-    <TableCell key={metricKey} className="creative-detail-cell text-right font-mono text-sm">
-      <div className="creative-detail-current">
-        <span>分析周</span>
-        <strong>{formatMetricByKey(metricKey, value)}</strong>
-      </div>
-      <div className="creative-detail-previous">
-        <span>基准周</span>
-        <span>{formatMetricByKey(metricKey, previousValue)}</span>
-      </div>
-      <div className="creative-detail-change">
-        <span>周环比</span>
-        <span>{formatSignedPercent(previousValue > 0 ? (value - previousValue) / previousValue : null)}</span>
-      </div>
-    </TableCell>
-  );
-
   return (
     <div className="creative-layer-block">
         <div className="creative-block-heading creative-layer-heading">
@@ -3290,26 +3273,45 @@ function CreativeMetricsTable({
               <Table className="dashboard-data-table min-w-[1020px]">
                 <TableHeader className="[&_tr]:border-gray-100">
                   <TableRow className="bg-gray-50 hover:bg-gray-50">
-                    <TableHead>创作分层</TableHead>
-                    {CREATIVE_METRICS.map((metricKey) => <TableHead key={metricKey} className="text-right">{data.metricLabels[metricKey] ?? metricKey}</TableHead>)}
+                    <TableHead rowSpan={2} className="creative-detail-tier-head">创作分层</TableHead>
+                    {CREATIVE_METRICS.map((metricKey) => (
+                      <TableHead key={metricKey} colSpan={3} className="creative-detail-metric-head text-center">
+                        {data.metricLabels[metricKey] ?? metricKey}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                  <TableRow className="bg-gray-50 hover:bg-gray-50">
+                    {CREATIVE_METRICS.flatMap((metricKey) => [
+                      <TableHead key={`${metricKey}-previous`} className="text-right">基准周</TableHead>,
+                      <TableHead key={`${metricKey}-current`} className="text-right">分析周</TableHead>,
+                      <TableHead key={`${metricKey}-change`} className="text-right">周环比</TableHead>,
+                    ])}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   <TableRow className="creative-detail-overall-row border-gray-100 hover:bg-gray-50">
                     <TableCell className="font-semibold text-foreground">总体</TableCell>
-                    {CREATIVE_METRICS.map((metricKey) => {
+                    {CREATIVE_METRICS.flatMap((metricKey) => {
                       const previousValue = previousTotals[metricKey];
                       const value = currentTotals[metricKey];
-                      return renderCreativeDetailCell(metricKey, value, previousValue);
+                      return [
+                        <TableCell key={`${metricKey}-previous`} className="creative-detail-value text-right">{formatMetricByKey(metricKey, previousValue)}</TableCell>,
+                        <TableCell key={`${metricKey}-current`} className="creative-detail-value creative-detail-current-value text-right">{formatMetricByKey(metricKey, value)}</TableCell>,
+                        <TableCell key={`${metricKey}-change`} className="creative-detail-change-value text-right">{formatSignedPercent(previousValue > 0 ? (value - previousValue) / previousValue : null)}</TableCell>,
+                      ];
                     })}
                   </TableRow>
                   {data.items.map((item) => (
                     <TableRow key={item.key} className="border-gray-100 hover:bg-gray-50">
                       <TableCell className="font-medium text-foreground">{formatTierLabel(item.key)}</TableCell>
-                      {CREATIVE_METRICS.map((metricKey) => {
+                      {CREATIVE_METRICS.flatMap((metricKey) => {
                         const previousValue = getCreativeMetricValue(item, metricKey, 'previous');
                         const value = getCreativeMetricValue(item, metricKey, 'current');
-                        return renderCreativeDetailCell(metricKey, value, previousValue);
+                        return [
+                          <TableCell key={`${metricKey}-previous`} className="creative-detail-value text-right">{formatMetricByKey(metricKey, previousValue)}</TableCell>,
+                          <TableCell key={`${metricKey}-current`} className="creative-detail-value creative-detail-current-value text-right">{formatMetricByKey(metricKey, value)}</TableCell>,
+                          <TableCell key={`${metricKey}-change`} className="creative-detail-change-value text-right">{formatSignedPercent(previousValue > 0 ? (value - previousValue) / previousValue : null)}</TableCell>,
+                        ];
                       })}
                     </TableRow>
                   ))}
@@ -3327,20 +3329,17 @@ function SectionHeaderLine({
   description,
   count,
   hint,
-  badge,
 }: {
   title: string;
   description?: string;
   count?: number;
   hint?: string;
-  badge?: ReactNode;
 }) {
   return (
     <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
       <div>
         <div className="flex flex-wrap items-center gap-3">
           <h3 className="text-lg font-medium text-gray-900">{title}</h3>
-          {badge}
           {hint ? (
             <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
               {hint}
@@ -4329,11 +4328,6 @@ const DashboardPage = () => {
                   <SectionHeaderLine
                     title={isRenewalChain ? '自动续订因子拆解' : '支付链路指标拆解'}
                     description={activeChainDriverDescription}
-                    badge={!isRenewalChain ? (
-                      <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-600">
-                        链路指标
-                      </span>
-                    ) : undefined}
                     count={isRenewalChain || activeCreationTier !== 'all' ? chainDrivers.length : undefined}
                   />
                   <DriverTable
