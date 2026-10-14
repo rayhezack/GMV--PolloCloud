@@ -29,7 +29,7 @@ export const DASHBOARD_VIEWS = [
   {
     id: 'creative',
     label: '创作积极性',
-    description: '对照创作活跃变化，作为业务诊断的侧证。',
+    description: '创作 UV、任务数按业务日均展示，渗透率为创作 UV ÷ 活跃 UV；分层按分析期开始前 30 日创作次数划分。',
     icon: Zap,
   },
   {

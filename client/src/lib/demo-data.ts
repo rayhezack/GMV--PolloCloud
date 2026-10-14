@@ -188,7 +188,13 @@ function buildAttribution(
   const items = dimension === 'pay_type' ? payItems : dimension === 'chain' ? chainItems : creativeItems;
   const primaryPayItems = [
     item('主动付费', 53100 * scale, 4550 * scale),
-    item('自动续订', 5262 * scale, -103 * scale),
+    // Keep the primary automatic-renewal total equal to its Lite/Pro/Ultra drilldown.
+    item('自动续订', 5262 * scale, 448 * scale),
+  ];
+  const renewalPlanItems = [
+    item('LITE', 1420 * scale, 180 * scale),
+    item('PRO', 2860 * scale, 310 * scale),
+    item('ULTRA', 982 * scale, -42 * scale),
   ];
   const renewalTierScale = options.planTier === 'LITE' ? 0.26 : options.planTier === 'PRO' ? 0.56 : options.planTier === 'ULTRA' ? 0.18 : 1;
   const renewalDrivers = [
@@ -231,6 +237,7 @@ function buildAttribution(
       ? [
           { title: '一级付费类型贡献', description: '只比较主动付费和自动续订对周度 GMV 变化的贡献。', valueLabel: 'GMV', metricLabels: {}, items: primaryPayItems },
           { title: '主动付费下钻', description: '只在主动付费内部拆解首订、积分包、套餐升级、重新订阅等。', valueLabel: 'GMV', metricLabels: {}, items: payItems },
+          { title: '自动续订套餐下钻', description: '只在自动续订内部拆解 Lite、Pro、Ultra 套餐对 GMV 变化的贡献。', valueLabel: 'GMV', metricLabels: {}, items: renewalPlanItems },
         ]
       : dimension === 'chain' && options.chainType !== 'renewal'
       ? [

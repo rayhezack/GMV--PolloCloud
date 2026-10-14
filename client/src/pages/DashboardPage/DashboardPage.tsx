@@ -26,7 +26,6 @@ import {
   Minus,
   Monitor,
   RefreshCw,
-  Route,
   SlidersHorizontal,
   Smartphone,
   Table2,
@@ -91,6 +90,11 @@ import {
   TableHeader,
   TableRow,
 } from '@client/src/components/ui/table';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@client/src/components/ui/tooltip';
 import { cn } from '@client/src/lib/utils';
 import {
   getBusinessWeekStart,
@@ -877,6 +881,13 @@ function formatTierLabel(key: string): string {
   return CREATIVE_TIER_LABELS[key] ?? key;
 }
 
+function formatPlanTierLabel(key: string): string {
+  const normalized = key.toUpperCase();
+  return normalized === 'LITE' || normalized === 'PRO' || normalized === 'ULTRA'
+    ? normalized.charAt(0) + normalized.slice(1).toLowerCase()
+    : key;
+}
+
 function getCreativeMetricValue(
   item: AttributionItem,
   metricKey: CreativeMetricKey,
@@ -1121,7 +1132,7 @@ function PageSection({
   className,
   children,
 }: {
-  title: string;
+  title?: string;
   description?: string;
   action?: ReactNode;
   fullBleed?: boolean;
@@ -1130,19 +1141,23 @@ function PageSection({
 }) {
   return (
     <section className={cn(SURFACE_CARD_CLASS, fullBleed && 'md:p-8', className)}>
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-        <div className="max-w-3xl">
-          <h2 className="text-lg font-semibold tracking-tight text-gray-900">
-            {title}
-          </h2>
-          {description ? (
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              {description}
-            </p>
-          ) : null}
+      {title || description || action ? (
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-3xl">
+            {title ? (
+              <h2 className="text-lg font-semibold tracking-tight text-gray-900">
+                {title}
+              </h2>
+            ) : null}
+            {description ? (
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                {description}
+              </p>
+            ) : null}
+          </div>
+          {action ? <div className="shrink-0">{action}</div> : null}
         </div>
-        {action ? <div className="shrink-0">{action}</div> : null}
-      </div>
+      ) : null}
       <div className="min-w-0">{children}</div>
     </section>
   );
@@ -2332,6 +2347,9 @@ function ContributionTable({
   onSelectExpandedItem,
   onClearExpandedSelection,
   onOpenChainAttribution,
+  selectedPrimaryType,
+  onSelectPrimaryType,
+  itemLabel,
 }: {
   section: AttributionSection;
   comparison: DashboardAttributionsResponse['comparison'];
@@ -2342,6 +2360,9 @@ function ContributionTable({
   onSelectExpandedItem?: (key: string) => void;
   onClearExpandedSelection?: () => void;
   onOpenChainAttribution?: (chainType: PaymentChainType) => void;
+  selectedPrimaryType?: PaymentChainType;
+  onSelectPrimaryType?: (chainType: PaymentChainType) => void;
+  itemLabel?: (key: string) => string;
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const [drillLayout, setDrillLayout] = useState<'chart' | 'table'>('chart');
@@ -2434,6 +2455,7 @@ function ContributionTable({
                   key={item.key}
                   item={item}
                   valueLabel={section.valueLabel}
+                  itemLabel={itemLabel}
                   selected={isSelected}
                   onSelect={onSelectItem}
                 />,
@@ -2540,20 +2562,43 @@ function ContributionTable({
             const wowChange = item.wowChange ?? 0;
             const itemChainType: PaymentChainType = item.key.includes('续订') ? 'renewal' : 'active';
             return (
-              <div key={item.key} className="payment-summary-item">
+              <div
+                key={item.key}
+                className={cn(
+                  'payment-summary-item',
+                  selectedPrimaryType === itemChainType && 'is-selected',
+                )}
+                role={onSelectPrimaryType ? 'button' : undefined}
+                tabIndex={onSelectPrimaryType ? 0 : undefined}
+                aria-pressed={onSelectPrimaryType ? selectedPrimaryType === itemChainType : undefined}
+                onClick={() => onSelectPrimaryType?.(itemChainType)}
+                onKeyDown={(event) => {
+                  if (!onSelectPrimaryType || (event.key !== 'Enter' && event.key !== ' ')) return;
+                  event.preventDefault();
+                  onSelectPrimaryType(itemChainType);
+                }}
+              >
                 <div className="payment-summary-item-head" data-index={index}>
-                  <span>{item.key}</span>
+                  <span>{itemLabel?.(item.key) ?? item.key}</span>
+                  {selectedPrimaryType === itemChainType ? (
+                    <span className="payment-summary-drill-indicator" aria-label="下方已联动">
+                      <span>已联动</span>
+                      <ChevronDown size={13} aria-hidden="true" />
+                    </span>
+                  ) : null}
                   {isPrimary && onOpenChainAttribution ? (
                     <motion.button
                       type="button"
                       className="payment-chain-link"
-                      onClick={() => onOpenChainAttribution(itemChainType)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpenChainAttribution(itemChainType);
+                      }}
                       whileHover={{ x: 2 }}
                       whileTap={{ scale: 0.97 }}
                       transition={{ duration: 0.16 }}
                       aria-label={`查看${item.key}链路归因`}
                     >
-                      <Route size={13} aria-hidden="true" />
                       <span>链路归因</span>
                       <ArrowUpRight size={12} aria-hidden="true" />
                     </motion.button>
@@ -2578,7 +2623,7 @@ function ContributionTable({
               </div>
             );
           })}
-        </div> : <PaymentDrillChart section={section} changeLabel={changeLabel} />}
+        </div> : <PaymentDrillChart section={section} changeLabel={changeLabel} itemLabel={itemLabel} />}
       </motion.div>
       )}
       </AnimatePresence>
@@ -2590,9 +2635,11 @@ function ContributionTable({
 function PaymentDrillChart({
   section,
   changeLabel,
+  itemLabel,
 }: {
   section: AttributionSection;
   changeLabel: string;
+  itemLabel?: (key: string) => string;
 }) {
   const maxContribution = Math.max(...section.items.map((item) => Math.abs(item.contribution ?? 0)), 0.01);
   return (
@@ -2617,7 +2664,7 @@ function PaymentDrillChart({
             transition={{ layout: { type: 'spring', stiffness: 420, damping: 34 }, opacity: { duration: 0.18, delay: index * 0.035 }, y: { type: 'spring', stiffness: 420, damping: 34, delay: index * 0.035 } }}
           >
             <div className="payment-drill-chart-label" role="cell">
-              <strong>{item.key}</strong>
+              <strong>{itemLabel?.(item.key) ?? item.key}</strong>
               <small>基准期 {formatContributionValue(item.baselineDailyAvg, section.valueLabel)}</small>
             </div>
             <strong className="payment-drill-chart-value" role="cell">{formatContributionValue(item.analysisDailyAvg, section.valueLabel)}</strong>
@@ -2892,17 +2939,19 @@ function ChainUserList({
 function ContributionRow({
   item,
   valueLabel,
+  itemLabel,
   selected,
   onSelect,
 }: {
   item: AttributionItem;
   valueLabel: string;
+  itemLabel?: (key: string) => string;
   selected?: boolean;
   onSelect?: (key: string) => void;
 }) {
-  const label = item.key.startsWith('create_cnt_30d_')
+  const label = itemLabel?.(item.key) ?? (item.key.startsWith('create_cnt_30d_')
     ? formatTierLabel(item.key)
-    : item.key;
+    : item.key);
   return (
     <TableRow
       data-selected={selected || undefined}
@@ -3105,6 +3154,8 @@ function CreativeMetricsTable({
 }: {
   data: DashboardAttributionsResponse;
 }) {
+  const [selectedMetric, setSelectedMetric] = useState<CreativeMetricKey>('activeUv');
+  const [showDetails, setShowDetails] = useState(false);
   if (data.items.length === 0) {
     return (
       <EmptyBlock
@@ -3117,128 +3168,156 @@ function CreativeMetricsTable({
   const currentTotals = aggregateCreativeMetrics(data.items, 'current');
   const previousTotals = aggregateCreativeMetrics(data.items, 'previous');
   const changeLabel = getChangeColumnLabel(data.comparison);
+  const selectedMetricLabel = data.metricLabels[selectedMetric] ?? selectedMetric;
+  const maxValue = Math.max(
+    ...data.items.flatMap((item) => [
+      getCreativeMetricValue(item, selectedMetric, 'current'),
+      getCreativeMetricValue(item, selectedMetric, 'previous'),
+    ]),
+    1,
+  );
+  const renderCreativeDetailCell = (metricKey: CreativeMetricKey, value: number, previousValue: number) => (
+    <TableCell key={metricKey} className="creative-detail-cell text-right font-mono text-sm">
+      <div className="creative-detail-current">
+        <span>分析周</span>
+        <strong>{formatMetricByKey(metricKey, value)}</strong>
+      </div>
+      <div className="creative-detail-previous">
+        <span>基准周</span>
+        <span>{formatMetricByKey(metricKey, previousValue)}</span>
+      </div>
+      <div className="creative-detail-change">
+        <span>周环比</span>
+        <span>{formatSignedPercent(previousValue > 0 ? (value - previousValue) / previousValue : null)}</span>
+      </div>
+    </TableCell>
+  );
 
   return (
-    <div className="grid min-w-0 gap-7 [&>*]:min-w-0">
-      <div>
-        <SectionHeaderLine
-          title="总体创作积极性"
-          description="先看全量用户的创作活跃变化，再下钻到创作分层。"
-          count={CREATIVE_METRICS.length}
-        />
-        <div className="overflow-hidden rounded-2xl bg-white">
-          <Table className="dashboard-data-table min-w-[760px]">
-            <TableHeader className="[&_tr]:border-gray-100">
-              <TableRow className="bg-gray-50 hover:bg-gray-50">
-                <TableHead>指标</TableHead>
-                <TableHead className="text-right">
-                  基准期值
-                  <div className="text-[11px] font-normal text-muted-foreground">
-                    {data.comparison?.baselinePeriod ?? '-'}
-                  </div>
-                </TableHead>
-                <TableHead className="text-right">
-                  分析期值
-                  <div className="text-[11px] font-normal text-muted-foreground">
-                    {data.comparison?.analysisPeriod ?? '-'}
-                  </div>
-                </TableHead>
-                <TableHead className="text-right">{changeLabel}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {CREATIVE_METRICS.map((metricKey) => {
-                const previousValue = previousTotals[metricKey];
-                const value = currentTotals[metricKey];
-                const change = value - previousValue;
-                const wowChange =
-                  previousValue > 0 ? change / previousValue : null;
-                return (
-                  <TableRow
-                    key={metricKey}
-                    className="border-gray-100 hover:bg-gray-50"
-                  >
-                    <TableCell className="font-medium text-foreground">
-                      {data.metricLabels[metricKey] ?? metricKey}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm text-muted-foreground">
-                      {formatMetricByKey(metricKey, previousValue)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm text-foreground">
-                      {formatMetricByKey(metricKey, value)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm text-foreground">
-                      {formatSignedPercent(wowChange)}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-
-      <div>
-        <SectionHeaderLine
-          title="创作分层"
-          description="每行展示分析期值，括号内为相对基准期的变化。"
-          count={data.items.length}
-        />
-        <div className="max-h-[620px] overflow-auto rounded-2xl bg-white">
-          <Table className="dashboard-data-table min-w-[1020px]">
-            <TableHeader className="[&_tr]:border-gray-100">
-              <TableRow className="bg-gray-50 hover:bg-gray-50">
-                <TableHead>创作分层</TableHead>
+    <div className="creative-layer-block">
+        <div className="creative-block-heading creative-layer-heading">
+          <div>
+            <h3>创作分层</h3>
+            <p>实色条为分析周，斜纹条为基准周；条形图右侧展示绝对值与周环比。</p>
+          </div>
+          <div className="creative-layer-actions">
+            <Select value={selectedMetric} onValueChange={(value) => setSelectedMetric(value as CreativeMetricKey)}>
+              <SelectTrigger className="creative-metric-select" aria-label="创作分层指标">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="creative-metric-menu">
                 {CREATIVE_METRICS.map((metricKey) => (
-                  <TableHead key={metricKey} className="text-right">
+                  <SelectItem key={metricKey} value={metricKey} className="creative-metric-item">
                     {data.metricLabels[metricKey] ?? metricKey}
-                  </TableHead>
+                  </SelectItem>
                 ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.items.map((item) => (
-                <TableRow
-                  key={item.key}
-                  className="border-gray-100 hover:bg-gray-50"
-                >
-                  <TableCell className="font-medium text-foreground">
-                    {formatTierLabel(item.key)}
-                  </TableCell>
-                  {CREATIVE_METRICS.map((metricKey) => {
-                    const previousValue = getCreativeMetricValue(
-                      item,
-                      metricKey,
-                      'previous',
-                    );
-                    const value = getCreativeMetricValue(
-                      item,
-                      metricKey,
-                      'current',
-                    );
-                    const change = value - previousValue;
-                    const wowChange =
-                      previousValue > 0 ? change / previousValue : null;
-                    return (
-                      <TableCell
-                        key={metricKey}
-                        className="text-right font-mono text-sm"
-                      >
-                        <div className="text-foreground">
-                          {formatMetricByKey(metricKey, value)}
-                        </div>
-                        <div className="mt-0.5 text-[11px] text-muted-foreground">
-                          {formatSignedPercent(wowChange)}
-                        </div>
-                      </TableCell>
-                    );
-                  })}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </SelectContent>
+            </Select>
+            <button type="button" className="creative-details-trigger" onClick={() => setShowDetails((current) => !current)}>
+              {showDetails ? '收起明细表' : '查看明细表'}
+              <ChevronRight size={14} aria-hidden="true" />
+            </button>
+          </div>
         </div>
-      </div>
+        <div className="creative-bar-table" role="table" aria-label={`${selectedMetricLabel}创作分层对比`}>
+          <div className="creative-bar-head" role="row">
+            <span>创作分层</span>
+            <span>{selectedMetricLabel} · 基准周 / 分析周</span>
+            <span>绝对值</span>
+            <span>{changeLabel}</span>
+          </div>
+          {data.items.map((item) => {
+            const previousValue = getCreativeMetricValue(item, selectedMetric, 'previous');
+            const value = getCreativeMetricValue(item, selectedMetric, 'current');
+            const wowChange = previousValue > 0 ? (value - previousValue) / previousValue : null;
+            return (
+              <div className="creative-bar-row" key={`${selectedMetric}-${item.key}`} role="row">
+                <div className="creative-bar-label" role="cell">
+                  <strong>{formatTierLabel(item.key)}</strong>
+                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div
+                      className="creative-bar-stack"
+                      role="cell"
+                      aria-label={`${formatTierLabel(item.key)} 基准周 ${formatMetricByKey(selectedMetric, previousValue)}，分析周 ${formatMetricByKey(selectedMetric, value)}`}
+                    >
+                      <span className="creative-bar-baseline" style={{ width: `${Math.max(2, previousValue / maxValue * 100)}%` }} />
+                      <span className="creative-bar-current" style={{ width: `${Math.max(2, value / maxValue * 100)}%` }} />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={6}>
+                    <div className="creative-bar-tooltip-content">
+                      <strong>{formatTierLabel(item.key)}</strong>
+                      <span>基准周 {formatMetricByKey(selectedMetric, previousValue)}</span>
+                      <span>分析周 {formatMetricByKey(selectedMetric, value)}</span>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+                <span className="creative-bar-values" role="cell">
+                  {formatMetricByKey(selectedMetric, previousValue)} → {formatMetricByKey(selectedMetric, value)}
+                </span>
+                <strong className={cn('creative-bar-wow', wowChange !== null && wowChange < 0 && 'is-negative')} role="cell">
+                  {formatSignedPercent(wowChange)}
+                </strong>
+              </div>
+            );
+          })}
+          <div className="creative-total-row" role="row">
+            <strong role="cell">{selectedMetricLabel}</strong>
+            <span role="cell" className="creative-total-values">
+              {formatMetricByKey(selectedMetric, previousTotals[selectedMetric])} → {formatMetricByKey(selectedMetric, currentTotals[selectedMetric])}
+            </span>
+            <strong role="cell" className="creative-total-change">
+              {formatSignedMetricByKey(
+                selectedMetric,
+                currentTotals[selectedMetric] - previousTotals[selectedMetric],
+              )} · {formatSignedPercent(
+                previousTotals[selectedMetric] > 0
+                  ? (currentTotals[selectedMetric] - previousTotals[selectedMetric]) /
+                    previousTotals[selectedMetric]
+                  : null,
+              )}
+            </strong>
+          </div>
+        </div>
+        {showDetails ? (
+          <div className="creative-detail-table">
+            <div className="creative-detail-caption">
+              明细表 · 基准周 {data.comparison?.baselinePeriod ?? '-'} / 分析周 {data.comparison?.analysisPeriod ?? '-'}
+            </div>
+            <div className="creative-table-scroll">
+              <Table className="dashboard-data-table min-w-[1020px]">
+                <TableHeader className="[&_tr]:border-gray-100">
+                  <TableRow className="bg-gray-50 hover:bg-gray-50">
+                    <TableHead>创作分层</TableHead>
+                    {CREATIVE_METRICS.map((metricKey) => <TableHead key={metricKey} className="text-right">{data.metricLabels[metricKey] ?? metricKey}</TableHead>)}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow className="creative-detail-overall-row border-gray-100 hover:bg-gray-50">
+                    <TableCell className="font-semibold text-foreground">总体</TableCell>
+                    {CREATIVE_METRICS.map((metricKey) => {
+                      const previousValue = previousTotals[metricKey];
+                      const value = currentTotals[metricKey];
+                      return renderCreativeDetailCell(metricKey, value, previousValue);
+                    })}
+                  </TableRow>
+                  {data.items.map((item) => (
+                    <TableRow key={item.key} className="border-gray-100 hover:bg-gray-50">
+                      <TableCell className="font-medium text-foreground">{formatTierLabel(item.key)}</TableCell>
+                      {CREATIVE_METRICS.map((metricKey) => {
+                        const previousValue = getCreativeMetricValue(item, metricKey, 'previous');
+                        const value = getCreativeMetricValue(item, metricKey, 'current');
+                        return renderCreativeDetailCell(metricKey, value, previousValue);
+                      })}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        ) : null}
     </div>
   );
 }
@@ -3303,6 +3382,7 @@ const DashboardPage = () => {
     creative: null,
   });
   const [syncRun, setSyncRun] = useState<SyncRunStatus | null>(null);
+  const [selectedPaymentType, setSelectedPaymentType] = useState<PaymentChainType>('active');
   const [loadingBySection, setLoadingBySection] = useState<
     Record<DashboardLoadKey, boolean>
   >({ ...INITIAL_LOADING_STATE });
@@ -3982,8 +4062,12 @@ const DashboardPage = () => {
             metricLabels: attributions.payType.metricLabels,
             items: attributions.payType.items,
           },
-        ]
+      ]
       : [];
+  const primaryPaySection = paySections.find((section) => section.title.includes('一级')) ?? null;
+  const selectedPayDrillSections = selectedPaymentType === 'renewal'
+    ? paySections.filter((section) => section.title.includes('自动续订套餐'))
+    : paySections.filter((section) => section.title === '主动付费下钻');
   const chainSection = attributions.chain?.sections?.[0] ?? null;
   const chainUserTypeSection = attributions.chain?.sections?.[1] ?? null;
   const isRenewalChain = chainType === 'renewal';
@@ -4158,15 +4242,35 @@ const DashboardPage = () => {
               <LoadingBlock title="付费类型加载中" />
             ) : paySections.length > 0 ? (
               <div className="grid min-w-0 gap-8 [&>*]:min-w-0">
-                {paySections.map((section) => (
-                  <div key={section.title}>
-                    <ContributionTable
-                      section={section}
-                      comparison={attributions.payType?.comparison ?? null}
-                      onOpenChainAttribution={section.title.includes('一级') ? openChainAttribution : undefined}
-                    />
-                  </div>
-                ))}
+                {primaryPaySection ? (
+                  <ContributionTable
+                    section={primaryPaySection}
+                    comparison={attributions.payType?.comparison ?? null}
+                    onOpenChainAttribution={openChainAttribution}
+                    selectedPrimaryType={selectedPaymentType}
+                    onSelectPrimaryType={setSelectedPaymentType}
+                    itemLabel={(key) => key}
+                  />
+                ) : null}
+                <div className="payment-drill-switcher">
+                  <AnimatePresence mode="wait" initial={false}>
+                    {selectedPayDrillSections.map((section) => (
+                      <motion.div
+                        key={`${selectedPaymentType}-${section.title}`}
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -12 }}
+                        transition={{ duration: 0.2, ease: 'easeOut' }}
+                      >
+                        <ContributionTable
+                          section={section}
+                          comparison={attributions.payType?.comparison ?? null}
+                          itemLabel={selectedPaymentType === 'renewal' ? formatPlanTierLabel : undefined}
+                        />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
               </div>
             ) : (
               <EmptyBlock
@@ -4253,14 +4357,7 @@ const DashboardPage = () => {
 
       {activeTab === 'creative' && (
         <div className="dashboard-enter" key="creative">
-          <PageSection
-            title="创作积极性"
-            description={
-              platform === 'app' && effectiveDeviceType
-                ? '创作表暂无设备维度，本模块展示 App 整体口径。'
-                : '查看活跃、创作数量与渗透变化，计算口径见“数据与口径”。'
-            }
-          >
+          <PageSection>
             {loadingBySection.creative ? (
               <LoadingBlock title="创作积极性加载中" />
             ) : attributions.creative ? (

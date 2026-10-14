@@ -686,17 +686,18 @@ async function overview(env: Env, request: Request) {
   const renewal = renewalPlatformRows(renewalRecords, platform, deviceType)
     .filter((row) => !planTier || asText(row.plan_tier).toUpperCase() === planTier);
   const filteredChain = trendUserTag ? chain.filter((row) => asText(row.user_tag) === trendUserTag) : chain;
-  const periodDays = trendPeriodDivisors([...filteredChain, ...pay, ...renewal], granularity);
-  const periods = groupByPeriod([...filteredChain, ...pay, ...renewal], granularity).filter((period) => dateInRange(period, startDate, endDate));
-  const payTrendRows = payTrend(pay.map((row) => ({ ...row, period: granularity === 'week' ? row.week_start : row.period })), periods, periodDays);
-  const payPeriods = groupByPeriod(pay, granularity).filter((period) => dateInRange(period, startDate, endDate));
   const payDays = trendPeriodDivisors(pay, granularity);
+  const chainDays = trendPeriodDivisors(filteredChain, granularity);
+  const renewalDays = trendPeriodDivisors(renewal, granularity);
+  const periods = groupByPeriod([...filteredChain, ...pay, ...renewal], granularity).filter((period) => dateInRange(period, startDate, endDate));
+  const payTrendRows = payTrend(pay.map((row) => ({ ...row, period: granularity === 'week' ? row.week_start : row.period })), periods, payDays);
+  const payPeriods = groupByPeriod(pay, granularity).filter((period) => dateInRange(period, startDate, endDate));
   const cardTrend = payTrend(pay.map((row) => ({ ...row, period: granularity === 'week' ? row.week_start : row.period })), payPeriods, payDays);
-  const chainTrendRows = chainTrend(filteredChain.map((row) => ({ ...row, period: granularity === 'week' ? row.week_start : row.period })), periods, periodDays);
+  const chainTrendRows = chainTrend(filteredChain.map((row) => ({ ...row, period: granularity === 'week' ? row.week_start : row.period })), periods, chainDays);
   const trend = payTrendRows.map((row, index) => {
     const chainRow = chainTrendRows[index];
     const renewalTotal = sumRenewal(periodRows(renewal, row.period, granularity));
-    const renewalPeriodDays = periodDays.get(row.period) || 1;
+    const renewalPeriodDays = renewalDays.get(row.period) || 1;
     return {
       ...row,
       ...chainRow,
@@ -787,6 +788,11 @@ async function attributions(env: Env, request: Request) {
 
   if (dimension === 'pay_type') {
     const rows = await dailyRows(env, 'pay_type_daily', { platform, startDate, endDate, deviceType });
+    const renewalRows = renewalPlatformRows(
+      await dailyRows(env, 'renewal_daily', { platform, startDate, endDate }),
+      platform,
+      deviceType,
+    );
     const comparison = buildComparison(rows, startDate, endDate, baselinePeriod, analysisPeriod);
     const days = comparison?.dayCounts || weekDayCounts(rows);
     const periods = [...new Set(rows.map((row) => asText(row.week_start)))].filter((period) => dateInRange(period, startDate, endDate)).sort();
@@ -800,6 +806,10 @@ async function attributions(env: Env, request: Request) {
       const previousRows = rows.filter((row) => asText(row.week_start) === comparison.baselinePeriod && level.has(asText(row.analysis_level)));
       const current = aggregatePay(currentRows, () => true);
       const previous = aggregatePay(previousRows, () => true);
+      if (level === PRIMARY_PAY_LEVELS) {
+        current.set('自动续订', sumRenewal(renewalRows.filter((row) => asText(row.week_start) === comparison.analysisPeriod)).renewAmountUsd);
+        previous.set('自动续订', sumRenewal(renewalRows.filter((row) => asText(row.week_start) === comparison.baselinePeriod)).renewAmountUsd);
+      }
       const keys = [...new Set([...order.filter((key) => current.has(key) || previous.has(key)), ...current.keys(), ...previous.keys()])];
       const denominator = sum([...current.values()]) / comparison.analysisPeriodDays - sum([...previous.values()]) / comparison.baselinePeriodDays;
       return {
@@ -810,9 +820,41 @@ async function attributions(env: Env, request: Request) {
         items: keys.map((key) => attributionItem({ key, value: current.get(key) || 0, previousValue: previous.get(key) || 0, contributionDenominator: denominator, baselineDays: comparison.baselinePeriodDays, analysisDays: comparison.analysisPeriodDays })),
       };
     };
+    const makeRenewalPlanSection = () => {
+      const currentRows = renewalRows.filter((row) => asText(row.week_start) === comparison.analysisPeriod);
+      const previousRows = renewalRows.filter((row) => asText(row.week_start) === comparison.baselinePeriod);
+      const current = new Map<string, number>();
+      const previous = new Map<string, number>();
+      for (const row of currentRows) {
+        const key = asText(row.plan_tier).toUpperCase();
+        if (key) current.set(key, (current.get(key) || 0) + asNumber(row.renew_amount_usd));
+      }
+      for (const row of previousRows) {
+        const key = asText(row.plan_tier).toUpperCase();
+        if (key) previous.set(key, (previous.get(key) || 0) + asNumber(row.renew_amount_usd));
+      }
+      const order = ['LITE', 'PRO', 'ULTRA'];
+      const keys = [...new Set([...order.filter((key) => current.has(key) || previous.has(key)), ...current.keys(), ...previous.keys()])];
+      const denominator = sum([...current.values()]) / comparison.analysisPeriodDays - sum([...previous.values()]) / comparison.baselinePeriodDays;
+      return {
+        title: '自动续订套餐下钻',
+        description: '只在自动续订内部拆解 Lite、Pro、Ultra 套餐对 GMV 变化的贡献。',
+        valueLabel: 'GMV',
+        metricLabels: {},
+        items: keys.map((key) => attributionItem({
+          key,
+          value: current.get(key) || 0,
+          previousValue: previous.get(key) || 0,
+          contributionDenominator: denominator,
+          baselineDays: comparison.baselinePeriodDays,
+          analysisDays: comparison.analysisPeriodDays,
+        })),
+      };
+    };
     const sections = [
       makeSection('一级付费类型贡献', '只比较主动付费和自动续订对周度 GMV 变化的贡献。', PRIMARY_PAY_LEVELS, ['主动付费', '自动续订']),
       makeSection('主动付费下钻', '只在主动付费内部拆解首订、积分包、套餐升级、重新订阅等。', ACTIVE_PAY_LEVELS, ['首订', '积分包', '套餐升级', '重新订阅', '其他']),
+      makeRenewalPlanSection(),
     ];
     return json({ dimension, valueLabel: 'GMV', comparison, metricLabels: {}, items: sections[0].items, sections, trend });
   }
