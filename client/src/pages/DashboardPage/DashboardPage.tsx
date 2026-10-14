@@ -1061,7 +1061,7 @@ function GmvCoverageExplanation({
         </section>
         <section id="method-renewal" className="dashboard-methodology-section">
           <h3>自动续订 GMV</h3>
-          <p>付费类型页按支付日期汇总 pay_type 中当日实际发生的续费 GMV，回答“这一天收到了多少续费收入”。续订表和支付链路的自动续订归因以到期用户作为 cohort，回答“这批到期用户中有多少续费，以及带来了多少续费 GMV”。GMV 趋势页同样按支付日期汇总支付表中 description=cycle 的记录，因此按发生日统计的结果与按到期 cohort 统计的结果不会直接一致。</p>
+          <p>付费类型页按支付日期汇总付费类型表中当日实际发生的续费 GMV，回答“这一天收到了多少续费收入”。续订表和支付链路的自动续订归因以到期用户作为 cohort，回答“这批到期用户中有多少续费，以及带来了多少续费 GMV”。GMV 趋势页同样按支付日期汇总支付表中 description=cycle 的记录，因此按发生日统计的结果与按到期 cohort 统计的结果不会直接一致。</p>
           <p className="dashboard-methodology-formula">续订 GMV = 到期用户数 × 续订率 × 续订客单价</p>
           <dl className="dashboard-methodology-definitions">
             {RENEWAL_METRIC_DEFINITIONS.map((item) => (
@@ -1072,7 +1072,7 @@ function GmvCoverageExplanation({
         <section id="method-payment" className="dashboard-methodology-section">
           <h3>支付结果与链路归因</h3>
           <dl className="dashboard-methodology-definitions">
-            <div><dt>付费类型表</dt><dd>主动付费直接汇总支付结果；自动续订按支付日期汇总 pay_type 当日实际发生的续费 GMV。</dd></div>
+            <div><dt>付费类型表</dt><dd>主动付费直接汇总支付结果；自动续订按支付日期汇总当日实际发生的续费 GMV。</dd></div>
             <div><dt>大盘 GMV</dt><dd>不统计 API Credits 订单。</dd></div>
             <div><dt>续订表</dt><dd>以到期用户为 cohort，观察这批用户后续是否续费及其续费金额，不按续费支付日重新归组。</dd></div>
             <div><dt>支付链路表</dt><dd>主动付费从 DAU 出发，按访问、曝光、提交、支付的时间戳顺序归因；自动续订沿用到期用户 cohort。</dd></div>
