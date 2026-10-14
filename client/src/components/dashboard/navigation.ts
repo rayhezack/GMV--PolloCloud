@@ -41,7 +41,7 @@ export const DASHBOARD_VIEWS = [
   {
     id: 'data',
     label: '数据与口径',
-    description: '核对数据状态、覆盖差异和指标定义。',
+    description: '先看覆盖差异，再核对统计窗口和各指标定义。',
     icon: Database,
   },
 ] as const;

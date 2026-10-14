@@ -977,12 +977,12 @@ function GmvCoverageExplanation({
       <aside className="dashboard-methodology-rail">
         <span>数据口径</span>
         <nav aria-label="数据口径目录">
+          <a href="#method-coverage">覆盖差异</a>
           <a href="#method-window">统计窗口</a>
           <a href="#method-active">主动付费</a>
           <a href="#method-renewal">自动续订</a>
           <a href="#method-payment">支付与归因</a>
           <a href="#method-creative">创作分层</a>
-          <a href="#method-coverage">覆盖差异</a>
         </nav>
       </aside>
       <div className="dashboard-methodology-body">
@@ -990,48 +990,35 @@ function GmvCoverageExplanation({
           <Info size={20} aria-hidden="true" />
           <h2>口径说明</h2>
         </header>
-        <section id="method-window" className="dashboard-methodology-section">
-          <h3>统计窗口</h3>
-          <p>归因表按各分析页的业务周选择器比较；单指标趋势使用独立趋势窗口。</p>
-          <p>覆盖差异使用最近四个完整业务周的数据，每周先计算日均。</p>
-        </section>
-        <section id="method-active" className="dashboard-methodology-section">
-          <h3>主动付费 GMV</h3>
-          <p className="dashboard-methodology-formula">主动付费 GMV = DAU × 付费墙曝光率 × 付费墙提交率 × 提交支付率 × 客单价</p>
-          <dl className="dashboard-methodology-definitions">
-            {CHAIN_METRIC_DEFINITIONS.map((item) => (
-              <div key={item.label}><dt>{item.label}</dt><dd>{item.formula}</dd></div>
-            ))}
-          </dl>
-        </section>
-        <section id="method-renewal" className="dashboard-methodology-section">
-          <h3>自动续订 GMV</h3>
-          <p className="dashboard-methodology-formula">续订 GMV = 到期用户数 × 续订率 × 续订客单价</p>
-          <dl className="dashboard-methodology-definitions">
-            {RENEWAL_METRIC_DEFINITIONS.map((item) => (
-              <div key={item.label}><dt>{item.label}</dt><dd>{item.formula}</dd></div>
-            ))}
-          </dl>
-        </section>
-        <section id="method-payment" className="dashboard-methodology-section">
-          <h3>支付结果与链路归因</h3>
-          <dl className="dashboard-methodology-definitions">
-            <div><dt>付费类型表</dt><dd>主动付费支付记录直接汇总，作为 GMV 结果口径。</dd></div>
-            <div><dt>大盘 GMV</dt><dd>不统计 API Credits 订单。</dd></div>
-            <div><dt>支付链路表</dt><dd>从 DAU 出发，按访问、曝光、提交、支付的时间戳顺序归因。</dd></div>
-            <div><dt>差额含义</dt><dd>支付记录未能被行为时间顺序串联的主动付费 GMV。</dd></div>
-          </dl>
-        </section>
-        <section id="method-creative" className="dashboard-methodology-section">
-          <h3>创作积极性与分层</h3>
-          <dl className="dashboard-methodology-definitions">
-            <div><dt>创作积极性</dt><dd>创作 UV、任务数按业务日均展示，渗透率为创作 UV ÷ 活跃 UV，不计算贡献度。</dd></div>
-            <div><dt>创作分层</dt><dd>按分析期开始前 30 日的创作次数划分；“分析期前 30 日无创作用户”仅表示该窗口内创作次数为 0，创作 UV、创作渗透率等指标统计的是这批用户在分析期内的行为。</dd></div>
-          </dl>
-        </section>
-        <section id="method-coverage" className="dashboard-methodology-section">
-          <h3>GMV 覆盖差异</h3>
-          <p>支付结果表与链路归因表按 Web、App 分别对齐比较。</p>
+        <div className="dashboard-methodology-intro">
+          <div className="dashboard-methodology-intro-copy">
+            <span className="dashboard-methodology-kicker">先看结论</span>
+            <h3>同名 GMV 可能不同，先确认数据来源</h3>
+            <p>付费类型、支付链路和 GMV 趋势回答的问题不同，因此不能直接把页面上的同名数值相加或互相替换。</p>
+          </div>
+          <div className="dashboard-methodology-source-grid">
+            <div>
+              <strong>结果口径</strong>
+              <span>付费类型页直接汇总支付结果，回答“实际收到了多少 GMV”。</span>
+            </div>
+            <div>
+              <strong>归因口径</strong>
+              <span>支付链路页按行为时间顺序串联，回答“哪些链路解释了变化”。</span>
+            </div>
+            <div>
+              <strong>趋势口径</strong>
+              <span>GMV 趋势按独立趋势窗口汇总，自动续订按支付日期观察变化。</span>
+            </div>
+          </div>
+        </div>
+        <section id="method-coverage" className="dashboard-methodology-section dashboard-methodology-section-first">
+          <h3>先看 GMV 覆盖差异</h3>
+          <p>这张表用于解释为什么付费类型页、支付链路页和 GMV 趋势页的数值可能不同。付费类型表是支付结果口径，链路归因表只包含能够按行为顺序串联的部分。</p>
+          <div className="dashboard-methodology-source-list">
+            <div><strong>付费类型表</strong><span>按支付结果汇总，作为结果核对基准。</span></div>
+            <div><strong>链路归因表</strong><span>按 DAU、曝光、提交、支付的时间顺序归因，未能串联的结果不会被强行分配。</span></div>
+            <div><strong>未归因差额</strong><span>两种口径的日均差异，用于定位覆盖范围，不代表链路贡献度。</span></div>
+          </div>
           <div className="dashboard-methodology-coverage">
             {loading ? (
               <p className="dashboard-methodology-status">正在计算最近四个完整业务周的 GMV 覆盖差异…</p>
@@ -1056,6 +1043,47 @@ function GmvCoverageExplanation({
               </div>
             )}
           </div>
+        </section>
+        <section id="method-window" className="dashboard-methodology-section">
+          <h3>统计窗口</h3>
+          <p>付费类型、支付链路和创作分层页面按各分析页的业务周选择器比较；GMV 趋势页面使用独立趋势窗口。</p>
+          <p>覆盖差异使用最近四个完整业务周的数据，每周先计算日均，再比较两张结果表的覆盖范围。</p>
+        </section>
+        <section id="method-active" className="dashboard-methodology-section">
+          <h3>主动付费 GMV</h3>
+          <p>付费类型页的主动付费 GMV 来自支付结果汇总；支付链路页的过程指标来自链路归因表。链路页的贡献度只在链路口径内计算，不能用来替代支付结果总额。</p>
+          <p className="dashboard-methodology-formula">主动付费 GMV = DAU × 付费墙曝光率 × 付费墙提交率 × 提交支付率 × 客单价</p>
+          <dl className="dashboard-methodology-definitions">
+            {CHAIN_METRIC_DEFINITIONS.map((item) => (
+              <div key={item.label}><dt>{item.label}</dt><dd>{item.formula}</dd></div>
+            ))}
+          </dl>
+        </section>
+        <section id="method-renewal" className="dashboard-methodology-section">
+          <h3>自动续订 GMV</h3>
+          <p>付费类型和支付链路页面按到期用户 cohort 计算续订归因；GMV 趋势页面按支付日期汇总支付表中 description=cycle 的记录。两者观察对象不同，所以数值不要求一致。</p>
+          <p className="dashboard-methodology-formula">续订 GMV = 到期用户数 × 续订率 × 续订客单价</p>
+          <dl className="dashboard-methodology-definitions">
+            {RENEWAL_METRIC_DEFINITIONS.map((item) => (
+              <div key={item.label}><dt>{item.label}</dt><dd>{item.formula}</dd></div>
+            ))}
+          </dl>
+        </section>
+        <section id="method-payment" className="dashboard-methodology-section">
+          <h3>支付结果与链路归因</h3>
+          <dl className="dashboard-methodology-definitions">
+            <div><dt>付费类型表</dt><dd>主动付费支付记录直接汇总，作为支付结果口径；自动续订按到期用户口径归因。</dd></div>
+            <div><dt>大盘 GMV</dt><dd>不统计 API Credits 订单。</dd></div>
+            <div><dt>支付链路表</dt><dd>主动付费从 DAU 出发，按访问、曝光、提交、支付的时间戳顺序归因；自动续订沿用到期用户 cohort。</dd></div>
+            <div><dt>差额含义</dt><dd>支付结果中未能被对应行为链路串联的部分，保留在结果口径中，不强行分配给某个驱动因子。</dd></div>
+          </dl>
+        </section>
+        <section id="method-creative" className="dashboard-methodology-section">
+          <h3>创作积极性与分层</h3>
+          <dl className="dashboard-methodology-definitions">
+            <div><dt>创作积极性</dt><dd>创作 UV、任务数按业务日均展示，渗透率为创作 UV ÷ 活跃 UV，不计算贡献度。</dd></div>
+            <div><dt>创作分层</dt><dd>按分析期开始前 30 日的创作次数划分；“分析期前 30 日无创作用户”仅表示该窗口内创作次数为 0，创作 UV、创作渗透率等指标统计的是这批用户在分析期内的行为。</dd></div>
+          </dl>
         </section>
       </div>
     </article>
