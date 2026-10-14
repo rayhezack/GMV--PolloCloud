@@ -196,16 +196,28 @@ const Layout = () => {
         data-open={sidebarOpen}
         aria-label="主导航"
       >
-        <Link
-          to={dashboardHref('trend', location.search)}
+        <div className="sidebar-brand-row">
+          <Link
+            to={dashboardHref('trend', location.search)}
             className="dashboard-brand"
-          aria-label="Pollo AI 分析首页"
-        >
-          <LogoWatcher />
-          <span>
-            Pollo AI<small>GMV ANALYTICS</small>
-          </span>
-        </Link>
+            aria-label="Pollo AI 分析首页"
+          >
+            <LogoWatcher />
+            <span>
+              Pollo AI<small>GMV ANALYTICS</small>
+            </span>
+          </Link>
+          <button
+            type="button"
+            className="sidebar-collapse-button"
+            aria-label="收起导航"
+            title="收起导航"
+            onClick={() => setSidebarCollapsed(true)}
+          >
+            <PanelLeftClose size={17} />
+            <span>收起导航</span>
+          </button>
+        </div>
         <button
           className="mobile-menu-button absolute right-2 top-2 p-2"
           aria-label="关闭菜单"
@@ -270,15 +282,6 @@ const Layout = () => {
               </span>
             </Link>
           </div>
-          <button
-            type="button"
-            className="sidebar-collapse-button"
-            aria-label="收起导航"
-            onClick={() => setSidebarCollapsed(true)}
-          >
-            <PanelLeftClose size={16} />
-            <span>收起导航</span>
-          </button>
         </div>
       </aside>
       <nav

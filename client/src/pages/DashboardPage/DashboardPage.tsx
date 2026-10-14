@@ -1061,7 +1061,7 @@ function GmvCoverageExplanation({
         </section>
         <section id="method-renewal" className="dashboard-methodology-section">
           <h3>自动续订 GMV</h3>
-          <p>付费类型和支付链路页面按到期用户 cohort 计算续订归因；GMV 趋势页面按支付日期汇总支付表中 description=cycle 的记录。两者观察对象不同，所以数值不要求一致。</p>
+          <p>付费类型页按支付日期汇总 pay_type 中当日实际发生的续费 GMV，回答“这一天收到了多少续费收入”。续订表和支付链路的自动续订归因以到期用户作为 cohort，回答“这批到期用户中有多少续费，以及带来了多少续费 GMV”。GMV 趋势页同样按支付日期汇总支付表中 description=cycle 的记录，因此按发生日统计的结果与按到期 cohort 统计的结果不会直接一致。</p>
           <p className="dashboard-methodology-formula">续订 GMV = 到期用户数 × 续订率 × 续订客单价</p>
           <dl className="dashboard-methodology-definitions">
             {RENEWAL_METRIC_DEFINITIONS.map((item) => (
@@ -1072,8 +1072,9 @@ function GmvCoverageExplanation({
         <section id="method-payment" className="dashboard-methodology-section">
           <h3>支付结果与链路归因</h3>
           <dl className="dashboard-methodology-definitions">
-            <div><dt>付费类型表</dt><dd>主动付费支付记录直接汇总，作为支付结果口径；自动续订按到期用户口径归因。</dd></div>
+            <div><dt>付费类型表</dt><dd>主动付费直接汇总支付结果；自动续订按支付日期汇总 pay_type 当日实际发生的续费 GMV。</dd></div>
             <div><dt>大盘 GMV</dt><dd>不统计 API Credits 订单。</dd></div>
+            <div><dt>续订表</dt><dd>以到期用户为 cohort，观察这批用户后续是否续费及其续费金额，不按续费支付日重新归组。</dd></div>
             <div><dt>支付链路表</dt><dd>主动付费从 DAU 出发，按访问、曝光、提交、支付的时间戳顺序归因；自动续订沿用到期用户 cohort。</dd></div>
             <div><dt>差额含义</dt><dd>支付结果中未能被对应行为链路串联的部分，保留在结果口径中，不强行分配给某个驱动因子。</dd></div>
           </dl>
@@ -3279,7 +3280,13 @@ function CreativeMetricsTable({
             <span role="cell" className="creative-total-values">
               {formatMetricByKey(selectedMetric, previousTotals[selectedMetric])} → {formatMetricByKey(selectedMetric, currentTotals[selectedMetric])}
             </span>
-            <strong role="cell" className="creative-total-change">
+            <strong
+              role="cell"
+              className={cn(
+                'creative-total-change',
+                currentTotals[selectedMetric] < previousTotals[selectedMetric] && 'is-negative',
+              )}
+            >
               {formatSignedMetricByKey(
                 selectedMetric,
                 currentTotals[selectedMetric] - previousTotals[selectedMetric],
@@ -3325,7 +3332,7 @@ function CreativeMetricsTable({
                       return [
                         <TableCell key={`${metricKey}-previous`} className="creative-detail-value text-right">{formatMetricByKey(metricKey, previousValue)}</TableCell>,
                         <TableCell key={`${metricKey}-current`} className="creative-detail-value creative-detail-current-value text-right">{formatMetricByKey(metricKey, value)}</TableCell>,
-                        <TableCell key={`${metricKey}-change`} className="creative-detail-change-value text-right">{formatSignedPercent(previousValue > 0 ? (value - previousValue) / previousValue : null)}</TableCell>,
+                        <TableCell key={`${metricKey}-change`} className={cn('creative-detail-change-value text-right', value < previousValue && 'is-negative')}>{formatSignedPercent(previousValue > 0 ? (value - previousValue) / previousValue : null)}</TableCell>,
                       ];
                     })}
                   </TableRow>
@@ -3338,7 +3345,7 @@ function CreativeMetricsTable({
                         return [
                           <TableCell key={`${metricKey}-previous`} className="creative-detail-value text-right">{formatMetricByKey(metricKey, previousValue)}</TableCell>,
                           <TableCell key={`${metricKey}-current`} className="creative-detail-value creative-detail-current-value text-right">{formatMetricByKey(metricKey, value)}</TableCell>,
-                          <TableCell key={`${metricKey}-change`} className="creative-detail-change-value text-right">{formatSignedPercent(previousValue > 0 ? (value - previousValue) / previousValue : null)}</TableCell>,
+                          <TableCell key={`${metricKey}-change`} className={cn('creative-detail-change-value text-right', value < previousValue && 'is-negative')}>{formatSignedPercent(previousValue > 0 ? (value - previousValue) / previousValue : null)}</TableCell>,
                         ];
                       })}
                     </TableRow>

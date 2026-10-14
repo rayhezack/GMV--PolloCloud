@@ -172,6 +172,17 @@
   color: var(--ui-ink);
   text-decoration: none;
 }
+.sidebar-brand-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px 32px;
+}
+.sidebar-brand-row .dashboard-brand {
+  min-width: 0;
+  padding: 0;
+}
 .dashboard-brand:visited { color: var(--ui-ink); }
 .dashboard-brand:hover { color: var(--ui-ink); }
 .dashboard-brand small {
@@ -268,21 +279,30 @@
   margin-left: 0;
 }
 .sidebar-collapse-button {
-  display: flex;
-  width: 100%;
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 38px;
-  margin-top: 14px;
-  border-radius: 10px;
+  flex: none;
+  min-height: 26px;
+  margin: 1px 0 0;
+  padding: 0;
+  border-radius: 50%;
   color: #5f6b70;
-  font-size: 12px;
-  transition: background 150ms ease, color 150ms ease;
+  transition: color 150ms ease, background 150ms ease;
 }
 .sidebar-collapse-button:hover {
   background: #f4f6f6;
   color: #24292d;
+}
+.sidebar-collapse-button span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 .dashboard-dock {
   position: fixed;
@@ -2143,6 +2163,9 @@
   padding: 0 10px 26px;
   font-size: 22px;
 }
+.sidebar-brand-row .dashboard-brand {
+  padding: 0;
+}
 .dashboard-brand-mark {
   width: 30px;
   height: 30px;
@@ -2185,7 +2208,7 @@
   padding: 4px;
   gap: 2px;
   border: 1px solid var(--ui-line);
-  border-radius: 10px;
+  border-radius: 999px;
   box-shadow: 0 4px 14px rgba(37, 36, 61, .045);
 }
 .icon-control {
@@ -2498,6 +2521,10 @@
 }
 .creative-detail-change-value {
   color: var(--ui-positive);
+}
+.creative-detail-change-value.is-negative,
+.creative-total-change.is-negative {
+  color: var(--ui-negative);
 }
 .creative-detail-caption {
   margin-bottom: 10px;
