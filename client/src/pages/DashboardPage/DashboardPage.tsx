@@ -2670,9 +2670,11 @@ function PaymentDrillChart({
   changeLabel: string;
   itemLabel?: (key: string) => string;
 }) {
+  const chartRef = useRef<HTMLDivElement | null>(null);
+  const chartVisible = useInView(chartRef, { once: true, amount: 0.2 });
   const maxContribution = Math.max(...section.items.map((item) => Math.abs(item.contribution ?? 0)), 0.01);
   return (
-    <div className="payment-drill-chart" role="table" aria-label="主动付费结果类型贡献图">
+    <div ref={chartRef} className={cn('payment-drill-chart', chartVisible && 'is-revealed')} role="table" aria-label="主动付费结果类型贡献图">
       <div className="payment-drill-chart-head" role="row">
         <span role="columnheader">付费类型</span>
         <span role="columnheader">分析期日均 GMV</span>
@@ -2688,9 +2690,8 @@ function PaymentDrillChart({
             className="payment-drill-chart-row"
             role="row"
             layout
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ layout: { type: 'spring', stiffness: 420, damping: 34 }, opacity: { duration: 0.18, delay: index * 0.035 }, y: { type: 'spring', stiffness: 420, damping: 34, delay: index * 0.035 } }}
+            style={{ '--channel-index': index } as React.CSSProperties}
+            transition={{ layout: { type: 'spring', stiffness: 420, damping: 34 } }}
           >
             <div className="payment-drill-chart-label" role="cell">
               <strong>{itemLabel?.(item.key) ?? item.key}</strong>
