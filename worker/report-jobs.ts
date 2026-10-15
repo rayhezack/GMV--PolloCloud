@@ -7,6 +7,7 @@ type Progress = (key: string, status: Step['status'], detail?: string) => Promis
 type Dependencies = {
   collect: (request: ReportGenerationRequest, progress: Progress) => Promise<{ evidence: unknown; tables: Record<string, string> }>;
   persist: (report: ReportSummary) => Promise<void>;
+  persistTask?: (job: ReportGenerationStatus) => Promise<void>;
 };
 const reply = (data: unknown, status = 200) => Response.json(data, { status, headers: { 'cache-control': 'no-store' } });
 const shift = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
@@ -26,13 +27,14 @@ export function validateReportRequest(value: unknown): ReportGenerationRequest {
   return body;
 }
 
-async function save(env: Env, job: ReportGenerationStatus) {
+async function save(env: Env, job: ReportGenerationStatus, persistTask?: Dependencies['persistTask']) {
   job.heartbeatAt = new Date().toISOString();
   await env.DB!.prepare('UPDATE report_jobs SET status = ?, payload = ?, updated_at = ? WHERE run_id = ?')
     .bind(job.status, JSON.stringify(job), Date.now(), job.runId).run();
+  await persistTask?.(job).catch(() => undefined);
 }
 
-async function expireInterruptedJobs(env: Env) {
+async function expireInterruptedJobs(env: Env, persistTask?: Dependencies['persistTask']) {
   const rows = await env.DB!.prepare("SELECT payload FROM report_jobs WHERE status IN ('queued', 'running', 'pausing') AND updated_at < ?")
     .bind(Date.now() - 180000).all<{ payload: string }>();
   for (const row of rows.results) {
@@ -43,10 +45,11 @@ async function expireInterruptedJobs(env: Env) {
     job.steps?.forEach(step => { if (step.status === 'running') step.status = 'failed'; });
     await env.DB!.prepare("UPDATE report_jobs SET status = 'failed', payload = ?, updated_at = ? WHERE run_id = ? AND updated_at < ? AND status IN ('queued', 'running', 'pausing')")
       .bind(JSON.stringify(job), Date.now(), job.runId, Date.now() - 180000).run();
+    await persistTask?.(job).catch(() => undefined);
   }
 }
 
-async function controlReportJob(env: Env, request: Request, action: 'pause' | 'resume') {
+async function controlReportJob(env: Env, request: Request, action: 'pause' | 'resume', persistTask?: Dependencies['persistTask']) {
   const { runId } = await request.json().catch(() => ({})) as { runId?: string };
   if (!runId) return reply({ message: '缺少任务 ID' }, 400);
   const row = await env.DB!.prepare('SELECT status, payload FROM report_jobs WHERE run_id = ?')
@@ -66,15 +69,14 @@ async function controlReportJob(env: Env, request: Request, action: 'pause' | 'r
     job.finishedAt = undefined;
   }
   job.heartbeatAt = new Date().toISOString();
-  await env.DB!.prepare('UPDATE report_jobs SET status = ?, payload = ?, updated_at = ? WHERE run_id = ?')
-    .bind(job.status, JSON.stringify(job), Date.now(), job.runId).run();
+  await save(env, job, persistTask);
   return reply(job);
 }
 
 export async function reportGenerations(env: Env, request: Request, dependencies: Dependencies): Promise<Response> {
   if (!env.DB) return reply({ message: '报告任务数据库未配置' }, 503);
   const url = new URL(request.url);
-  await expireInterruptedJobs(env);
+  await expireInterruptedJobs(env, dependencies.persistTask);
   if (request.method === 'GET' && url.pathname.endsWith('/latest')) {
     const platform = url.searchParams.get('platform') || 'web';
     const row = await env.DB.prepare('SELECT payload FROM report_jobs WHERE platform = ? ORDER BY created_at DESC LIMIT 1').bind(platform).first<{ payload: string }>();
@@ -100,10 +102,11 @@ export async function reportGenerations(env: Env, request: Request, dependencies
     if (active) return reply(result, 202);
     await env.DB.prepare('INSERT OR IGNORE INTO report_jobs (run_id, platform, status, payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(job.runId, job.platform, job.status, JSON.stringify(job), Date.now(), Date.now()).run();
+    await dependencies.persistTask?.(job).catch(() => undefined);
     return reply(result, 202);
   }
-  if (request.method === 'POST' && url.pathname === '/api/report-generations/pause') return controlReportJob(env, request, 'pause');
-  if (request.method === 'POST' && url.pathname === '/api/report-generations/resume') return controlReportJob(env, request, 'resume');
+  if (request.method === 'POST' && url.pathname === '/api/report-generations/pause') return controlReportJob(env, request, 'pause', dependencies.persistTask);
+  if (request.method === 'POST' && url.pathname === '/api/report-generations/resume') return controlReportJob(env, request, 'resume', dependencies.persistTask);
   if (request.method === 'POST' && url.pathname === '/api/report-generations/run') {
     const { runId } = await request.json() as { runId: string };
     const claimed = await env.DB.prepare("UPDATE report_jobs SET status = 'running', updated_at = ? WHERE run_id = ? AND status = 'queued' RETURNING payload")
@@ -112,7 +115,7 @@ export async function reportGenerations(env: Env, request: Request, dependencies
     const job = JSON.parse(claimed.payload) as ReportGenerationStatus;
     job.status = 'running';
     job.stage = 'collect';
-    await save(env, job);
+    await save(env, job, dependencies.persistTask);
     const encoder = new TextEncoder();
     let disconnected = false;
     const stream = new ReadableStream<Uint8Array>({
@@ -136,7 +139,7 @@ export async function reportGenerations(env: Env, request: Request, dependencies
 async function executeReport(env: Env, job: ReportGenerationStatus, deps: Dependencies) {
   let writes = Promise.resolve();
   const persist = () => {
-    writes = writes.catch(() => undefined).then(() => save(env, job));
+    writes = writes.catch(() => undefined).then(() => save(env, job, deps.persistTask));
     return writes;
   };
   const pauseAtCheckpoint = async () => {

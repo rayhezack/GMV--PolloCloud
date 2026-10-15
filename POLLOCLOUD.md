@@ -1,6 +1,6 @@
 # Pollo Cloud deployment
 
-The dashboard builds as a Pollo Cloud SPA. Its Worker reads analytical data from Feishu Base and pulls new daily facts from MaxCompute back into Base:
+The dashboard builds as a Pollo Cloud SPA. Its Worker reads analytical data from the Pollo DA D1 tables and pulls new daily facts from MaxCompute into D1. Feishu Base remains only for task records consumed by the notification bot:
 
 ```bash
 npm ci
@@ -11,6 +11,7 @@ pollocloud db execute --name pollo-ai --file db/0003_report_jobs.sql
 pollocloud db execute --name pollo-ai --file db/0006_sync_staging.sql
 pollocloud db execute --name pollo-ai --file db/0007_paused_job_indexes.sql
 pollocloud db execute --name pollo-ai --file db/0008_sync_staging_chunks.sql
+pollocloud db execute --name pollo-ai --file db/0009_pollo_da_analytics.sql
 pollocloud deploy
 ```
 
@@ -32,7 +33,9 @@ KIMI_API_KEY
 
 The Feishu app must have record read/write API scopes and document-level access to Base `OjCAbXDNbavIU9seAzVcqUHanHg`. Record reads, creates, updates, and deletes have all been verified against this Base.
 
-Dashboard endpoints push platform and date filters into Base, merge identical in-flight reads, and cache successful responses in the app's D1 database for ten minutes. An expired response can be served for up to one hour while Base refreshes in the background. `POST /api/sync-runs` stages each MaxCompute query result in D1. Only after every query succeeds does the Worker replace the matching `web` and `app` records in the four Base fact tables and clear the response cache.
+Dashboard endpoints push platform and date filters into D1, merge identical in-flight reads, and cache successful responses in the app's D1 database for ten minutes. An expired response can be served for up to one hour while D1 refreshes in the background. `POST /api/sync-runs` stages each MaxCompute query result in D1. Only after every query succeeds does the Worker replace the matching `web` and `app` rows in the four `pollo_da_fact_rows` datasets and clear the response cache.
+
+The one-time migration uses `db/0009_pollo_da_analytics.sql`, then imports the Base snapshot into `pollo_da_base_records`, daily facts into `pollo_da_fact_rows`, reports into `pollo_da_reports`, and product actions into `pollo_da_product_actions`. The existing D1 database is bound to the `pollo-ai` app; the `pollo_da_*` prefix is the logical Pollo DA database namespace. The dashboard's analytical facts are D1-only; Base is not an analytical fallback.
 
 The top three GMV cards read `pay_type_daily`. The trend chart reads `chain_daily` for active payment and `renewal_daily` for renewal; the chain attribution tab uses the same respective fact tables.
 
@@ -42,9 +45,9 @@ Set `VITE_DATA_MODE=demo` only for a local visual preview. Production uses the s
 
 The business-week selector controls both report viewing and generation. A request contains the selected Saturday–Friday analysis week and the immediately preceding baseline week. The Worker rejects incomplete/future windows and missing daily facts before invoking the model. Historical selections never fall back to a different report.
 
-Jobs and individual step states are stored in D1 (`report_jobs`). The application polls status every three seconds on the report page. A streamed execution request stays open in the shared layout while the Worker reads Base, calculates attribution, calls Kimi, and writes the report to Base history and latest-report tables. Navigation inside the dashboard keeps that request alive. Closing the browser can interrupt execution; jobs with no heartbeat for three minutes become failed and can be generated again. This is not a durable queue that guarantees execution after every client disconnect.
+Jobs and individual step states are stored in D1 (`report_jobs`). The application polls status every three seconds on the report page. A streamed execution request stays open in the shared layout while the Worker reads D1 facts, calculates attribution, calls Kimi, and writes the report to D1 history and latest-report tables. Navigation inside the dashboard keeps that request alive. Closing the browser can interrupt execution; jobs with no heartbeat for three minutes become failed and can be generated again. This is not a durable queue that guarantees execution after every client disconnect.
 
-The task monitor is a compact floating control shared across dashboard routes, collapsed by default. Expanding it reveals real step states; navigation collapses it. Completed or failed notifications can be dismissed, are cleared on navigation, and are not restored on a fresh visit. Backend job records remain available for diagnosis. Each new run starts with new step state. Report drafts are checkpointed in D1 before Base writes, and transient write failures are retried. Base's `degraded` single-select field is written as the string `true` or `false`.
+The task monitor is a compact floating control shared across dashboard routes, collapsed by default. Expanding it reveals real step states; navigation collapses it. Completed or failed notifications can be dismissed, are cleared on navigation, and are not restored on a fresh visit. Backend job records remain available for diagnosis. Each new run starts with new step state. Generated reports are written to both Base (`report_history` / `latest_report`) and D1; report reads prefer Base and fall back to D1 if Base is unavailable. Product actions are maintained and read from Base, with D1 as an availability fallback. Task status is written to Base `report_generation_jobs` and D1.
 
 The default model is `kimi-k3` at `https://api.moonshot.ai/v1`; optional `KIMI_MODEL` and `KIMI_BASE_URL` override those settings. Secrets are managed with `pollocloud secret set`, never committed. Progress percentages count completed steps; model inference uses an indeterminate bar instead of invented percentage estimates.
 

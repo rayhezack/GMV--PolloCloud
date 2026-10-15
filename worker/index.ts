@@ -1,5 +1,5 @@
 import { chainDriverEffects } from './chain-attribution';
-/* Pollocloud Worker: Feishu Base is the analytical source of truth. */
+/* Pollocloud Worker: D1 stores analytical facts; Base keeps task records for bot notifications. */
 
 import { MaxComputeClient } from '../server/modules/maxcompute/maxcompute.client';
 import { buildDatasetSql, type DatasetKind } from '../server/modules/maxcompute/sql-templates';
@@ -15,7 +15,10 @@ type D1Statement = {
   first: <T = D1Row>() => Promise<T | null>;
   run: () => Promise<unknown>;
 };
-type D1Database = { prepare: (sql: string) => D1Statement };
+type D1Database = {
+  prepare: (sql: string) => D1Statement;
+  batch?: (statements: D1Statement[]) => Promise<unknown>;
+};
 export type Env = {
   DB?: D1Database;
   FEISHU_APP_ID?: string;
@@ -88,6 +91,26 @@ const TIER_ORDER = [
   'create_cnt_30d_[101,+inf)',
 ];
 const USER_TAG_ORDER = ['新用户', '老用户', '未知'];
+const DAILY_SHEETS = new Set(['pay_type_daily', 'chain_daily', 'creative_daily', 'renewal_daily']);
+const FACT_DATASETS = new Set(['pay_type', 'chain', 'creative', 'renewal']);
+const FACT_NUMERIC_COLUMNS = [
+  'creation_cnt_30d_level_id', 'active_uv', 'creation_uv', 'creation_task_cnt',
+  'creation_penetration_rate', 'avg_creation_task_cnt_per_creator', 'sub_expose_uv',
+  'sub_submit_uv', 'chain_pay_uv', 'chain_gmv_usd', 'sub_expose_rate',
+  'sub_submit_rate', 'chain_pay_success_rate', 'chain_arppu', 'expire_user_cnt',
+  'renew_user_cnt', 'renew_amount_usd', 'pay_user_cnt', 'order_cnt', 'gmv_usd',
+] as const;
+const FACT_VALUE_COLUMNS = [
+  'dataset', 'source_record_id', 'period', 'week_start', 'week_end', 'platform',
+  'device_type', 'platform_type', 'dataset_kind', 'analysis_level', 'pay_type',
+  'function_name', 'user_tag', 'creation_cnt_30d_level_id', 'creation_cnt_30d',
+  'plan_tier', 'plan_cycle', 'active_uv', 'creation_uv', 'creation_task_cnt',
+  'creation_penetration_rate', 'avg_creation_task_cnt_per_creator', 'sub_expose_uv',
+  'sub_submit_uv', 'chain_pay_uv', 'chain_gmv_usd', 'sub_expose_rate',
+  'sub_submit_rate', 'chain_pay_success_rate', 'chain_arppu', 'expire_user_cnt',
+  'renew_user_cnt', 'renew_amount_usd', 'pay_user_cnt', 'order_cnt', 'gmv_usd',
+  'fields_json', 'updated_at',
+] as const;
 
 const json = (body: unknown, status = 200) =>
   Response.json(body, {
@@ -364,33 +387,96 @@ const queryRows = async <T extends D1Row = D1Row>(
   return result.results || [];
 };
 
+const factDataset = (table: string) => table.replace(/_daily$/u, '');
+
+function factSourceId(dataset: string, row: D1Row) {
+  const sourceId = asText(row.source_record_id);
+  if (sourceId) return sourceId;
+  const identity = [
+    row.period, row.week_start, row.week_end, row.platform, row.device_type,
+    row.dataset_kind, row.analysis_level, row.pay_type, row.function_name,
+    row.user_tag, row.creation_cnt_30d_level_id, row.creation_cnt_30d,
+    row.platform_type, row.plan_tier, row.plan_cycle,
+  ].map(value => asText(value)).join('|');
+  return identity || crypto.randomUUID();
+}
+
+function factValues(dataset: string, row: D1Row, now = Date.now()) {
+  const values: Record<string, unknown> = {
+    dataset,
+    source_record_id: factSourceId(dataset, row),
+    period: asText(row.period),
+    week_start: asText(row.week_start) || null,
+    week_end: asText(row.week_end) || null,
+    platform: asText(row.platform) || null,
+    device_type: asText(row.device_type) || null,
+    platform_type: asText(row.platform_type) || null,
+    dataset_kind: asText(row.dataset_kind) || 'daily',
+    analysis_level: asText(row.analysis_level) || null,
+    pay_type: asText(row.pay_type) || null,
+    function_name: asText(row.function_name) || null,
+    user_tag: asText(row.user_tag) || null,
+    creation_cnt_30d_level_id: null,
+    creation_cnt_30d: asText(row.creation_cnt_30d) || null,
+    plan_tier: asText(row.plan_tier) || null,
+    plan_cycle: asText(row.plan_cycle) || null,
+    fields_json: JSON.stringify(row),
+    updated_at: now,
+  };
+  FACT_NUMERIC_COLUMNS.forEach((column) => {
+    values[column] = row[column] == null || row[column] === '' ? null : asNumber(row[column]);
+  });
+  return FACT_VALUE_COLUMNS.map(column => values[column]);
+}
+
+const FACT_INSERT_SQL = `INSERT OR REPLACE INTO pollo_da_fact_rows (${FACT_VALUE_COLUMNS.join(', ')}) VALUES (${FACT_VALUE_COLUMNS.map(() => '?').join(', ')})`;
+
+async function writeFactRows(env: Env, dataset: string, rows: D1Row[]) {
+  if (!env.DB) throw new Error('D1 未配置');
+  const statements = rows.map(row => env.DB!.prepare(FACT_INSERT_SQL).bind(...factValues(dataset, row)));
+  for (let index = 0; index < statements.length; index += 50) {
+    const batch = statements.slice(index, index + 50);
+    if (env.DB.batch) await env.DB.batch(batch);
+    else for (const statement of batch) await statement.run();
+  }
+  return rows.length;
+}
+
+async function clearFactRange(env: Env, dataset: string, startDate: string, endDate: string, platform?: string) {
+  if (!env.DB) throw new Error('D1 未配置');
+  const statement = platform
+    ? env.DB.prepare('DELETE FROM pollo_da_fact_rows WHERE dataset = ? AND period >= ? AND period <= ? AND platform = ?').bind(dataset, startDate, endDate, platform)
+    : env.DB.prepare('DELETE FROM pollo_da_fact_rows WHERE dataset = ? AND period >= ? AND period <= ?').bind(dataset, startDate, endDate);
+  await statement.run();
+}
+
+async function replaceFactRange(env: Env, dataset: string, platform: string, startDate: string, endDate: string, rows: D1Row[]) {
+  await clearFactRange(env, dataset, startDate, endDate, platform);
+  return writeFactRows(env, dataset, rows);
+}
+
 async function dailyRows(env: Env, table: 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily', params: {
   platform?: string;
   startDate?: string;
   endDate?: string;
   deviceType?: string;
 }) {
-  const records = await baseRecords(env, table, false, {
-    filter: buildBaseFilterFormula(params),
-  });
-  return records
-    .map((record) => record.fields)
-    .filter((row) => !params.platform || asText(row.platform) === params.platform)
-    .filter((row) => !params.startDate || asText(row.period) >= params.startDate)
-    .filter((row) => !params.endDate || asText(row.period) <= params.endDate)
-    .filter((row) => !params.deviceType || asText(row.device_type) === params.deviceType)
-    .sort((left, right) => asText(left.period).localeCompare(asText(right.period)));
+  const conditions = ['dataset = ?'];
+  const binds: unknown[] = [factDataset(table)];
+  if (params.platform && params.platform !== 'all') { conditions.push('platform = ?'); binds.push(params.platform); }
+  if (params.startDate) { conditions.push('period >= ?'); binds.push(params.startDate); }
+  if (params.endDate) { conditions.push('period <= ?'); binds.push(params.endDate); }
+  if (params.deviceType) { conditions.push('device_type = ?'); binds.push(params.deviceType); }
+  return queryRows(env, `SELECT * FROM pollo_da_fact_rows WHERE ${conditions.join(' AND ')} ORDER BY period`, ...binds);
 }
 
 async function latestDailyPeriod(
   env: Env,
   table: 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily',
 ) {
-  const record = (await baseRecords(env, table, false, {
-    sort: ['period DESC'],
-    limit: 1,
-  }))[0];
-  return asText(record?.fields.period);
+  const row = await env.DB!.prepare('SELECT MAX(period) AS period FROM pollo_da_fact_rows WHERE dataset = ?')
+    .bind(factDataset(table)).first<{ period: string | null }>();
+  return row?.period || '';
 }
 
 function shiftDate(date: string, days: number) {
@@ -736,15 +822,13 @@ async function overview(env: Env, request: Request) {
 async function gmvCoverage(env: Env) {
   const latestPeriod = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   const startDate = shiftDate(latestPeriod, -41);
-  const rangeFilter = buildBaseFilterFormula({ startDate, endDate: latestPeriod });
-  const payFilter = `AND(${rangeFilter},OR(CurrentValue.[analysis_level]="一级_付费类型",CurrentValue.[analysis_level]="一级_订阅方式"),OR(CurrentValue.[pay_type]="主动付费",CurrentValue.[pay_type]="主动订阅"))`;
-  const [payRecords, ...chainRows] = await Promise.all([
-    baseRecords(env, 'pay_type_daily', false, { filter: payFilter }),
+  const [payRows, ...chainRows] = await Promise.all([
+    dailyRows(env, 'pay_type_daily', { startDate, endDate: latestPeriod }),
     ...['web', 'app'].map((platform) =>
-    dailyRows(env, 'chain_daily', { platform, startDate, endDate: latestPeriod }),
+      dailyRows(env, 'chain_daily', { platform, startDate, endDate: latestPeriod }),
     ),
   ]);
-  const pay = payRecords.map((record) => record.fields);
+  const pay = payRows.filter((row) => PRIMARY_PAY_LEVELS.has(asText(row.analysis_level)) && ['主动付费', '主动订阅'].includes(asText(row.pay_type)));
   const chain = chainRows.flat();
   const platforms: Record<string, unknown> = {};
   for (const platform of ['web', 'app']) {
@@ -787,11 +871,16 @@ async function attributions(env: Env, request: Request) {
   if (planTier && !['LITE', 'PRO', 'ULTRA'].includes(planTier)) return errorResponse('planTier 必须是 LITE / PRO / ULTRA 之一');
 
   if (dimension === 'pay_type') {
-    const rows = await dailyRows(env, 'pay_type_daily', { platform, startDate, endDate, deviceType });
-    const renewalRows = renewalPlatformRows(
-      await dailyRows(env, 'renewal_daily', { platform, startDate, endDate }),
-      platform,
-      deviceType,
+    const rawRows = await dailyRows(env, 'pay_type_daily', { platform, startDate, endDate, deviceType });
+    const rows = alignComparisonWeekdays(rawRows, baselinePeriod, analysisPeriod);
+    const renewalRows = alignComparisonWeekdays(
+      renewalPlatformRows(
+        await dailyRows(env, 'renewal_daily', { platform, startDate, endDate }),
+        platform,
+        deviceType,
+      ),
+      baselinePeriod,
+      analysisPeriod,
     );
     const comparison = buildComparison(rows, startDate, endDate, baselinePeriod, analysisPeriod);
     const days = comparison?.dayCounts || weekDayCounts(rows);
@@ -856,7 +945,27 @@ async function attributions(env: Env, request: Request) {
       makeSection('主动付费下钻', '只在主动付费内部拆解首订、积分包、套餐升级、重新订阅等。', ACTIVE_PAY_LEVELS, ['首订', '积分包', '套餐升级', '重新订阅', '其他']),
       makeRenewalPlanSection(),
     ];
-    return json({ dimension, valueLabel: 'GMV', comparison, metricLabels: {}, items: sections[0].items, sections, trend });
+    // Attribution uses aligned weekdays, but the detail trend must retain every
+    // available calendar day in the selected weeks (including the baseline tail).
+    const breakdownDates = [...new Set(rawRows.filter((row) =>
+      asText(row.week_start) === comparison.baselinePeriod || asText(row.week_start) === comparison.analysisPeriod,
+    ).map((row) => asText(row.period)))];
+    const conditions = ["dataset = 'pay_type'", "analysis_level = '四级_主动付费类型新老功能下钻'", `period IN (${breakdownDates.map(() => '?').join(', ')})`, 'week_start IN (?, ?)'];
+    const binds: unknown[] = [...breakdownDates, comparison.baselinePeriod, comparison.analysisPeriod];
+    if (platform !== 'all') { conditions.push('platform = ?'); binds.push(platform); }
+    if (deviceType) { conditions.push('device_type = ?'); binds.push(deviceType); }
+    const breakdownRows = breakdownDates.length
+      ? await queryRows(env, `SELECT period, week_start, pay_type, function_name, user_tag, SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows WHERE ${conditions.join(' AND ')} GROUP BY period, week_start, pay_type, function_name, user_tag`, ...binds)
+      : [];
+    const paymentBreakdown = breakdownRows.map((row) => ({
+      period: asText(row.period),
+      weekStart: asText(row.week_start),
+      payType: normalizePayType(asText(row.pay_type)),
+      functionName: asText(row.function_name) || 'not_attributed',
+      userTag: asText(row.user_tag) || '未知',
+      gmvUsd: asNumber(row.gmv_usd),
+    }));
+    return json({ dimension, valueLabel: 'GMV', comparison, metricLabels: {}, items: sections[0].items, sections, trend, paymentBreakdown });
   }
 
   if (dimension === 'creative') {
@@ -985,7 +1094,7 @@ async function attributions(env: Env, request: Request) {
 
 const PREVIEW_FIELDS: Record<string, string[]> = {
   run_log: ['run_id', 'status', 'stage', 'start_date', 'end_date', 'platforms', 'rows_synced', 'error_message', 'started_at', 'finished_at'],
-  pay_type_daily: ['platform', 'dataset_kind', 'period', 'week_start', 'week_end', 'device_type', 'analysis_level', 'pay_type', 'gmv_usd'],
+  pay_type_daily: ['platform', 'dataset_kind', 'period', 'week_start', 'week_end', 'device_type', 'analysis_level', 'pay_type', 'function_name', 'user_tag', 'pay_user_cnt', 'order_cnt', 'gmv_usd'],
   chain_daily: ['platform', 'dataset_kind', 'period', 'week_start', 'week_end', 'device_type', 'user_tag', 'creation_cnt_30d_level_id', 'creation_cnt_30d', 'active_uv', 'sub_expose_uv', 'sub_submit_uv', 'chain_pay_uv', 'chain_gmv_usd', 'sub_expose_rate', 'sub_submit_rate', 'chain_pay_success_rate', 'chain_arppu'],
   creative_daily: ['platform', 'dataset_kind', 'period', 'week_start', 'week_end', 'creation_cnt_30d_level_id', 'creation_cnt_30d', 'active_uv', 'creation_uv', 'creation_task_cnt', 'creation_penetration_rate', 'avg_creation_task_cnt_per_creator'],
   renewal_daily: ['platform', 'dataset_kind', 'period', 'week_start', 'week_end', 'platform_type', 'plan_tier', 'plan_cycle', 'expire_user_cnt', 'renew_user_cnt', 'renew_amount_usd'],
@@ -1025,6 +1134,24 @@ function previewRow(sheet: string, row: D1Row) {
   };
 }
 
+async function productActionRows(env: Env) {
+  try {
+    return (await baseRecords(env, 'product_actions')).map(record => {
+      const row = record.fields;
+      return {
+        stat_date: row.stat_date ?? row['统计日'], weekday: row.weekday ?? row['星期'],
+        release_time: row.release_time ?? row['上线时间'], action_type: row.action_type ?? row['类型'],
+        update_point: row.update_point ?? row['更新点'], description: row.description ?? row['说明'],
+        board: row.board ?? row['板块'], version: row.version ?? row['版本'],
+        commit_id: row.commit_id ?? row.commit, source: row.source ?? row['来源'],
+        remark: row.remark ?? row['备注'], platform: row.platform ?? row['端'],
+      };
+    });
+  } catch {
+    return queryRows(env, 'SELECT stat_date, weekday, release_time, action_type, update_point, description, board, version, commit_id, source, remark, platform FROM pollo_da_product_actions ORDER BY stat_date DESC');
+  }
+}
+
 async function workbookPreview(env: Env, request: Request) {
   const url = new URL(request.url);
   const sheet = url.searchParams.get('sheet') || '';
@@ -1033,8 +1160,12 @@ async function workbookPreview(env: Env, request: Request) {
   const offset = Math.max(0, Number(url.searchParams.get('offset') || 0));
   const pageSize = Math.min(200, Math.max(1, Number(url.searchParams.get('pageSize') || 50)));
   const platform = url.searchParams.get('platform');
-  const allRows = (await baseRecords(env, table))
-    .map((record) => record.fields)
+  const sourceRows = DAILY_SHEETS.has(table)
+    ? await dailyRows(env, table as 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily', { platform: platform || undefined })
+    : table === 'product_actions'
+      ? await productActionRows(env)
+      : (await baseRecords(env, table)).map((record) => record.fields);
+  const allRows = sourceRows
     .filter((row) => !platform || !('platform' in row) || asText(row.platform) === platform)
     .reverse();
   const rows = allRows.slice(offset, offset + pageSize);
@@ -1110,7 +1241,7 @@ async function syncPlan(env: Env, mode: SyncMode) {
 }
 
 const MAXCOMPUTE_NUMBER_FIELDS = new Set([
-  'gmv_usd', 'creation_cnt_30d_level_id', 'active_uv', 'sub_expose_uv',
+  'gmv_usd', 'pay_user_cnt', 'order_cnt', 'creation_cnt_30d_level_id', 'active_uv', 'sub_expose_uv',
   'sub_submit_uv', 'chain_pay_uv', 'chain_gmv_usd', 'sub_expose_rate',
   'sub_submit_rate', 'chain_pay_success_rate', 'chain_arppu', 'creation_uv',
   'creation_task_cnt', 'creation_penetration_rate', 'avg_creation_task_cnt_per_creator',
@@ -1144,37 +1275,6 @@ async function pullDailyFacts(env: Env, platform: string, dataset: DatasetKind, 
 }
 
 type DailySheet = 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily';
-
-async function clearBaseRange(env: Env, sheet: DailySheet, startDate: string, endDate: string, platform?: string) {
-  const existing = (await baseRecords(env, sheet, true, {
-    filter: buildBaseFilterFormula({ platform, startDate, endDate }),
-  })).filter((record) =>
-    (!platform || asText(record.fields.platform) === platform) &&
-    asText(record.fields.dataset_kind) === 'daily' &&
-    asText(record.fields.period) >= startDate &&
-    asText(record.fields.period) <= endDate,
-  );
-  for (let index = 0; index < existing.length; index += 500) {
-    await baseRequest(env, sheet, '/records/batch_delete', { records: existing.slice(index, index + 500).map((record) => record.id) });
-  }
-  invalidateBaseCache(sheet);
-  return existing.length;
-}
-
-async function createBaseRows(env: Env, sheet: DailySheet, rows: D1Row[]) {
-  for (let index = 0; index < rows.length; index += 500) {
-    await baseRequest(env, sheet, '/records/batch_create', {
-      records: rows.slice(index, index + 500).map((fields) => ({ fields })),
-    });
-  }
-  invalidateBaseCache(sheet);
-  return rows.length;
-}
-
-async function replaceBaseRange(env: Env, sheet: DailySheet, platform: string, startDate: string, endDate: string, rows: D1Row[]) {
-  await clearBaseRange(env, sheet, startDate, endDate, platform);
-  return createBaseRows(env, sheet, rows);
-}
 
 type SyncJobState = SyncRunStatus & { runLogId?: string };
 const SYNC_DATASETS = ['pay_type', 'chain', 'creative', 'renewal'] as const;
@@ -1252,35 +1352,26 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
     const finish = job.steps?.find(item => item.key === 'finish');
     if (finish) {
       finish.status = 'running';
-      finish.detail = `${staged.results.length} 份查询结果已就绪 · 正在统一写入 Base`;
+      finish.detail = `${staged.results.length} 份查询结果已就绪 · 正在统一写入数据库`;
       job.stage = 'write';
       await saveSyncJob(env, job);
       const runLogId = await ensureSyncRunLog(env, job);
       job.rowsSynced = 0;
-      if (job.mode === 'full_refresh') {
-        for (const dataset of SYNC_DATASETS) {
-          const sheet = `${dataset}_daily` as DailySheet;
-          const deleted = await clearBaseRange(env, sheet, job.startDate, job.endDate);
-          finish.detail = `正在清理 Base · 已删除 ${deleted.toLocaleString('en-US')} 行 ${SYNC_DATASET_LABELS[dataset]}数据`;
-          await saveSyncJob(env, job);
-        }
-      }
       for (const item of dataSteps) {
         const separator = item.key.indexOf('-');
         const platform = item.key.slice(0, separator);
         const dataset = item.key.slice(separator + 1) as DatasetKind;
         const rows = await loadStagedRows(env, job.runId, item.key);
-        job.rowsSynced += job.mode === 'full_refresh'
-          ? await createBaseRows(env, `${dataset}_daily` as DailySheet, rows)
-          : await replaceBaseRange(env, `${dataset}_daily` as DailySheet, platform, job.startDate, job.endDate, rows);
-        finish.detail = `正在统一写入 Base · ${job.rowsSynced.toLocaleString('en-US')} 行`;
+        if (!FACT_DATASETS.has(dataset)) throw new Error(`同步数据集无效：${dataset}`);
+        job.rowsSynced += await replaceFactRange(env, dataset, platform, job.startDate, job.endDate, rows);
+        finish.detail = `正在统一写入数据库 · ${job.rowsSynced.toLocaleString('en-US')} 行`;
         await saveSyncJob(env, job);
       }
       await baseRequest(env, 'run_log', `/records/${runLogId}`, {
         fields: { status: 'success', stage: 'write', rows_synced: job.rowsSynced, finished_at: new Date().toISOString() },
       }, 'PUT');
       finish.status = 'success';
-      finish.detail = `共入库 ${job.rowsSynced.toLocaleString('en-US')} 行`;
+      finish.detail = `共写入数据库 ${job.rowsSynced.toLocaleString('en-US')} 行`;
     }
     job.status = 'success';
     job.finishedAt = new Date().toISOString();
@@ -1476,11 +1567,11 @@ async function collectReportEvidence(env: Env, request: ReportGenerationRequest,
   await progress('analyze', 'running');
   const coreTier = [...chain.items].filter(item => (item.contribution ?? 0) > 0).sort((a, b) => (b.contribution ?? 0) - (a.contribution ?? 0))[0];
   const coreChain = coreTier ? await readAttribution('chain', { creationTier: coreTier.key }) : chain;
-  const actions = (await baseRecords(env, 'product_actions')).map(record => record.fields).filter(row => {
-    const dateValue = row['合入时间'] || row['上线时间'];
+  const actions = (await productActionRows(env)).filter(row => {
+    const dateValue = row.release_time || row.stat_date;
     const date = typeof dateValue === 'number' ? new Date(dateValue).toISOString().slice(0, 10) : asText(dateValue).slice(0, 10);
-    const scope = asText(row['端类型'] || row['端'] || 'web').toLowerCase();
-    return dateInRange(date, startDate, endDate) && ['新增功能', '优化'].includes(asText(row['类型'])) && (scope.includes(platform) || /全部|双端/.test(scope));
+    const scope = asText(row.platform || 'web').toLowerCase();
+    return dateInRange(date, startDate, endDate) && ['新增功能', '优化'].includes(asText(row.action_type)) && (scope.includes(platform) || /全部|双端/.test(scope));
   });
   const labels: Record<string, string> = Object.fromEntries(TIER_ORDER.map((tier, i) => [tier, ['分析期前30日无创作用户', '分析期前30日创作1-10次用户', '分析期前30日创作11-30次用户', '分析期前30日创作31-100次用户', '分析期前30日创作101次以上用户'][i]]));
   const number = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 2 });
@@ -1549,16 +1640,85 @@ async function collectReportEvidence(env: Env, request: ReportGenerationRequest,
 }
 
 async function persistGeneratedReport(env: Env, report: ReportSummary) {
-  const fields = { platform: report.platform, period_start: report.periodStart, period_end: report.periodEnd, model_used: report.modelUsed, degraded: report.degraded ? 'true' : 'false', generated_at: report.generatedAt, report_md: report.markdown };
-  // Write history first; the latest pointer must never reference an unsaved report.
-  for (const sheet of ['report_history', 'latest_report'] as const) {
-    const parts = [`CurrentValue.[platform]="${report.platform}"`];
-    if (sheet === 'report_history') parts.push(`CurrentValue.[period_start]="${report.periodStart}"`, `CurrentValue.[period_end]="${report.periodEnd}"`);
-    const records = await baseRecords(env, sheet, true, { filter: parts.length > 1 ? `AND(${parts.join(',')})` : parts[0], sort: ['generated_at DESC'], limit: 1 });
-    const existing = records[0];
-    await baseRequest(env, sheet, existing ? `/records/${existing.id}` : '/records', { fields }, existing ? 'PUT' : 'POST');
-    invalidateBaseCache(sheet);
+  const now = Date.now();
+  const reportFields = {
+    platform: report.platform,
+    period_start: report.periodStart,
+    period_end: report.periodEnd,
+    model_used: report.modelUsed,
+    degraded: report.degraded ? 'true' : 'false',
+    generated_at: report.generatedAt,
+    report_md: report.markdown,
+  };
+  const d1Fields = [
+    report.platform,
+    report.periodStart,
+    report.periodEnd,
+    report.modelUsed,
+    report.degraded ? 'true' : 'false',
+    report.generatedAt,
+    report.markdown,
+    now,
+  ];
+  let d1Error: unknown;
+  let baseError: unknown;
+  try {
+    if (!env.DB) throw new Error('D1 未配置');
+    await env.DB.prepare(`INSERT OR REPLACE INTO pollo_da_reports
+      (report_kind, report_key, platform, period_start, period_end, model_used, degraded, generated_at, report_md, updated_at)
+      VALUES ('history', ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(`${report.platform}:${report.periodStart}:${report.periodEnd}`, ...d1Fields).run();
+    await env.DB.prepare(`INSERT OR REPLACE INTO pollo_da_reports
+      (report_kind, report_key, platform, period_start, period_end, model_used, degraded, generated_at, report_md, updated_at)
+      VALUES ('latest', ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(report.platform, ...d1Fields).run();
+  } catch (error) {
+    d1Error = error;
   }
+  try {
+    for (const sheet of ['report_history', 'latest_report'] as const) {
+      const parts = [`CurrentValue.[platform]="${escapeBaseFormulaValue(report.platform)}"`];
+      if (sheet === 'report_history') parts.push(`CurrentValue.[period_start]="${escapeBaseFormulaValue(report.periodStart)}"`, `CurrentValue.[period_end]="${escapeBaseFormulaValue(report.periodEnd)}"`);
+      const records = await baseRecords(env, sheet, true, { filter: parts.length > 1 ? `AND(${parts.join(',')})` : parts[0], sort: ['generated_at DESC'], limit: 1 });
+      const existing = records[0];
+      await baseRequest(env, sheet, existing ? `/records/${existing.id}` : '/records', { fields: reportFields }, existing ? 'PUT' : 'POST');
+      invalidateBaseCache(sheet);
+    }
+  } catch (error) {
+    baseError = error;
+  }
+  if (d1Error || baseError) {
+    const failures = [d1Error ? `D1：${String(d1Error)}` : '', baseError ? `Base：${String(baseError)}` : ''].filter(Boolean).join('；');
+    throw new Error(`报告未完成双写：${failures}`);
+  }
+}
+
+async function persistReportTaskToBase(env: Env, job: ReportGenerationStatus) {
+  const fields = {
+    run_id: job.runId,
+    platform: job.platform,
+    granularity: 'week',
+    period_start: job.periodStart,
+    period_end: job.periodEnd,
+    status: job.status,
+    stage: job.stage,
+    requested_at: job.startedAt,
+    started_at: job.startedAt,
+    heartbeat_at: job.heartbeatAt,
+    finished_at: job.finishedAt,
+    error_message: job.errorMessage,
+    model_used: job.report?.modelUsed,
+  };
+  const existing = await baseRecords(env, 'report_generation_jobs', true, {
+    filter: `CurrentValue.[run_id]="${escapeBaseFormulaValue(job.runId)}"`,
+    limit: 1,
+  });
+  if (existing[0]) {
+    await baseRequest(env, 'report_generation_jobs', `/records/${existing[0].id}`, { fields }, 'PUT');
+  } else {
+    await baseRequest(env, 'report_generation_jobs', '/records', { fields });
+  }
+  invalidateBaseCache('report_generation_jobs');
 }
 
 async function reportHandler(env: Env, request: Request) {
@@ -1567,28 +1727,37 @@ async function reportHandler(env: Env, request: Request) {
   if (url.pathname.startsWith('/api/report-generations')) return reportGenerations(env, request, {
     collect: (body, progress) => collectReportEvidence(env, body, progress),
     persist: report => persistGeneratedReport(env, report),
+    persistTask: job => persistReportTaskToBase(env, job),
   });
   if (platform && !REPORT_PLATFORMS.has(platform)) return errorResponse('platform 必须是 web / app 之一');
-  const reportFilter = platform ? `CurrentValue.[platform]="${platform}"` : undefined;
   if (request.method === 'GET' && url.pathname === '/api/report-latest') {
-    const row = (await baseRecords(env, 'latest_report', false, { filter: reportFilter, sort: ['generated_at DESC'], limit: 1 })).map((record) => record.fields)
-      .filter((item) => !platform || asText(item.platform) === platform)
-      .sort((left, right) => asText(right.generated_at).localeCompare(asText(left.generated_at)))[0];
-    return json(row ? { platform: asText(row.platform), periodStart: asText(row.period_start), periodEnd: asText(row.period_end), modelUsed: asText(row.model_used), degraded: asText(row.degraded) === 'true', markdown: asText(row.report_md), generatedAt: asText(row.generated_at) } : null);
+    let item: D1Row | undefined;
+    try {
+      item = (await baseRecords(env, 'latest_report', false, { filter: platform ? `CurrentValue.[platform]="${escapeBaseFormulaValue(platform)}"` : undefined, sort: ['generated_at DESC'], limit: 1 }))[0]?.fields;
+    } catch {
+      item = (await queryRows(env, `SELECT platform, period_start, period_end, model_used, degraded, generated_at, report_md FROM pollo_da_reports WHERE report_kind = 'latest' ${platform ? 'AND platform = ?' : ''} ORDER BY generated_at DESC LIMIT 1`, ...(platform ? [platform] : [])))[0];
+    }
+    return json(item ? { platform: asText(item.platform), periodStart: asText(item.period_start), periodEnd: asText(item.period_end), modelUsed: asText(item.model_used), degraded: asText(item.degraded) === 'true', markdown: asText(item.report_md), generatedAt: asText(item.generated_at) } : null);
   }
   if (request.method === 'GET' && url.pathname === '/api/report-history') {
-    const rows = (await baseRecords(env, 'report_history', false, { filter: reportFilter, sort: ['generated_at DESC'], fields: PREVIEW_FIELDS.report_history.filter(field => field !== 'report_md') })).map((record) => record.fields)
-      .filter((item) => !platform || asText(item.platform) === platform)
-      .sort((left, right) => asText(right.generated_at).localeCompare(asText(left.generated_at)));
+    let rows: D1Row[];
+    try {
+      rows = (await baseRecords(env, 'report_history', false, { filter: platform ? `CurrentValue.[platform]="${escapeBaseFormulaValue(platform)}"` : undefined, sort: ['generated_at DESC'], fields: PREVIEW_FIELDS.report_history.filter(field => field !== 'report_md') })).map(record => record.fields);
+    } catch {
+      rows = await queryRows(env, `SELECT platform, period_start, period_end, model_used, degraded, generated_at FROM pollo_da_reports WHERE report_kind = 'history' ${platform ? 'AND platform = ?' : ''} ORDER BY generated_at DESC`, ...(platform ? [platform] : []));
+    }
     return json(rows.map((row) => ({ platform: asText(row.platform), periodStart: asText(row.period_start), periodEnd: asText(row.period_end), modelUsed: asText(row.model_used), degraded: asText(row.degraded) === 'true', generatedAt: asText(row.generated_at) })));
   }
   if (request.method === 'GET' && url.pathname === '/api/report-history/detail') {
     const periodStart = url.searchParams.get('periodStart');
     const periodEnd = url.searchParams.get('periodEnd');
-    const filter = `AND(CurrentValue.[platform]="${escapeBaseFormulaValue(platform || '')}",CurrentValue.[period_start]="${escapeBaseFormulaValue(periodStart || '')}",CurrentValue.[period_end]="${escapeBaseFormulaValue(periodEnd || '')}")`;
-    const row = (await baseRecords(env, 'report_history', false, { filter, sort: ['generated_at DESC'], limit: 1 })).map((record) => record.fields)
-      .filter((item) => asText(item.platform) === platform && asText(item.period_start) === periodStart && asText(item.period_end) === periodEnd)
-      .sort((left, right) => asText(right.generated_at).localeCompare(asText(left.generated_at)))[0];
+    let row: D1Row | null = null;
+    try {
+      const filter = `AND(CurrentValue.[platform]="${escapeBaseFormulaValue(platform || '')}",CurrentValue.[period_start]="${escapeBaseFormulaValue(periodStart || '')}",CurrentValue.[period_end]="${escapeBaseFormulaValue(periodEnd || '')}")`;
+      row = (await baseRecords(env, 'report_history', false, { filter, sort: ['generated_at DESC'], limit: 1 }))[0]?.fields || null;
+    } catch {
+      row = await env.DB!.prepare(`SELECT platform, period_start, period_end, model_used, degraded, generated_at, report_md FROM pollo_da_reports WHERE report_kind = 'history' AND platform = ? AND period_start = ? AND period_end = ? ORDER BY generated_at DESC LIMIT 1`).bind(platform || '', periodStart || '', periodEnd || '').first<D1Row>();
+    }
     return json(row ? { platform: asText(row.platform), periodStart: asText(row.period_start), periodEnd: asText(row.period_end), modelUsed: asText(row.model_used), degraded: asText(row.degraded) === 'true', markdown: asText(row.report_md), generatedAt: asText(row.generated_at) } : null);
   }
   return errorResponse('报告接口不存在', 404);

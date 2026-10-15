@@ -1,11 +1,12 @@
 import path from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { remoteD1DevProxy } from './scripts/remote-d1-dev-proxy.mjs';
 
 export default defineConfig(({ mode }) => ({
   root: path.resolve(__dirname, 'client'),
   base: './',
-  plugins: [react()],
+  plugins: [react(), remoteD1DevProxy()],
   define: {
     'process.env': JSON.stringify({
       NODE_ENV: mode === 'production' ? 'production' : 'development',

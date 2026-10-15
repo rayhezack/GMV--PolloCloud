@@ -227,6 +227,15 @@ export interface AttributionSection {
   items: AttributionItem[];
 }
 
+export interface PaymentBreakdownRow {
+  period: string;
+  weekStart: string;
+  payType: string;
+  functionName: string;
+  userTag: string;
+  gmvUsd: number;
+}
+
 export interface DashboardAttributionsResponse {
   dimension: AttributionDimension;
   valueLabel: string;
@@ -234,6 +243,7 @@ export interface DashboardAttributionsResponse {
   metricLabels: Record<string, string>;
   items: AttributionItem[];
   sections?: AttributionSection[];
+  paymentBreakdown?: PaymentBreakdownRow[];
   drivers?: AttributionDriverItem[];
   drill?: ChainAttributionDrill;
   trend: AttributionTrendPoint[];

@@ -4,7 +4,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import {
   Menu,
   X,
-  PanelLeftClose,
+  PanelLeft,
 } from 'lucide-react';
 import {
   DASHBOARD_VIEWS,
@@ -214,7 +214,7 @@ const Layout = () => {
             title="收起导航"
             onClick={() => setSidebarCollapsed(true)}
           >
-            <PanelLeftClose size={17} />
+            <PanelLeft size={18} strokeWidth={1.8} />
             <span>收起导航</span>
           </button>
         </div>
@@ -315,7 +315,7 @@ const Layout = () => {
           title="展开导航"
           onClick={() => setSidebarCollapsed(false)}
         >
-          <PanelLeftClose size={18} />
+          <PanelLeft size={18} strokeWidth={1.8} />
         </button>
       </nav>
       <div className="dashboard-main">

@@ -120,6 +120,7 @@ export function RevenueCards({
   period,
   trend = [],
   dailyTrend = [],
+  granularity = 'day',
   headlineStartDate,
   headlineEndDate,
 }: {
@@ -198,11 +199,13 @@ export function RevenueCards({
             : item.latestValue / item.previousValue - 1
           : null;
         const selectedDays = trendDays[item.metric];
-        const miniRows = rangeRows(
-          sourceRows.map((row) => ({ ...row, activeGmv: valueOf(row, 'activeGmv') })),
-          selectedDays,
-          item.metric,
-        );
+        const cardRows = sourceRows.map((row) => ({ ...row, activeGmv: valueOf(row, 'activeGmv') }));
+        // Weekly card data already represents the complete selected window.
+        // Do not apply the per-card 30-day slice, or a long global range would
+        // silently lose all but the latest month.
+        const miniRows = granularity === 'week'
+          ? cardRows
+          : rangeRows(cardRows, selectedDays, item.metric);
         const chartType = chartTypes[item.metric];
         return (
           <ActionNode
@@ -334,7 +337,7 @@ export function RevenueCards({
                       metric={item.metric}
                       color={item.color}
                       formatValue={money}
-                      label={`${item.key}近一个月日趋势`}
+                      label={`${item.key}近一个月${granularity === 'week' ? '周' : '日'}趋势`}
                       chartType={chartType}
                     />
                   </motion.div>
@@ -346,11 +349,13 @@ export function RevenueCards({
       })}
       <TrendDialog
         metric={expandedMetric}
-        rows={rangeRows(
-          dailyTrend.length ? dailyTrend : trend,
-          expandedMetric ? trendDays[expandedMetric] : 30,
-          expandedMetric ?? 'totalGmv',
-        )}
+        rows={granularity === 'week'
+          ? (dailyTrend.length ? dailyTrend : trend)
+          : rangeRows(
+              dailyTrend.length ? dailyTrend : trend,
+              expandedMetric ? trendDays[expandedMetric] : 30,
+              expandedMetric ?? 'totalGmv',
+            )}
         definitions={definitions}
         onClose={() => setExpandedMetric(null)}
       />
@@ -456,8 +461,8 @@ function MiniTrendBars({
     <div className="revenue-mini-chart" aria-label={label}>
       {hoveredValue !== null ? (
         <span className="revenue-mini-value">
-          {rows[hovered ?? 0] ? formatTrendDate(rows[hovered ?? 0].period) : ''}{' '}
-          {formatValue(hoveredValue)}
+          <strong>{formatValue(hoveredValue)}</strong>
+          <span>{rows[hovered ?? 0] ? formatTrendDate(rows[hovered ?? 0].period) : ''}</span>
         </span>
       ) : null}
       <div
@@ -485,7 +490,6 @@ function MiniTrendBars({
               backgroundColor: color,
               '--bar-index': index,
             } as CSSProperties}
-            title={`${rows[index]?.period ?? ''} ${formatValue(value)}`}
           />
         ))}
       </div>

@@ -8,16 +8,15 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@client/src/components/ui/alert-dialog';
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@client/src/components/ui/dialog';
 import { Badge } from '@client/src/components/ui/badge';
 import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
 import { canManagePollocloudApp } from '@/lib/pollocloud';
@@ -209,7 +208,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
       trackSync(finalStatus);
       await refreshPlan();
       if (response.skipped) {
-        toast.info(response.skipReason ?? '最新日期已入库，已跳过拉取');
+        toast.info(response.skipReason ?? '最新日期已更新，已跳过拉取');
       } else if (response.status === 'success') {
         toast.success(`同步完成 · 共处理 ${response.rowsSynced} 行`);
       } else {
@@ -246,7 +245,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
   const planStatusLabel = planLoading
     ? '检查中'
     : plan?.alreadySynced
-      ? '最新日期已入库'
+      ? '最新日期已更新'
       : plan
         ? `待补 ${plan.missingItems.length} 项`
         : '检查失败';
@@ -268,7 +267,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
           </div>
         </div>
         <div className="flex flex-1 flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground">入库预检</span>
+          <span className="text-xs text-muted-foreground">更新预检</span>
           <div className="flex h-8 items-center gap-2 text-sm text-foreground">
             <Badge variant="outline" className="rounded-full bg-gray-50">
               {planStatusLabel}
@@ -305,8 +304,8 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
           />
           检查
         </Button>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
+        <Dialog>
+          <DialogTrigger asChild>
             <Button
               data-ai-section-type="button"
               size="sm"
@@ -329,20 +328,19 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
                     ? '同步最新日期'
                     : '仅管理员可同步'}
             </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent className="sync-confirm-dialog">
-            <AlertDialogHeader className="sync-confirm-header">
-              <AlertDialogTitle>确认拉取最新数据</AlertDialogTitle>
-              <AlertDialogDescription className="sync-confirm-description">
-                系统会先完成全部 MaxCompute 查询并暂存结果；确认全部成功后，
-                再统一替换 Base 中对应日期的数据。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
+          </DialogTrigger>
+          <DialogContent className="sync-confirm-dialog" showCloseButton={false}>
+            <DialogHeader className="sync-confirm-header">
+              <DialogTitle>确认拉取最新数据</DialogTitle>
+              <DialogDescription className="sync-confirm-description">
+                系统会先完成全部查询并暂存结果；确认全部成功后，再统一更新本次日期的数据。
+              </DialogDescription>
+            </DialogHeader>
             <div className="sync-confirm-summary">
               <div className="sync-confirm-meta-row">
-                <span>数据库已有数据至</span>
+                <span>当前已有数据至</span>
                 <strong>
-                  {plan?.latestStoredDate ?? '暂无已入库日期'}
+                  {plan?.latestStoredDate ?? '暂无可用日期'}
                 </strong>
               </div>
               <div className="sync-confirm-meta-row">
@@ -377,20 +375,25 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
                 </div>
               </div>
             </div>
-            <AlertDialogFooter className="sync-confirm-footer">
-              <AlertDialogCancel className="sync-confirm-cancel">取消</AlertDialogCancel>
-              <AlertDialogAction
-                disabled={!canSync}
-                className="sync-confirm-action"
-                onClick={() => {
-                  void handleSync();
-                }}
-              >
-                确认同步
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+            <DialogFooter className="sync-confirm-footer">
+              <DialogClose asChild>
+                <button type="button" className="sync-confirm-cancel">取消</button>
+              </DialogClose>
+              <DialogClose asChild>
+                <button
+                  type="button"
+                  disabled={!canSync}
+                  className="sync-confirm-action"
+                  onClick={() => {
+                    void handleSync();
+                  }}
+                >
+                  确认同步
+                </button>
+              </DialogClose>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
       {errorMsg && <p className="mt-3 text-xs text-destructive" role="alert">{errorMsg}</p>}
     </section>

@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, FileText, RefreshCw, Copy } from 'lucide-react';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
+import { FileText, RefreshCw, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
 import { canManagePollocloudApp } from '@/lib/pollocloud';
 import { generateReport, getLatestReportGeneration, getReportHistory, listReportHistory } from '@/api/report';
 import type { Platform, ReportGenerationStatus, ReportHistoryItem, ReportSummary } from '@shared/api.interface';
+import { CreateMenu } from '@/components/bencho';
+import type { CreateMenuScope } from '@/components/bencho';
 import { buildDefaultRequest, getReportPeriodKey, parseReportPeriodKey, reportWeekOptions } from './report-page.utils';
 import { ReportWeekSelect } from './ReportWeekSelect';
 import { copyAnalysis } from '@/components/dashboard/AnalysisWidgets';
@@ -33,8 +34,6 @@ export default function ReportPage() {
   const weeks = useMemo(() => reportWeekOptions(history), [history]);
   const generationPending = ['queued', 'running', 'pausing', 'paused'].includes(generation?.status ?? '');
   const generating = submitting || ['queued', 'running', 'pausing'].includes(generation?.status ?? '');
-  const matchesSelection = (item: ReportHistoryItem | ReportSummary) => item.platform === platform && item.periodStart === periodStart && item.periodEnd === periodEnd;
-  const hasReport = Boolean(report && matchesSelection(report)) || history.some(matchesSelection);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,14 +69,16 @@ export default function ReportPage() {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [platform, periodStart, periodEnd, trackReport]);
 
-  const generate = async () => {
+  const generate = async (scope: CreateMenuScope) => {
     if (!isAdmin || generating) return;
     setSubmitting(true);
     try {
-      const job = await generateReport({ platform, granularity: 'week', startDate: periodStart, endDate: periodEnd });
-      setGeneration(job);
-      trackReport(job);
-      toast.info('报告生成任务已启动');
+      const platforms: Platform[] = scope === 'both' ? ['web', 'app'] : [scope];
+      const jobs = await Promise.all(platforms.map(target => generateReport({ platform: target, granularity: 'week', startDate: periodStart, endDate: periodEnd })));
+      const selectedJob = jobs.find(job => job.platform === platform) ?? jobs[0];
+      setGeneration(selectedJob);
+      jobs.forEach(trackReport);
+      toast.info(scope === 'both' ? 'Web 和 App 报告已并行启动' : `${scope === 'web' ? 'Web' : 'App'} 报告生成任务已启动`);
     } catch (error) { toast.error(error instanceof Error ? error.message : '报告生成失败'); }
     finally { setSubmitting(false); }
   };
@@ -86,25 +87,18 @@ export default function ReportPage() {
     <div className="dashboard-content report-reading-page">
       <div className="dashboard-heading">
         <div><h1>诊断报告</h1><p>从核心结论到证据，回溯业务周的变化。</p></div>
-        {report && <Button variant="outline" size="sm" className="rounded-xl" onClick={() => void copyAnalysis(report.markdown)}><Copy size={14} />复制报告</Button>}
-      </div>
-      <section className="report-controls">
-        <Button variant="ghost" size="sm" className="rounded-full" asChild><Link to="/"><ArrowLeft className="size-4" />返回看板</Link></Button>
-        <div className="report-controls-actions">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">业务周</span>
-            <ReportWeekSelect weeks={weeks} value={getReportPeriodKey(periodStart, periodEnd)} onValueChange={value => {
-              const next = new URLSearchParams(searchParams); next.set('period', value); setSearchParams(next);
-            }} />
-          </div>
-          <Tabs value={platform} onValueChange={value => { const next = new URLSearchParams(searchParams); next.set('platform', value); setSearchParams(next); }}>
-            <TabsList className="rounded-full"><TabsTrigger value="web" className="rounded-full">Web 端</TabsTrigger><TabsTrigger value="app" className="rounded-full">App 端</TabsTrigger></TabsList>
-          </Tabs>
-          <Button onClick={() => void generate()} disabled={generationPending || loading || Boolean(loadError) || accessLoading || !isAdmin} className="rounded-full" title={isAdmin ? undefined : '仅管理员和协作者可以生成报告'}>
-            <RefreshCw size={16} className={generating ? 'animate-spin' : ''} />{generation?.status === 'paused' ? '已暂停' : generation?.status === 'pausing' ? '暂停中' : generating ? '生成中' : hasReport ? '重新生成' : '生成'}
-          </Button>
+        <div className="report-heading-actions">
+          <ReportWeekSelect weeks={weeks} value={getReportPeriodKey(periodStart, periodEnd)} onValueChange={value => {
+            const next = new URLSearchParams(searchParams); next.set('period', value); setSearchParams(next);
+          }} />
+          <CreateMenu
+            busy={generating}
+            disabled={generationPending || loading || Boolean(loadError) || accessLoading || !isAdmin}
+            onSelect={scope => void generate(scope)}
+          />
+          {report && <Button variant="outline" size="sm" className="rounded-xl" onClick={() => void copyAnalysis(report.markdown)}><Copy size={14} />复制报告</Button>}
         </div>
-      </section>
+      </div>
       {pollError && <p className="text-sm text-muted-foreground" role="status">{pollError}</p>}
       {loading ? <section className="report-empty" role="status"><RefreshCw className="animate-spin" />正在读取报告</section>
         : loadError ? <section className="report-empty" role="alert"><p>{loadError}</p><Button variant="outline" onClick={() => setReload(value => value + 1)}>重试</Button></section>

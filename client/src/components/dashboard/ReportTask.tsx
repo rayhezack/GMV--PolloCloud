@@ -166,7 +166,9 @@ export function ReportTask({
               {retrying === job.id ? '处理中' : job.status === 'paused' ? '继续运行' : job.status === 'pausing' ? '暂停中' : '暂停'}
             </button>}
             {!active(job) && <button type="button" onClick={() => void rerun()} disabled={retrying === job.id}><RotateCcw size={14} className={retrying === job.id ? 'animate-spin' : ''} />{retrying === job.id ? '启动中' : '重新运行'}</button>}
-            <Link to={job.href}>{job.kind === 'sync' ? '查看数据与口径' : job.status === 'success' ? '查看报告' : '前往报告'}<ArrowUpRight size={14} /></Link>
+            {job.kind !== 'sync' && (
+              <Link to={job.href}>{job.status === 'success' ? '查看报告' : '前往报告'}<ArrowUpRight size={14} /></Link>
+            )}
           </div>
         </footer>
       </section>}

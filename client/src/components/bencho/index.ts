@@ -4,4 +4,7 @@ export { ActionNode } from './ActionNode';
 export type { ActionNodeAction } from './ActionNode';
 export { PullToRefresh } from './PullToRefresh';
 export type { PullToRefreshRow } from './PullToRefresh';
+export { Search } from './Search';
 export { CanvasToolbar } from './CanvasToolbar';
+export { CreateMenu } from './CreateMenu';
+export type { CreateMenuScope } from './CreateMenu';
