@@ -1271,7 +1271,9 @@ async function pullDailyFacts(env: Env, platform: string, dataset: DatasetKind, 
       const value = values[index];
       row[key] = MAXCOMPUTE_NUMBER_FIELDS.has(key) ? asNumber(value) : asText(value);
     });
-    return { platform, dataset_kind: 'daily', ...row };
+    // The query aggregates by the requested scope; stamp that scope explicitly
+    // so D1 reads can always select all / web / app without inference.
+    return { ...row, platform, dataset_kind: 'daily' };
   });
 }
 
