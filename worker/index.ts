@@ -463,8 +463,7 @@ async function dailyRows(env: Env, table: 'pay_type_daily' | 'chain_daily' | 'cr
 }) {
   const conditions = ['dataset = ?'];
   const binds: unknown[] = [factDataset(table)];
-  if (params.platform === 'all') conditions.push("platform IN ('web', 'app')");
-  else if (params.platform) { conditions.push('platform = ?'); binds.push(params.platform); }
+  if (params.platform) { conditions.push('platform = ?'); binds.push(params.platform); }
   if (params.startDate) { conditions.push('period >= ?'); binds.push(params.startDate); }
   if (params.endDate) { conditions.push('period <= ?'); binds.push(params.endDate); }
   if (params.deviceType) { conditions.push('device_type = ?'); binds.push(params.deviceType); }
@@ -953,8 +952,8 @@ async function attributions(env: Env, request: Request) {
     ).map((row) => asText(row.period)))];
     const conditions = ["dataset = 'pay_type'", "analysis_level = '四级_主动付费类型新老功能下钻'", `period IN (${breakdownDates.map(() => '?').join(', ')})`, 'week_start IN (?, ?)'];
     const binds: unknown[] = [...breakdownDates, comparison.baselinePeriod, comparison.analysisPeriod];
-    if (platform === 'all') conditions.push("platform IN ('web', 'app')");
-    else { conditions.push('platform = ?'); binds.push(platform); }
+    conditions.push('platform = ?');
+    binds.push(platform);
     if (deviceType) { conditions.push('device_type = ?'); binds.push(deviceType); }
     const breakdownRows = breakdownDates.length
       ? await queryRows(env, `SELECT period, week_start, pay_type, function_name, user_tag, SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows WHERE ${conditions.join(' AND ')} GROUP BY period, week_start, pay_type, function_name, user_tag`, ...binds)
@@ -1193,7 +1192,7 @@ async function latestSync(env: Env) {
 async function syncPlan(env: Env, mode: SyncMode) {
   const sheets = ['pay_type_daily', 'chain_daily', 'creative_daily', 'renewal_daily'] as const;
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  const platforms = ['web', 'app'];
+  const platforms = ['all', 'web', 'app'];
   if (mode === 'full_refresh') {
     return json({
       mode,
@@ -1432,9 +1431,7 @@ async function createSyncRun(env: Env, request: Request) {
   const planResponse = await syncPlan(env, mode);
   const plan = await planResponse.json() as { startDate: string; endDate: string; platforms: string[]; alreadySynced?: boolean };
   const requestedPlatforms = body.platforms?.filter((platform) => DASHBOARD_PLATFORMS.has(platform)) ?? plan.platforms;
-  const platforms = [...new Set(
-    requestedPlatforms.includes('all') ? ['web', 'app'] : requestedPlatforms.filter((platform) => platform !== 'all'),
-  )];
+  const platforms = [...new Set(requestedPlatforms)];
   if (!platforms.length) return errorResponse('请选择同步端口', 400);
   if (plan.alreadySynced) return json({ runId: `base-${Date.now()}`, mode, ...plan, status: 'success', rowsSynced: 0, skipped: true, skipReason: 'Base 已包含目标日期数据' });
   const active = await env.DB.prepare("SELECT payload FROM sync_jobs WHERE status IN ('queued', 'running', 'pausing', 'paused') ORDER BY created_at DESC LIMIT 1").first<{ payload: string }>();
@@ -1457,9 +1454,7 @@ async function retrySyncRun(env: Env, request: Request) {
   if (['queued', 'running', 'pausing', 'paused'].includes(source.status)) return errorResponse('该数据同步任务尚未结束', 409);
   const active = await env.DB.prepare("SELECT run_id FROM sync_jobs WHERE status IN ('queued', 'running', 'pausing', 'paused') LIMIT 1").first<{ run_id: string }>();
   if (active) return errorResponse('已有数据同步任务正在运行，请完成后再试', 409);
-  const platforms = [...new Set(
-    source.platforms.includes('all') ? ['web', 'app'] : source.platforms.filter((platform) => platform !== 'all'),
-  )] as SyncRunStatus['platforms'];
+  const platforms = [...new Set(source.platforms)] as SyncRunStatus['platforms'];
   const job = newSyncJob(source.mode ?? 'latest_day', source.startDate, source.endDate, platforms);
   await env.DB.prepare("INSERT INTO sync_jobs (run_id, status, payload, created_at, updated_at) VALUES (?, 'queued', ?, ?, ?)")
     .bind(job.runId, JSON.stringify(job), Date.now(), Date.now()).run();
