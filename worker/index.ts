@@ -463,7 +463,8 @@ async function dailyRows(env: Env, table: 'pay_type_daily' | 'chain_daily' | 'cr
 }) {
   const conditions = ['dataset = ?'];
   const binds: unknown[] = [factDataset(table)];
-  if (params.platform && params.platform !== 'all') { conditions.push('platform = ?'); binds.push(params.platform); }
+  if (params.platform === 'all') conditions.push("platform IN ('web', 'app')");
+  else if (params.platform) { conditions.push('platform = ?'); binds.push(params.platform); }
   if (params.startDate) { conditions.push('period >= ?'); binds.push(params.startDate); }
   if (params.endDate) { conditions.push('period <= ?'); binds.push(params.endDate); }
   if (params.deviceType) { conditions.push('device_type = ?'); binds.push(params.deviceType); }
@@ -952,7 +953,8 @@ async function attributions(env: Env, request: Request) {
     ).map((row) => asText(row.period)))];
     const conditions = ["dataset = 'pay_type'", "analysis_level = '四级_主动付费类型新老功能下钻'", `period IN (${breakdownDates.map(() => '?').join(', ')})`, 'week_start IN (?, ?)'];
     const binds: unknown[] = [...breakdownDates, comparison.baselinePeriod, comparison.analysisPeriod];
-    if (platform !== 'all') { conditions.push('platform = ?'); binds.push(platform); }
+    if (platform === 'all') conditions.push("platform IN ('web', 'app')");
+    else { conditions.push('platform = ?'); binds.push(platform); }
     if (deviceType) { conditions.push('device_type = ?'); binds.push(deviceType); }
     const breakdownRows = breakdownDates.length
       ? await queryRows(env, `SELECT period, week_start, pay_type, function_name, user_tag, SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows WHERE ${conditions.join(' AND ')} GROUP BY period, week_start, pay_type, function_name, user_tag`, ...binds)
@@ -1191,7 +1193,7 @@ async function latestSync(env: Env) {
 async function syncPlan(env: Env, mode: SyncMode) {
   const sheets = ['pay_type_daily', 'chain_daily', 'creative_daily', 'renewal_daily'] as const;
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  const platforms = ['all', 'web', 'app'];
+  const platforms = ['web', 'app'];
   if (mode === 'full_refresh') {
     return json({
       mode,
@@ -1364,14 +1366,14 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
         const rows = await loadStagedRows(env, job.runId, item.key);
         if (!FACT_DATASETS.has(dataset)) throw new Error(`同步数据集无效：${dataset}`);
         job.rowsSynced += await replaceFactRange(env, dataset, platform, job.startDate, job.endDate, rows);
-        finish.detail = `正在统一写入数据库 · ${job.rowsSynced.toLocaleString('en-US')} 行`;
+        finish.detail = `正在统一写入数据库 · ${job.rowsSynced.toLocaleString('en-US')} 条分析记录`;
         await saveSyncJob(env, job);
       }
       await baseRequest(env, 'run_log', `/records/${runLogId}`, {
         fields: { status: 'success', stage: 'write', rows_synced: job.rowsSynced, finished_at: new Date().toISOString() },
       }, 'PUT');
       finish.status = 'success';
-      finish.detail = `共写入数据库 ${job.rowsSynced.toLocaleString('en-US')} 行`;
+      finish.detail = `共写入数据库 ${job.rowsSynced.toLocaleString('en-US')} 条分析记录`;
     }
     job.status = 'success';
     job.finishedAt = new Date().toISOString();
@@ -1412,7 +1414,7 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
     const { rows } = result.value;
     await stageSyncRows(env, job.runId, step.key, rows);
     step.status = 'success';
-    step.detail = `已暂存 ${rows.length.toLocaleString('en-US')} 行`;
+    step.detail = `已暂存 ${rows.length.toLocaleString('en-US')} 条聚合记录`;
   }
   if (failure) throw failure;
   const control = await env.DB!.prepare('SELECT status FROM sync_jobs WHERE run_id = ?')
@@ -1429,7 +1431,10 @@ async function createSyncRun(env: Env, request: Request) {
   const mode: SyncMode = body.mode === 'full_refresh' ? 'full_refresh' : body.mode === 'latest_week' ? 'latest_week' : 'latest_day';
   const planResponse = await syncPlan(env, mode);
   const plan = await planResponse.json() as { startDate: string; endDate: string; platforms: string[]; alreadySynced?: boolean };
-  const platforms = body.platforms?.filter((platform) => DASHBOARD_PLATFORMS.has(platform)) ?? plan.platforms;
+  const requestedPlatforms = body.platforms?.filter((platform) => DASHBOARD_PLATFORMS.has(platform)) ?? plan.platforms;
+  const platforms = [...new Set(
+    requestedPlatforms.includes('all') ? ['web', 'app'] : requestedPlatforms.filter((platform) => platform !== 'all'),
+  )];
   if (!platforms.length) return errorResponse('请选择同步端口', 400);
   if (plan.alreadySynced) return json({ runId: `base-${Date.now()}`, mode, ...plan, status: 'success', rowsSynced: 0, skipped: true, skipReason: 'Base 已包含目标日期数据' });
   const active = await env.DB.prepare("SELECT payload FROM sync_jobs WHERE status IN ('queued', 'running', 'pausing', 'paused') ORDER BY created_at DESC LIMIT 1").first<{ payload: string }>();
@@ -1452,7 +1457,10 @@ async function retrySyncRun(env: Env, request: Request) {
   if (['queued', 'running', 'pausing', 'paused'].includes(source.status)) return errorResponse('该数据同步任务尚未结束', 409);
   const active = await env.DB.prepare("SELECT run_id FROM sync_jobs WHERE status IN ('queued', 'running', 'pausing', 'paused') LIMIT 1").first<{ run_id: string }>();
   if (active) return errorResponse('已有数据同步任务正在运行，请完成后再试', 409);
-  const job = newSyncJob(source.mode ?? 'latest_day', source.startDate, source.endDate, source.platforms);
+  const platforms = [...new Set(
+    source.platforms.includes('all') ? ['web', 'app'] : source.platforms.filter((platform) => platform !== 'all'),
+  )] as SyncRunStatus['platforms'];
+  const job = newSyncJob(source.mode ?? 'latest_day', source.startDate, source.endDate, platforms);
   await env.DB.prepare("INSERT INTO sync_jobs (run_id, status, payload, created_at, updated_at) VALUES (?, 'queued', ?, ?, ?)")
     .bind(job.runId, JSON.stringify(job), Date.now(), Date.now()).run();
   return json(job, 202);
@@ -1550,11 +1558,24 @@ async function collectReportEvidence(env: Env, request: ReportGenerationRequest,
     await progress(key, 'running');
     const rows = await dailyRows(env, table, { platform, startDate, endDate });
     const dates = new Set(rows.map(row => asText(row.period)));
-    const expectedDays = Math.floor((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86400000) + 1;
-    const missing = Array.from({ length: expectedDays }, (_, i) => shiftDate(startDate, i)).filter(date => !dates.has(date));
-    if (missing.length) throw new Error(`${table} 缺少 ${missing.join('、')} 的数据，请先同步后再生成。`);
+    const analysisEnd = shiftDate(analysisPeriod, 6);
+    const isIncompleteAnalysis = endDate < analysisEnd;
+    const baselineDates = Array.from({ length: 7 }, (_, i) => shiftDate(startDate, i));
+    const analysisExpectedDays = Math.floor((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${analysisPeriod}T00:00:00Z`)) / 86400000) + 1;
+    const analysisExpectedDates = Array.from({ length: analysisExpectedDays }, (_, i) => shiftDate(analysisPeriod, i));
+    const missingBaseline = baselineDates.filter(date => !dates.has(date));
+    const missingAnalysis = analysisExpectedDates.filter(date => !dates.has(date));
+    if (missingBaseline.length || (!isIncompleteAnalysis && missingAnalysis.length)) {
+      const missing = [...missingBaseline, ...missingAnalysis];
+      throw new Error(`${table} 缺少 ${missing.join('、')} 的数据，请先同步后再生成。`);
+    }
+    const observedAnalysisDays = analysisExpectedDates.filter(date => dates.has(date)).length;
+    if (!observedAnalysisDays) throw new Error(`${table} 在分析业务周暂无可用数据，请先同步后再生成。`);
     const data = await readAttribution(dimension, extra);
-    await progress(key, 'success', `已读取 ${rows.length.toLocaleString('en-US')} 条记录 · ${expectedDays} 个业务日`);
+    const coverage = isIncompleteAnalysis
+      ? `基准期 7 个业务日 · 分析期 ${observedAnalysisDays}/${analysisExpectedDays} 个业务日`
+      : `${baselineDates.length + analysisExpectedDays} 个业务日`;
+    await progress(key, 'success', `已读取 ${rows.length.toLocaleString('en-US')} 条记录 · ${coverage}`);
     return data;
   };
   const results = await Promise.allSettled([
@@ -1615,13 +1636,19 @@ async function collectReportEvidence(env: Env, request: ReportGenerationRequest,
   if (coreTier && coreDriver) {
     const rows = (await dailyRows(env, 'chain_daily', { platform, startDate, endDate }))
       .filter(row => tierKey(row) === coreTier.key);
-    const daily = Array.from({ length: 14 }, (_, i) => {
-      const date = shiftDate(startDate, i);
+    const analysisDates = [...new Set(
+      rows
+        .map(row => asText(row.period))
+        .filter(date => date >= analysisPeriod && date <= endDate),
+    )].sort();
+    const valueForDate = (date: string) => {
       const metrics = chainMetrics(sumChain(rows.filter(row => asText(row.period) === date)));
-      return { date, value: metrics[coreDriver.metricKey as keyof typeof metrics] };
-    });
-    const baselineMean = sum(daily.slice(0, 7).map(item => item.value)) / 7;
-    const analysisDaily = daily.slice(7);
+      return metrics[coreDriver.metricKey as keyof typeof metrics];
+    };
+    const baselineMean = analysisDates.length
+      ? average(analysisDates.map(date => valueForDate(shiftDate(date, -7))))
+      : 0;
+    const analysisDaily = analysisDates.map(date => ({ date, value: valueForDate(date) }));
     const direction = Math.sign(coreDriver.change);
     const first = direction ? analysisDaily.find((_, i) => analysisDaily.slice(i).every(item => (item.value - baselineMean) * direction > 0)) : undefined;
     inflection = { 指标: coreDriver.metric, 持续变动开始日: first?.date ?? null, 方向: direction > 0 ? '持续高于基准周日均' : direction < 0 ? '持续低于基准周日均' : '无变化', 无拐点时: '仅可使用较弱的周级时序证据' };

@@ -43,7 +43,7 @@ Set `VITE_DATA_MODE=demo` only for a local visual preview. Production uses the s
 
 ## Report generation
 
-The business-week selector controls both report viewing and generation. A request contains the selected Saturday–Friday analysis week and the immediately preceding baseline week. The Worker rejects incomplete/future windows and missing daily facts before invoking the model. Historical selections never fall back to a different report.
+The business-week selector controls both report viewing and generation. A request contains the selected Saturday–Friday analysis week and the immediately preceding baseline week. The Worker rejects future windows and missing baseline daily facts before invoking the model; an in-progress analysis week can use the observed days and calculates daily averages from that actual coverage. Historical selections never fall back to a different report.
 
 Jobs and individual step states are stored in D1 (`report_jobs`). The application polls status every three seconds on the report page. A streamed execution request stays open in the shared layout while the Worker reads D1 facts, calculates attribution, calls Kimi, and writes the report to D1 history and latest-report tables. Navigation inside the dashboard keeps that request alive. Closing the browser can interrupt execution; jobs with no heartbeat for three minutes become failed and can be generated again. This is not a durable queue that guarantees execution after every client disconnect.
 
