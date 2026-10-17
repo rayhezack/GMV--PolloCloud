@@ -24,7 +24,7 @@ type Task = {
 };
 
 const DISMISSED_TASKS_KEY = 'pollo-dismissed-task-runs';
-const GMV_ANOMALY_NOTICE_KEY = 'pollo-gmv-anomaly-notified-week';
+const NOTIFIED_TASKS_KEY = 'pollo-notified-task-runs';
 
 const isActiveStatus = (status: Task['status']) => ['queued', 'running', 'pausing', 'paused'].includes(status);
 
@@ -33,11 +33,6 @@ const metricLabel = (metric: string) => metric === 'totalGmv' ? '大盘 GMV' : m
 
 async function notifyGmvAnomalies() {
   const result = await getGmvAnomalies();
-  if (!result.latestWeek) return;
-  let notifiedWeek = '';
-  try { notifiedWeek = window.localStorage.getItem(GMV_ANOMALY_NOTICE_KEY) || ''; } catch { /* optional */ }
-  if (notifiedWeek === result.latestWeek) return;
-  try { window.localStorage.setItem(GMV_ANOMALY_NOTICE_KEY, result.latestWeek); } catch { /* optional */ }
   for (const alert of result.alerts) {
     const change = `${alert.change >= 0 ? '+' : ''}${(alert.change * 100).toFixed(1)}%`;
     const threshold = `${alert.threshold >= 0 ? '+' : ''}${(alert.threshold * 100).toFixed(1)}%`;
@@ -47,6 +42,25 @@ async function notifyGmvAnomalies() {
       body: `${alert.period} 日均 ${change}，超过阈值 ${threshold}`,
     });
   }
+}
+
+function notifyTaskCompletion(task: Task) {
+  let notified: string[] = [];
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(NOTIFIED_TASKS_KEY) || '[]');
+    if (Array.isArray(stored)) notified = stored.filter((item): item is string => typeof item === 'string');
+  } catch { /* optional */ }
+  if (notified.includes(task.id)) return false;
+  try {
+    window.localStorage.setItem(NOTIFIED_TASKS_KEY, JSON.stringify([...notified.slice(-49), task.id]));
+  } catch { /* optional */ }
+  const failed = task.status === 'failed';
+  pushToast({
+    kind: failed ? 'error' : 'success',
+    title: task.kind === 'sync' ? (failed ? '数据同步失败' : '数据同步完成') : (failed ? '诊断报告生成失败' : '诊断报告已生成'),
+    body: failed ? (task.errorMessage || '任务执行失败，请打开任务详情查看') : task.context,
+  });
+  return true;
 }
 
 function readDismissedTasks(): string[] {
@@ -105,6 +119,8 @@ export function ReportTask({
     for (const task of tasks) {
       const previous = previousStatuses.current.get(task.id);
       if (!previous && !isActiveStatus(task.status)) {
+        const newlyNotified = notifyTaskCompletion(task);
+        if (newlyNotified && task.kind === 'sync' && task.status === 'success') void notifyGmvAnomalies().catch(() => undefined);
         // A completed task may be the first state returned after a page reload.
         // Give a fresh completion a short reading window, then remove it too.
         const age = Date.now() - Date.parse(task.updatedAt);
@@ -115,13 +131,9 @@ export function ReportTask({
         continue;
       }
       if (!previous || !isActiveStatus(previous) || isActiveStatus(task.status)) continue;
+      notifyTaskCompletion(task);
+      if (task.kind === 'sync' && task.status === 'success') void notifyGmvAnomalies().catch(() => undefined);
       const failed = task.status === 'failed';
-      pushToast({
-        kind: failed ? 'error' : 'success',
-        title: task.kind === 'sync' ? (failed ? '数据同步失败' : '数据同步完成') : (failed ? '诊断报告生成失败' : '诊断报告已生成'),
-        body: failed ? (task.errorMessage || '任务执行失败，请打开任务详情查看') : task.context,
-      });
-      if (!failed && task.kind === 'sync') void notifyGmvAnomalies().catch(() => undefined);
       const delay = failed ? 6500 : 4000;
       const timer = window.setTimeout(() => {
         setExpandedTaskId(current => current === task.id ? '' : current);
