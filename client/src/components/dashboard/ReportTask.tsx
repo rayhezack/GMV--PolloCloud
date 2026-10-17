@@ -5,6 +5,7 @@ import { CheckCircle2, Loader2, AlertCircle, Circle, ChevronUp, ChevronDown, X, 
 import { formatAnalysisWeekLabel, formatGeneratedAt, getReportPeriodKey } from '@/pages/ReportPage/report-page.utils';
 import { generateReport, pauseReportGeneration, resumeReportGeneration } from '@/api/report';
 import { pauseSyncRun, resumeSyncRun, retrySyncRun } from '@/api/sync';
+import { getGmvAnomalies } from '@/api/dashboard';
 import { toast } from 'sonner';
 import { pushToast } from '@/components/bencho/ToastStack';
 
@@ -23,8 +24,30 @@ type Task = {
 };
 
 const DISMISSED_TASKS_KEY = 'pollo-dismissed-task-runs';
+const GMV_ANOMALY_NOTICE_KEY = 'pollo-gmv-anomaly-notified-week';
 
 const isActiveStatus = (status: Task['status']) => ['queued', 'running', 'pausing', 'paused'].includes(status);
+
+const platformLabel = (platform: 'all' | 'web' | 'app') => platform === 'all' ? '大盘' : platform === 'web' ? 'Web' : 'App';
+const metricLabel = (metric: string) => metric === 'totalGmv' ? '大盘 GMV' : metric === 'activeGmv' ? '主动付费' : '续订 GMV';
+
+async function notifyGmvAnomalies() {
+  const result = await getGmvAnomalies();
+  if (!result.latestWeek) return;
+  let notifiedWeek = '';
+  try { notifiedWeek = window.localStorage.getItem(GMV_ANOMALY_NOTICE_KEY) || ''; } catch { /* optional */ }
+  if (notifiedWeek === result.latestWeek) return;
+  try { window.localStorage.setItem(GMV_ANOMALY_NOTICE_KEY, result.latestWeek); } catch { /* optional */ }
+  for (const alert of result.alerts) {
+    const change = `${alert.change >= 0 ? '+' : ''}${(alert.change * 100).toFixed(1)}%`;
+    const threshold = `${alert.threshold >= 0 ? '+' : ''}${(alert.threshold * 100).toFixed(1)}%`;
+    pushToast({
+      kind: alert.direction === 'up' ? 'warning' : 'error',
+      title: `${platformLabel(alert.platform)} · ${metricLabel(alert.metric)}异动`,
+      body: `${alert.period} 日均 ${change}，超过阈值 ${threshold}`,
+    });
+  }
+}
 
 function readDismissedTasks(): string[] {
   try {
@@ -98,6 +121,7 @@ export function ReportTask({
         title: task.kind === 'sync' ? (failed ? '数据同步失败' : '数据同步完成') : (failed ? '诊断报告生成失败' : '诊断报告已生成'),
         body: failed ? (task.errorMessage || '任务执行失败，请打开任务详情查看') : task.context,
       });
+      if (!failed && task.kind === 'sync') void notifyGmvAnomalies().catch(() => undefined);
       const delay = failed ? 6500 : 4000;
       const timer = window.setTimeout(() => {
         setExpandedTaskId(current => current === task.id ? '' : current);

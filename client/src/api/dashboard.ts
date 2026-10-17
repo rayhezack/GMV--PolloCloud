@@ -6,6 +6,7 @@ import type {
   DashboardPlatform,
   DashboardAttributionsResponse,
   DashboardGmvCoverageResponse,
+  DashboardGmvAnomalyResponse,
   DashboardOverviewResponse,
   Granularity,
   PaymentChainType,
@@ -34,6 +35,15 @@ export async function getGmvCoverage(): Promise<DashboardGmvCoverageResponse> {
     method: 'GET',
   });
   return response.data as DashboardGmvCoverageResponse;
+}
+
+export async function getGmvAnomalies(): Promise<DashboardGmvAnomalyResponse> {
+  if (STATIC_DEMO_MODE) return { latestWeek: '', method: 'rolling_p95_p05_min_10pct', alerts: [] };
+  const response = await axiosForBackend({
+    url: '/api/dashboard/gmv-anomalies',
+    method: 'GET',
+  });
+  return response.data as DashboardGmvAnomalyResponse;
 }
 
 export async function getDashboardOverview(params: {

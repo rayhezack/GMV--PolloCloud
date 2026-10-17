@@ -991,6 +991,7 @@ function GmvCoverageExplanation({
           <a href="#method-active">主动付费</a>
           <a href="#method-drill">下钻口径</a>
           <a href="#method-renewal">自动续订</a>
+          <a href="#method-anomaly">异动诊断</a>
           <a href="#method-payment">支付与归因</a>
           <a href="#method-creative">创作分层</a>
         </nav>
@@ -1090,6 +1091,12 @@ function GmvCoverageExplanation({
               <div key={item.label}><dt>{item.label}</dt><dd>{item.formula}</dd></div>
             ))}
           </dl>
+        </section>
+        <section id="method-anomaly" className="dashboard-methodology-section">
+          <h3>GMV 异动诊断</h3>
+          <p>异动诊断按 Web、App 和大盘分别计算最新完整业务周的日均 GMV，指标包括大盘 GMV、主动付费和续订 GMV。业务周采用周六至周五，只有完整的 7 天业务周进入比较。</p>
+          <p>每个指标先计算最近 12 个完整业务周的周环比变化分布，再取提升侧 P95、下降侧 P05。为避免把小幅波动当成告警，最终阈值增加绝对变动门槛：提升阈值为 <code>max(P95, +10%)</code>，下降阈值为 <code>min(P05, -10%)</code>；超过对应阈值才生成右下角 Toast。</p>
+          <p>续订 GMV 只使用已有有效金额的完整业务周；缺失或日均基准为 0 的周不参与周环比和分位数计算。历史样本不足 8 个有效周时不发出异动提醒。</p>
         </section>
         <section id="method-payment" className="dashboard-methodology-section">
           <h3>支付结果与链路归因</h3>

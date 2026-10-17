@@ -857,6 +857,90 @@ async function gmvCoverage(env: Env) {
   return json({ weekCount: Math.max(...Object.values(platforms).map((value) => (value as { weeks: unknown[] }).weeks.length)), platforms });
 }
 
+function percentile(values: number[], quantile: number) {
+  const sorted = [...values].sort((a, b) => a - b);
+  if (sorted.length === 0) return 0;
+  const position = (sorted.length - 1) * quantile;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  if (lower === upper) return sorted[lower];
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
+}
+
+async function gmvAnomalies(env: Env) {
+  if (!env.DB) return json({ latestWeek: '', method: 'rolling_p95_p05_min_10pct', alerts: [] });
+  const latestPeriod = await Promise.all([
+    latestDailyPeriod(env, 'pay_type_daily'),
+    latestDailyPeriod(env, 'chain_daily'),
+  ]).then((periods) => periods.filter(Boolean).sort().at(-1) || '');
+  if (!latestPeriod) return json({ latestWeek: '', method: 'rolling_p95_p05_min_10pct', alerts: [] });
+  const endDate = latestPeriod;
+  const startDate = shiftDate(latestPeriod, -110);
+  const [payRows, chainRows, renewalRows] = await Promise.all([
+    dailyRows(env, 'pay_type_daily', { startDate, endDate }),
+    dailyRows(env, 'chain_daily', { startDate, endDate }),
+    dailyRows(env, 'renewal_daily', { startDate, endDate }),
+  ]);
+  const alerts: Array<Record<string, unknown>> = [];
+  let latestCompleteWeek = '';
+  for (const platform of ['all', 'web', 'app'] as const) {
+    const pay = payRows.filter((row) => asText(row.platform) === platform);
+    const chain = chainRows.filter((row) => asText(row.platform) === platform);
+    const renewal = renewalPlatformRows(renewalRows, platform);
+    const payDays = weekDayCounts(pay);
+    const chainDays = weekDayCounts(chain);
+    const renewalDays = weekDayCounts(renewal);
+    const completeWeeks = [...new Set([...payDays.keys()].filter((week) =>
+      (payDays.get(week) || 0) >= WEEK_DAYS && (chainDays.get(week) || 0) >= WEEK_DAYS,
+    ))].sort();
+    if (completeWeeks.length < 2) continue;
+    const latestWeek = completeWeeks.at(-1)!;
+    if (latestWeek > latestCompleteWeek) latestCompleteWeek = latestWeek;
+    const previousWeek = completeWeeks.at(-2)!;
+    const metrics = [
+      { key: 'totalGmv', rows: pay, field: 'gmv_usd', days: payDays },
+      { key: 'activeGmv', rows: chain, field: 'chain_gmv_usd', days: chainDays },
+      { key: 'renewalGmv', rows: renewal, field: 'renew_amount_usd', days: renewalDays },
+    ] as const;
+    for (const metric of metrics) {
+      const valueForWeek = (week: string) => {
+        const rows = metric.rows.filter((row) => asText(row.week_start) === week);
+        const days = metric.days.get(week) || WEEK_DAYS;
+        return sum(rows.map((row) => asNumber(row[metric.field]))) / days;
+      };
+      const values = completeWeeks.map((week) => ({ week, value: valueForWeek(week) }));
+      const changes = values.slice(1).flatMap((current, index) => {
+        const previous = values[index];
+        return previous.value > 0 && current.value > 0
+          ? [{ week: current.week, value: current.value / previous.value - 1 }]
+          : [];
+      });
+      const current = changes.at(-1);
+      if (!current) continue;
+      const history = changes.slice(Math.max(0, changes.length - 13), -1).map((item) => item.value);
+      if (history.length < 8) continue;
+      const upper = Math.max(percentile(history, 0.95), 0.10);
+      const lower = Math.min(percentile(history, 0.05), -0.10);
+      const direction = current.value >= upper ? 'up' : current.value <= lower ? 'down' : null;
+      if (!direction) continue;
+      const currentValue = values.at(-1)!.value;
+      const previousValue = values.at(-2)!.value;
+      alerts.push({
+        platform,
+        metric: metric.key,
+        period: latestWeek,
+        direction,
+        change: current.value,
+        threshold: direction === 'up' ? upper : lower,
+        currentDailyAvg: currentValue,
+        previousDailyAvg: previousValue,
+        historyCount: history.length,
+      });
+    }
+  }
+  return json({ latestWeek: latestCompleteWeek, method: 'rolling_p95_p05_min_10pct', alerts });
+}
+
 async function attributions(env: Env, request: Request) {
   const url = new URL(request.url);
   const platform = url.searchParams.get('platform') || 'web';
@@ -1924,6 +2008,7 @@ export default {
       if (url.pathname.startsWith('/api/cron/')) return cronHandler(env, request);
       if (url.pathname === '/api/dashboard/overview' && request.method === 'GET') return cachedDashboardResponse(env, request, context, () => overview(env, request));
       if (url.pathname === '/api/dashboard/gmv-coverage' && request.method === 'GET') return cachedDashboardResponse(env, request, context, () => gmvCoverage(env));
+      if (url.pathname === '/api/dashboard/gmv-anomalies' && request.method === 'GET') return cachedDashboardResponse(env, request, context, () => gmvAnomalies(env));
       if (url.pathname === '/api/dashboard/attributions' && request.method === 'GET') return cachedDashboardResponse(env, request, context, () => attributions(env, request));
       if (url.pathname === '/api/workbook-preview' && request.method === 'GET') return workbookPreview(env, request);
       if (url.pathname === '/api/sync-runs/latest' && request.method === 'GET') return latestSync(env);

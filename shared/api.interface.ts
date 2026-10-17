@@ -157,6 +157,26 @@ export interface DashboardOverviewResponse {
   cardTrend?: OverviewTrendPoint[];
 }
 
+export type GmvAnomalyMetric = 'totalGmv' | 'activeGmv' | 'renewalGmv';
+
+export interface GmvAnomalyAlert {
+  platform: DashboardPlatform;
+  metric: GmvAnomalyMetric;
+  period: string;
+  direction: 'up' | 'down';
+  change: number;
+  threshold: number;
+  currentDailyAvg: number;
+  previousDailyAvg: number;
+  historyCount: number;
+}
+
+export interface DashboardGmvAnomalyResponse {
+  latestWeek: string;
+  method: 'rolling_p95_p05_min_10pct';
+  alerts: GmvAnomalyAlert[];
+}
+
 export interface DashboardGmvCoverageWeek {
   period: string;
   payTypeDailyAvg: number;
