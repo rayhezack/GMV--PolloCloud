@@ -44,7 +44,7 @@ export function ReportWeekSelect({ weeks, value, onValueChange }: { weeks: Week[
               wheelTimerRef.current = setTimeout(() => {
                 wheelLockedRef.current = false;
                 wheelTimerRef.current = null;
-              }, 180);
+              }, 260);
             }}
           >
             {weeks.map((week, index) => {
