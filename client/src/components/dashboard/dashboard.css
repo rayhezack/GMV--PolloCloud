@@ -2845,10 +2845,11 @@
   grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
   gap: 16px;
   align-items: stretch;
+  height: 372px;
 }
 .payment-explorer-layout--table-only { display: block; }
 .payment-explorer-table-column { min-width: 0; }
-.payment-explorer-layout > .payment-explorer-table-column { display: flex; flex-direction: column; }
+.payment-explorer-layout > .payment-explorer-table-column { display: flex; min-height: 0; flex-direction: column; }
 .payment-explorer-layout > .payment-explorer-table-column > .payment-explorer-body.is-table { flex: 1; min-height: 0; }
 .payment-explorer-layout > .payment-explorer-table-column > .payment-explorer-body.is-table > .payment-explorer-list { height: 100%; }
 .payment-trend-card {
@@ -2958,8 +2959,11 @@
 .payment-explorer-contribution { display: flex; align-items: center; justify-content: center; min-width: 0; font-size: 12px; white-space: nowrap; }
 .payment-explorer-rows { max-height: 600px; overflow-y: auto; overscroll-behavior: contain; }
 .payment-explorer-body.is-table .payment-explorer-list { overflow: hidden; border: 1px solid var(--ui-line); border-radius: 12px; background: var(--ui-surface); box-shadow: none; }
+.payment-explorer-body.is-table { height: 100%; min-height: 0; overflow: hidden; }
+.payment-explorer-body.is-table .payment-explorer-list { display: flex; min-height: 0; flex-direction: column; }
 .payment-explorer-body.is-table .payment-explorer-columns { min-height: 44px; padding: 10px 16px; border-bottom: 1px solid var(--ui-line); background: var(--ui-surface-subtle); font-weight: 600; }
-.payment-explorer-body.is-table .payment-explorer-rows { padding: 0; }
+.payment-explorer-body.is-table .payment-explorer-columns { color: #9997a5; }
+.payment-explorer-body.is-table .payment-explorer-rows { min-height: 0; flex: 1; padding: 0; overflow-y: auto; }
 .payment-explorer-body.is-table .payment-explorer-row { min-height: 68px; padding: 14px 16px; border-top: 0; border-bottom: 1px solid var(--ui-line); border-radius: 0; transition: background .16s ease; }
 .payment-explorer-body.is-table .payment-explorer-row:last-child { border-bottom-color: transparent; }
 .payment-explorer-body.is-table .payment-explorer-row:hover,
@@ -2977,7 +2981,7 @@
 .payment-explorer-table-meter > i.is-negative { right: 50%; left: auto; border-radius: 999px 0 0 999px; background: repeating-linear-gradient(135deg, var(--ui-negative) 0 3px, #eb8fb1 3px 5px); }
 .payment-explorer-body.has-detail.is-table .payment-explorer-table-meter { display: none; }
 .payment-table-contribution { display: grid; grid-template-columns: 72px; align-items: center; justify-content: center; }
-.payment-explorer-detail { min-width: 0; padding: 20px 22px; border: 1px solid #e7e7ec; border-radius: 12px; background: #fff; box-shadow: 0 12px 30px rgb(37 36 61 / 6%); scroll-margin-top: 16px; }
+.payment-explorer-detail { min-width: 0; max-height: 100%; overflow-y: auto; padding: 20px 22px; border: 1px solid #e7e7ec; border-radius: 12px; background: #fff; box-shadow: 0 12px 30px rgb(37 36 61 / 6%); scroll-margin-top: 16px; }
 .payment-explorer-detail-content { min-width: 0; }
 .payment-explorer-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .payment-explorer-detail-head small { color: var(--ui-muted); font-size: 11px; }
@@ -3016,7 +3020,7 @@
 .payment-explorer-user-contribution strong { color: var(--ui-ink); font-size: 12px; }
 @media (max-width: 1150px) {
   .payment-explorer-layout,
-  .payment-renewal-layout { grid-template-columns: minmax(0, 1fr); }
+  .payment-renewal-layout { grid-template-columns: minmax(0, 1fr); height: auto; }
   .payment-explorer-body.has-detail { grid-template-columns: minmax(0, 1fr); }
   .payment-explorer-detail { padding: 17px 18px; }
   .payment-explorer-body.has-detail .payment-explorer-rows { max-height: 280px; }
@@ -3099,6 +3103,10 @@
 .payment-renewal-layout > .payment-section > .payment-layout-content {
   height: 100%;
 }
+.payment-renewal-layout > .payment-section > .payment-layout-content > div {
+  height: 100%;
+  min-height: 0;
+}
 .payment-contribution-table-wrap {
   height: 100%;
   border: 1px solid #e9e8f0;
@@ -3110,7 +3118,7 @@
 }
 .payment-contribution-table-wrap .dashboard-data-table thead th {
   background: #fbfafd;
-  color: var(--ui-muted);
+  color: #9997a5;
   font-size: 11px;
   font-weight: 600;
 }

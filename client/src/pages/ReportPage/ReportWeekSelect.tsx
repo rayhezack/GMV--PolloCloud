@@ -9,7 +9,14 @@ export function ReportWeekSelect({ weeks, value, onValueChange }: { weeks: Week[
   const selected = Math.max(0, weeks.findIndex(week => getReportPeriodKey(week.periodStart, week.periodEnd) === value));
   const [focused, setFocused] = useState(selected);
   const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const focusedRef = useRef(selected);
+  const wheelLockedRef = useRef(false);
+  const wheelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => setFocused(selected), [selected]);
+  useEffect(() => { focusedRef.current = focused; }, [focused]);
+  useEffect(() => () => {
+    if (wheelTimerRef.current) clearTimeout(wheelTimerRef.current);
+  }, []);
   const focusIndex = useCallback((index: number) => {
     const next = Math.max(0, Math.min(weeks.length - 1, index));
     setFocused(next);
@@ -30,7 +37,14 @@ export function ReportWeekSelect({ weeks, value, onValueChange }: { weeks: Week[
             onWheel={event => {
               if (weeks.length < 2 || Math.abs(event.deltaY) < 4) return;
               event.preventDefault();
-              focusIndex(focused + (event.deltaY > 0 ? 1 : -1));
+              event.stopPropagation();
+              if (wheelLockedRef.current) return;
+              wheelLockedRef.current = true;
+              focusIndex(focusedRef.current + (event.deltaY > 0 ? 1 : -1));
+              wheelTimerRef.current = setTimeout(() => {
+                wheelLockedRef.current = false;
+                wheelTimerRef.current = null;
+              }, 180);
             }}
           >
             {weeks.map((week, index) => {

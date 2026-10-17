@@ -154,6 +154,8 @@ export interface DashboardOverviewResponse {
   payRate: number;
   aov: number;
   trend: OverviewTrendPoint[];
+  /** Daily GMV series sourced from pay_type_daily for the headline cards. */
+  payTypeTrend?: OverviewTrendPoint[];
   cardTrend?: OverviewTrendPoint[];
 }
 

@@ -798,7 +798,9 @@ async function overview(env: Env, request: Request) {
   };
   const payTrendRows = payTrend(payForTrend, periods, payDays, renewalGmvForPeriod);
   const payPeriods = groupByPeriod(pay, granularity).filter((period) => dateInRange(period, startDate, endDate));
-  const cardTrend = payTrend(payForTrend, payPeriods, payDays, renewalGmvForPeriod);
+  // Headline cards must stay on the payment-result dataset. The main trend
+  // series below intentionally merges chain metrics for the diagnostic chart.
+  const payTypeTrend = payTrend(payForTrend, payPeriods, payDays, renewalGmvForPeriod);
   const chainTrendRows = chainTrend(filteredChain.map((row) => ({ ...row, period: granularity === 'week' ? row.week_start : row.period })), periods, chainDays);
   const trend = payTrendRows.map((row, index) => {
     const chainRow = chainTrendRows[index];
@@ -834,7 +836,8 @@ async function overview(env: Env, request: Request) {
     payRate: current.subSubmitUv ? current.chainPayUv / current.subSubmitUv : 0,
     aov: current.chainPayUv ? current.chainGmvUsd / current.chainPayUv : 0,
     trend,
-    cardTrend,
+    payTypeTrend,
+    cardTrend: payTypeTrend,
   });
 }
 

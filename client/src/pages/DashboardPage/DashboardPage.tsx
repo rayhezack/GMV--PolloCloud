@@ -4228,7 +4228,7 @@ const DashboardPage = () => {
         if (!cancelled) {
           setOverview(response);
           if (granularity === 'day' && cardGranularity === 'day') {
-            setCardTrend((response.cardTrend ?? response.trend).filter((row) =>
+            setCardTrend((response.payTypeTrend ?? response.cardTrend ?? response.trend).filter((row) =>
               row.period >= selectedTrendWindow.startDate && row.period <= selectedTrendWindow.endDate,
             ));
           }
@@ -4292,7 +4292,7 @@ const DashboardPage = () => {
       }),
     )
       .then((response) => {
-        if (!cancelled) setCardTrend(response.cardTrend ?? response.trend);
+        if (!cancelled) setCardTrend(response.payTypeTrend ?? response.cardTrend ?? response.trend);
       })
       .catch(() => {
         if (!cancelled) setCardTrend([]);
