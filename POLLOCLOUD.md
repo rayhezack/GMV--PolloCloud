@@ -43,12 +43,12 @@ Set `VITE_DATA_MODE=demo` only for a local visual preview. Production uses the s
 
 ## 定时任务
 
-Worker 已实现标准 `scheduled()` 入口，按中国标准时间（UTC+8）执行：
+`pollocloud.json` 已声明两个定时任务，时间使用北京时间：
 
-- 每天 09:30（UTC `30 1 * * *`）：拉取最新 T+1 日数据并写入 D1；目标日期已存在时幂等跳过。
-- 每周六 12:00（UTC `0 4 * * 6`）：选择上一完整周六至周五业务周，依次生成 Web 和 App 诊断报告。
+- 每天 09:30（`30 9 * * *` → `/api/cron/daily`）：拉取最新 T+1 日数据并写入 D1；目标日期已存在时幂等跳过。
+- 每周六 12:00（`0 12 * * 6` → `/api/cron/weekly-reports`）：选择上一完整周六至周五业务周，依次生成 Web 和 App 诊断报告。
 
-当前 Pollo Cloud CLI 0.5.1 的 `pollocloud.json` 只会上传 `spa`、`worker`、D1、静态资源和变量，不会从配置文件注册 Cron Trigger。因此部署代码后，还需要在 Pollo Cloud 管理侧为该 Worker 开启上述两个 Cron；若当前租户尚未开放 Cron，需要使用外部定时器或联系平台管理员开通。未注册 Trigger 时，`scheduled()` 不会被平台调用，前端手动同步仍可正常使用。
+两个接口都会校验 `x-pollocloud-trigger: cron`，不会接受普通用户请求。发布后可用 `pollocloud cron list --name pollo-ai` 查看配置，并用 `pollocloud cron run --name pollo-ai <任务>` 做一次验证。
 
 ## Report generation
 

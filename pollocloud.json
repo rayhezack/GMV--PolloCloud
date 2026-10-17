@@ -3,5 +3,9 @@
   "dir": "dist",
   "spa": true,
   "worker": "worker/index.ts",
-  "immutable": ["/assets/*"]
+  "immutable": ["/assets/*"],
+  "cron": [
+    { "schedule": "30 9 * * *", "path": "/api/cron/daily" },
+    { "schedule": "0 12 * * 6", "path": "/api/cron/weekly-reports" }
+  ]
 }

@@ -1603,9 +1603,6 @@ async function executeSyncRun(env: Env, request: Request) {
   return new Response(stream, { headers: { 'content-type': 'text/plain', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
 }
 
-type ScheduledContext = { waitUntil(promise: Promise<unknown>): void };
-type ScheduledController = { cron: string; scheduledTime: number };
-
 function reportDependencies(env: Env) {
   return {
     collect: (body: ReportGenerationRequest, progress: ReportProgress) => collectReportEvidence(env, body, progress),
@@ -1623,9 +1620,13 @@ async function runScheduledSync(env: Env) {
   if (!response.ok || job.status === 'failed') throw new Error(job.errorMessage || '定时同步任务创建失败');
   if (job.skipped || job.status === 'success') return job;
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    await executeSyncRun(env, new Request('https://schedule.internal/api/sync-runs/run', {
+    const executionResponse = await executeSyncRun(env, new Request('https://schedule.internal/api/sync-runs/run', {
       method: 'POST', body: JSON.stringify({ runId: job.runId }), headers: { 'content-type': 'application/json' },
-    })).then(result => result.text());
+    }));
+    const executionBody = await executionResponse.text();
+    const executionStatus = executionBody.match(/\{"status":"(success|failed|paused)"\}/)?.[1];
+    if (executionStatus === 'success') return { ...job, status: 'success' };
+    if (executionStatus === 'failed') throw new Error('定时同步失败');
     const current = await env.DB!.prepare('SELECT payload FROM sync_jobs WHERE run_id = ?').bind(job.runId).first<{ payload: string }>();
     if (!current) throw new Error('定时同步任务状态丢失');
     const status = JSON.parse(current.payload) as SyncRunStatus;
@@ -1635,13 +1636,13 @@ async function runScheduledSync(env: Env) {
   throw new Error('定时同步超过最大执行步骤');
 }
 
-async function runScheduledReports(env: Env, scheduledTime: number) {
-  // Cron is configured in UTC; convert to China Standard Time before selecting the latest Saturday-Friday week.
-  const localDate = new Date(scheduledTime + 8 * 3600000).toISOString().slice(0, 10);
-  const startDate = shiftDate(localDate, -7);
+async function runScheduledReports(env: Env) {
+  const localDate = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+  // Report requests include both the baseline week and the latest analysis week.
+  const startDate = shiftDate(localDate, -14);
   const endDate = shiftDate(localDate, -1);
   const deps = reportDependencies(env);
-  for (const platform of ['web', 'app'] as const) {
+  await Promise.all((['web', 'app'] as const).map(async platform => {
     const response = await reportGenerations(env, new Request('https://schedule.internal/api/report-generations', {
       method: 'POST', body: JSON.stringify({ platform, granularity: 'week', startDate, endDate }),
       headers: { 'content-type': 'application/json' },
@@ -1649,7 +1650,21 @@ async function runScheduledReports(env: Env, scheduledTime: number) {
     const job = await response.json() as ReportGenerationStatus & { message?: string };
     if (!response.ok && response.status !== 202) throw new Error(job.message || `${platform} 定时报告任务创建失败`);
     if (job.status === 'queued') await executeReport(env, job, deps);
+  }));
+}
+
+async function cronHandler(env: Env, request: Request): Promise<Response> {
+  if (request.headers.get('x-pollocloud-trigger') !== 'cron') return errorResponse('仅允许 Pollo Cloud 定时任务触发', 403);
+  const path = new URL(request.url).pathname;
+  if (path === '/api/cron/daily') {
+    const result = await runScheduledSync(env);
+    return json({ ok: true, task: 'daily-sync', status: result.status, runId: result.runId });
   }
+  if (path === '/api/cron/weekly-reports') {
+    await runScheduledReports(env);
+    return json({ ok: true, task: 'weekly-reports' });
+  }
+  return errorResponse('定时任务不存在', 404);
 }
 
 type ReportProgress = (key: string, status: NonNullable<ReportGenerationStatus['steps']>[number]['status'], detail?: string) => Promise<void>;
@@ -1903,20 +1918,10 @@ async function reportHandler(env: Env, request: Request) {
 }
 
 export default {
-  async scheduled(controller: ScheduledController, env: Env, context: ScheduledContext): Promise<void> {
-    const task = controller.cron === '30 1 * * *'
-      ? runScheduledSync(env)
-      : controller.cron === '0 4 * * 6'
-        ? runScheduledReports(env, controller.scheduledTime)
-        : Promise.resolve();
-    await task.catch(error => {
-      console.error(`[scheduled:${controller.cron}]`, error instanceof Error ? error.message : String(error));
-    });
-    void context;
-  },
   async fetch(request: Request, env: Env, context: { waitUntil(promise: Promise<unknown>): void }): Promise<Response> {
     try {
       const url = new URL(request.url);
+      if (url.pathname.startsWith('/api/cron/')) return cronHandler(env, request);
       if (url.pathname === '/api/dashboard/overview' && request.method === 'GET') return cachedDashboardResponse(env, request, context, () => overview(env, request));
       if (url.pathname === '/api/dashboard/gmv-coverage' && request.method === 'GET') return cachedDashboardResponse(env, request, context, () => gmvCoverage(env));
       if (url.pathname === '/api/dashboard/attributions' && request.method === 'GET') return cachedDashboardResponse(env, request, context, () => attributions(env, request));
