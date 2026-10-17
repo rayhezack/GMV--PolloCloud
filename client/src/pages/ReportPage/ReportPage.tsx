@@ -97,7 +97,7 @@ export default function ReportPage() {
             disabled={generationPending || loading || Boolean(loadError) || accessLoading || !isAdmin}
             onSelect={scope => void generate(scope)}
           />
-          {report && <Button variant="outline" size="sm" className="rounded-xl" onClick={() => void copyAnalysis(report.markdown)}><Copy size={14} />复制报告</Button>}
+          {report && <Button variant="ghost" size="sm" className="report-copy-button rounded-xl" onClick={() => void copyAnalysis(report.markdown)}><Copy size={14} />复制报告</Button>}
         </div>
       </div>
       {pollError && <p className="text-sm text-muted-foreground" role="status">{pollError}</p>}

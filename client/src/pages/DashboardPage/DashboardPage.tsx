@@ -2521,7 +2521,8 @@ function ContributionTable({
   // keep the legacy “一级付费类型贡献” title compatible as well so the
   // overview donut and summary cards do not disappear when the title changes.
   const isPrimary = section.title.includes('一级') || section.title === '付费类型贡献';
-  const equalColumnWidth = onSelectItem ? 'w-[14.2857%]' : 'w-[16.6667%]';
+  const labelColumnWidth = onSelectItem ? '21%' : '23%';
+  const metricColumnWidth = onSelectItem ? '13.1667%' : '15.4%';
   const analysisTotal = section.items.reduce((total, item) => total + item.analysisDailyAvg, 0);
   const baselineTotal = section.items.reduce((total, item) => total + item.baselineDailyAvg, 0);
   const totalWowChange = baselineTotal
@@ -2546,30 +2547,34 @@ function ContributionTable({
       <motion.div layout key="details" initial={{ opacity: 0, scale: 0.985 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.985 }} transition={{ layout: { type: 'spring', stiffness: 360, damping: 32 }, opacity: { duration: 0.16 }, scale: { type: 'spring', stiffness: 360, damping: 32 } }}>
       <div className="hidden overflow-hidden rounded-2xl bg-white lg:block">
         <Table className="dashboard-data-table w-full table-fixed [&_th]:whitespace-normal">
+          <colgroup>
+            <col style={{ width: labelColumnWidth }} />
+            {Array.from({ length: onSelectItem ? 6 : 5 }, (_, index) => <col key={index} style={{ width: metricColumnWidth }} />)}
+          </colgroup>
           <TableHeader className="[&_tr]:border-gray-100">
               <TableRow className="bg-gray-50 hover:bg-gray-50">
-              <TableHead className={equalColumnWidth}>{isPrimary ? '指标' : '付费类型'}</TableHead>
-              <TableHead className={cn(equalColumnWidth, 'text-right')}>
+              <TableHead>{isPrimary ? '指标' : '付费类型'}</TableHead>
+              <TableHead className="text-right">
                 基准期日均
                 <div className="text-[11px] font-normal text-muted-foreground">
                   {comparison?.baselinePeriod ?? '-'}
                 </div>
               </TableHead>
-              <TableHead className={cn(equalColumnWidth, 'text-right')}>
+              <TableHead className="text-right">
                 分析期日均
                 <div className="text-[11px] font-normal text-muted-foreground">
                   {comparison?.analysisPeriod ?? '-'}
                 </div>
               </TableHead>
-              <TableHead className={cn(equalColumnWidth, 'text-right')}>
+              <TableHead className="text-right">
                 绝对变化
               </TableHead>
-              <TableHead className={cn(equalColumnWidth, 'text-right')}>
+              <TableHead className="text-right">
                 {changeLabel}
               </TableHead>
-              <TableHead className={cn(equalColumnWidth, 'text-right')}>贡献度</TableHead>
+              <TableHead className="text-right">贡献度</TableHead>
               {onSelectItem ? (
-                <TableHead className={cn(equalColumnWidth, 'text-right')}>下钻</TableHead>
+                <TableHead className="text-right">下钻</TableHead>
               ) : null}
             </TableRow>
           </TableHeader>
@@ -3252,7 +3257,7 @@ function ChainUserList({
             <span>{formatContributionValue(item.baselineDailyAvg, section.valueLabel)}</span>
             <span>{formatContributionValue(item.analysisDailyAvg, section.valueLabel)}</span>
             <span>{delta >= 0 ? '+' : '−'}{formatContributionValue(Math.abs(delta), section.valueLabel)}</span>
-            <strong className={(item.contribution ?? 0) < 0 ? 'text-red-600' : 'text-emerald-700'}>{formatSignedPercent(item.contribution)}</strong>
+            <strong className={(item.contribution ?? 0) < 0 ? 'text-destructive' : 'text-emerald-700'}>{formatSignedPercent(item.contribution)}</strong>
           </button>
         );
       })}

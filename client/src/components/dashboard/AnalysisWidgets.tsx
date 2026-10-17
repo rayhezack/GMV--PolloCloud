@@ -332,7 +332,7 @@ export function RevenueCards({
                       </div>
                       <div className="revenue-date">{item.latestPeriod}</div>
                       <div className="revenue-foot">
-                        <span className={change !== null && change < 0 ? 'text-red-600' : 'text-emerald-700'}>
+                        <span className={change !== null && change < 0 ? 'text-destructive' : 'text-emerald-700'}>
                           {loading || change === null
                             ? '—'
                             : `${change >= 0 ? '↑' : '↓'} ${Math.abs(change * 100).toFixed(2)}% WoW`}
@@ -542,10 +542,10 @@ export function ContributionBars({
                 <span className="contribution-value contribution-baseline">{formatValue(item.baselineDailyAvg)}</span>
                 <span className="contribution-value contribution-analysis">{formatValue(item.analysisDailyAvg)}</span>
                 <span className="contribution-value">{delta >= 0 ? '+' : '−'}{formatValue(Math.abs(delta))}</span>
-                <span className={cn('contribution-value contribution-wow', (item.wowChange ?? 0) < 0 ? 'text-red-600' : 'text-emerald-700')}>
+                <span className={cn('contribution-value contribution-wow', (item.wowChange ?? 0) < 0 ? 'text-destructive' : 'text-emerald-700')}>
                   {formatPercent(item.wowChange)}
                 </span>
-                <strong className={cn('contribution-value', (item.contribution ?? 0) < 0 ? 'text-red-600' : 'text-emerald-700')}>
+                <strong className={cn('contribution-value', (item.contribution ?? 0) < 0 ? 'text-destructive' : 'text-emerald-700')}>
                   {formatPercent(item.contribution)}
                 </strong>
               </button>

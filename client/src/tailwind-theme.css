@@ -26,7 +26,7 @@
   --accent-foreground: #4930d9;
   --info: #5b3ff2;
   --info-foreground: hsl(0 0% 100%);
-  --destructive: #c4515b;
+  --destructive: #cf4b7e;
   --destructive-foreground: hsl(0 0% 100%);
   --success: #2f7d5c;
   --success-foreground: #f4fbf7;
@@ -39,7 +39,7 @@
   --chart-2: #9b93cf;
   --chart-3: #6f7085;
   --chart-4: #2f7d5c;
-  --chart-5: #c4515b;
+  --chart-5: #cf4b7e;
   --sidebar: #ffffff;
   --sidebar-foreground: #25243d;
   --sidebar-primary: #5b3ff2;
@@ -52,7 +52,7 @@
   /* Computed borders using hsl relative color syntax */
   --primary-border: #4930d9;
   --secondary-border: #e7e7ef;
-  --destructive-border: #a93f49;
+  --destructive-border: #b83d6c;
   --accent-border: #dcd6ff;
   --muted-border: #e7e7ef;
   --font-sans:
