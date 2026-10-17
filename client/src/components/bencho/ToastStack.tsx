@@ -22,11 +22,13 @@ const ICON: Record<ToastStackKind, LucideIcon> = {
 };
 
 const listeners = new Set<(toast: ToastStackItem) => void>();
+const pendingToasts: ToastStackItem[] = [];
 let nextToastId = 0;
 
 /** Push a product notification into the global Bencho toast stack. */
 export function pushToast(toast: Omit<ToastStackItem, 'id'> & { id?: string }) {
   const item = { ...toast, id: toast.id ?? `toast-${Date.now()}-${nextToastId++}` };
+  if (!listeners.size) pendingToasts.push(item);
   listeners.forEach(listener => listener(item));
   return item.id;
 }
@@ -51,11 +53,13 @@ export function ToastStack({ peek = 14, gap = 10, corner = 20 }: { peek?: number
   useEffect(() => {
     const add = (toast: ToastStackItem) => {
       setStack(current => [toast, ...current.filter(item => item.id !== toast.id)].slice(0, SHOWN));
-      const duration = toast.duration ?? (toast.kind === 'error' ? 7200 : 5200);
-      const timer = window.setTimeout(() => dismiss(toast.id), duration);
-      timers.current.set(toast.id, timer);
+      if (toast.duration && toast.duration > 0) {
+        const timer = window.setTimeout(() => dismiss(toast.id), toast.duration);
+        timers.current.set(toast.id, timer);
+      }
     };
     listeners.add(add);
+    pendingToasts.splice(0).forEach(add);
     return () => {
       listeners.delete(add);
       timers.current.forEach(timer => window.clearTimeout(timer));
