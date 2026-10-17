@@ -3117,8 +3117,9 @@ function PaymentDrillExplorer({
       {breakdown.length === 0 && <div className="payment-explorer-notice">当前比较窗口暂无注册新老与功能明细。</div>}
       <div className={cn('payment-explorer-body', 'is-table', (selected || detailExiting) && 'has-detail')}>
         <div className="payment-explorer-list" role="group" aria-label={`${dimension === 'payType' ? '付费类型' : '功能'}收入列表`}>
-          <div className="payment-explorer-columns"><span>{dimension === 'payType' ? '付费类型' : '功能'}</span><span>基准期日均</span><span>分析期日均</span><span>绝对变化</span><span>{changeLabel}</span><span>贡献度</span></div>
-          <div className="payment-explorer-rows">
+          <div className="payment-explorer-table-scroll">
+            <div className="payment-explorer-columns"><span>{dimension === 'payType' ? '付费类型' : '功能'}</span><span>基准期日均</span><span>分析期日均</span><span>绝对变化</span><span>{changeLabel}</span><span>贡献度</span></div>
+            <div className="payment-explorer-rows">
             {visibleItems.map((item) => {
               const contribution = item.contribution ?? 0;
               return <button key={item.key} type="button" className="payment-explorer-row" disabled={breakdown.length === 0} aria-pressed={selectedKey === item.key} onClick={() => selectedKey === item.key ? closeDetail() : setSelectedKey(item.key)}>
@@ -3139,6 +3140,7 @@ function PaymentDrillExplorer({
               </button>;
             })}
             {visibleItems.length === 0 && <p className="payment-explorer-empty">没有匹配的功能</p>}
+            </div>
           </div>
         </div>
         {(selected || detailExiting) && <aside ref={detailRef} className="payment-explorer-detail" aria-label={`${selected ? label(selected.key) : ''}注册新老用户明细`}>
