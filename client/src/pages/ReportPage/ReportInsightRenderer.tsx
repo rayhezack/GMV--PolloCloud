@@ -93,7 +93,6 @@ export function ReportInsightArticle({ report }: { report: ReportSummary }) {
             }}
           />
           <strong>{analysisWeekStart(report.periodStart)}<br /><span className="report-date-to">至</span> {report.periodEnd}</strong>
-          <p>周环比</p>
         </div>
         <nav aria-label="报告目录">
           <a href="#report-conclusion">核心结论</a>

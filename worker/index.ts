@@ -710,12 +710,16 @@ function payTrend(
   rows: D1Row[],
   periods: string[],
   days: Map<string, number>,
-  renewalGmvForPeriod: (period: string) => number,
+  renewalGmvForPeriod?: (period: string) => number,
 ) {
   return periods.map((period) => {
     const group = rows.filter((row) => asText(row.period) === period);
     const divisor = days.get(period) || 1;
     const primary = group;
+    // Headline cards use pay_type as their single source of truth. Keep the
+    // drilldown rows separate because they are only the attributed active-pay
+    // dimensions and may not sum to the headline total.
+    const activeRows = group.filter((row) => normalizePayType(asText(row.pay_type)) !== '自动续订');
     const activeDrill = activePayDetailRows(group);
     const activePayTypeGmv: Record<string, number> = {};
     for (const row of activeDrill) {
@@ -723,8 +727,23 @@ function payTrend(
       activePayTypeGmv[key] = (activePayTypeGmv[key] || 0) + asNumber(row.gmv_usd) / divisor;
     }
     const total = sum(primary.map((row) => asNumber(row.gmv_usd)));
-    const active = sum(activeDrill.map((row) => asNumber(row.gmv_usd)));
-    return { period, totalGmv: total / divisor, activeGmv: active / divisor, renewalGmv: renewalGmvForPeriod(period), activePayTypeGmv, gmv: 0, dau: 0, paywallExposureRate: 0, submitRate: 0, payRate: 0, aov: 0 };
+    const active = sum(activeRows.map((row) => asNumber(row.gmv_usd)));
+    const renewal = sum(group
+      .filter((row) => normalizePayType(asText(row.pay_type)) === '自动续订')
+      .map((row) => asNumber(row.gmv_usd)));
+    return {
+      period,
+      totalGmv: total / divisor,
+      activeGmv: active / divisor,
+      renewalGmv: renewalGmvForPeriod ? renewalGmvForPeriod(period) : renewal / divisor,
+      activePayTypeGmv,
+      gmv: 0,
+      dau: 0,
+      paywallExposureRate: 0,
+      submitRate: 0,
+      payRate: 0,
+      aov: 0,
+    };
   });
 }
 
@@ -800,7 +819,10 @@ async function overview(env: Env, request: Request) {
   const payPeriods = groupByPeriod(pay, granularity).filter((period) => dateInRange(period, startDate, endDate));
   // Headline cards must stay on the payment-result dataset. The main trend
   // series below intentionally merges chain metrics for the diagnostic chart.
-  const payTypeTrend = payTrend(payForTrend, payPeriods, payDays, renewalGmvForPeriod);
+  // The three homepage cards must all be derived from pay_type_daily. The
+  // optional renewal callback remains reserved for the lower diagnostic trend,
+  // which keeps its chain/renewal-specific data contract independent.
+  const payTypeTrend = payTrend(payForTrend, payPeriods, payDays);
   const chainTrendRows = chainTrend(filteredChain.map((row) => ({ ...row, period: granularity === 'week' ? row.week_start : row.period })), periods, chainDays);
   const trend = payTrendRows.map((row, index) => {
     const chainRow = chainTrendRows[index];

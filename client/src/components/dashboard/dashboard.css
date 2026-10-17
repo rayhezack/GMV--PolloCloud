@@ -172,9 +172,13 @@
 .chain-panel-controls { display: flex; align-items: flex-start; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .chain-type-filter-primary { position: relative; display: inline-flex; align-items: center; gap: 3px; padding: 3px; border-radius: 9px; background: var(--ui-surface-subtle); }
 .chain-primary-group { display: inline-flex; align-items: center; gap: 3px; }
-.chain-plan-tier-menu { position: relative; }
-.chain-plan-tier-trigger { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 9px; border: 0; border-left: 1px solid var(--ui-line); border-radius: 7px; background: transparent; color: var(--ui-muted); font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; }
-.chain-plan-tier-trigger:hover, .chain-plan-tier-trigger[aria-expanded='true'] { background: var(--ui-state-bg); color: var(--ui-ink); }
+.chain-plan-tier-menu { position: relative; margin-left: 1px; }
+/* Keep the package selector visually independent from the chain segmented
+   control. A left border on the old transparent trigger made the parent
+   pill's rounded edge read as a stray curve beside the selector. */
+.chain-plan-tier-trigger { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px; border: 1px solid transparent; border-radius: 8px; background: var(--ui-surface); color: var(--ui-muted); font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: border-color .14s ease, background .14s ease, color .14s ease; }
+.chain-plan-tier-trigger:hover, .chain-plan-tier-trigger[aria-expanded='true'] { border-color: var(--ui-line); background: var(--ui-state-bg); color: var(--ui-ink); }
+.chain-plan-tier-trigger:focus-visible { outline: 2px solid var(--ui-purple); outline-offset: 2px; }
 .chain-plan-tier-options { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: grid; min-width: 116px; gap: 2px; padding: 6px; border: 0; border-radius: 12px; background: var(--ui-surface); box-shadow: 0 12px 28px rgba(37,36,61,.12); animation: icon-control-popover-in 160ms ease-out both; }
 .chain-plan-tier-options button { min-height: 30px; padding: 0 9px; border: 0; border-radius: 7px; background: transparent; color: var(--ui-muted); font-size: 11px; text-align: left; cursor: pointer; }
 .chain-plan-tier-options button:hover, .chain-plan-tier-options button[aria-checked='true'] { background: var(--ui-state-bg); color: var(--ui-ink); }
@@ -2845,7 +2849,7 @@
   grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
   gap: 16px;
   align-items: stretch;
-  height: 372px;
+  height: 348px;
 }
 .payment-explorer-layout--table-only { display: block; }
 .payment-explorer-table-column { min-width: 0; }
@@ -3094,7 +3098,7 @@
 }
 .payment-explorer-body.is-table .payment-explorer-row:hover,
 .payment-explorer-body.is-table .payment-explorer-row[aria-pressed='true'] {
-  background: #f8f7fc;
+  background: #f3f4f6;
 }
 .payment-renewal-layout > .payment-section {
   min-width: 0;
