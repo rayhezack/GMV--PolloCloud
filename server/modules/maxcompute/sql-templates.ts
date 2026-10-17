@@ -229,6 +229,8 @@ all_paid_orders AS (
         CAST(s.date_created AS DATETIME) AS pay_time,
         CAST(s.date_created AS DATE) AS pay_date,
         LOWER(COALESCE(s.description, '')) AS description,
+        p.price_id AS price_id,
+        p.product_name AS product_name,
         ${payTypeDeviceTypeExpression} AS device_type,
         CASE
             WHEN LOWER(s.currency) = 'usd'
@@ -270,6 +272,8 @@ target_paid_orders AS (
         o.pay_time,
         o.pay_date,
         o.description,
+        o.price_id,
+        o.product_name,
         o.device_type,
         o.gmv_usd,
         CAST(
@@ -319,6 +323,8 @@ classified_paid_orders AS (
         o.user_id,
         o.pay_time,
         o.description,
+        o.price_id,
+        o.product_name,
         o.device_type,
         o.gmv_usd,
         CASE
@@ -366,16 +372,24 @@ function_events AS (
         CAST(event_time AS DATETIME) AS event_time,
         COALESCE(
             NULLIF(GET_JSON_OBJECT(properties, '$.source_function'), ''),
-            NULLIF(GET_JSON_OBJECT(properties, '$.form_type'), '')
+            CASE
+                WHEN event_id = 'createflow_form_submit'
+                    THEN NULLIF(GET_JSON_OBJECT(properties, '$.form_type'), '')
+                ELSE NULL
+            END
         ) AS function_name
     FROM mc_prd.ods_pollo_log_event_dip
     WHERE p_date BETWEEN '${startKey}' AND '${endKey}'
       AND TO_CHAR(event_time, 'yyyymmdd') BETWEEN '${startKey}' AND '${endKey}'
       AND ${payTypeEventPlatformCondition}
-      AND (${paywallExposureCondition})
+      AND ((${paywallExposureCondition}) OR event_id = 'createflow_form_submit')
       AND COALESCE(
             NULLIF(GET_JSON_OBJECT(properties, '$.source_function'), ''),
-            NULLIF(GET_JSON_OBJECT(properties, '$.form_type'), '')
+            CASE
+                WHEN event_id = 'createflow_form_submit'
+                    THEN NULLIF(GET_JSON_OBJECT(properties, '$.form_type'), '')
+                ELSE NULL
+            END
           ) IS NOT NULL
 ),
 
@@ -398,6 +412,7 @@ order_event_candidates AS (
 attributed_paid_orders AS (
     SELECT
         o.payment_id,
+        o.user_id,
         o.stat_date,
         o.week_start,
         o.week_end,
@@ -428,6 +443,8 @@ active_payment_detail AS (
         pay_type_l3 AS pay_type,
         function_name,
         user_tag,
+        CAST(NULL AS STRING) AS subscription_tier,
+        COUNT(DISTINCT user_id) AS pay_user_cnt,
         SUM(gmv_usd) AS gmv_usd
     FROM attributed_paid_orders
     WHERE pay_type_l1 = '主动付费'
@@ -442,6 +459,36 @@ active_payment_detail AS (
         user_tag
 ),
 
+renewal_detail AS (
+    SELECT
+        stat_date,
+        week_start,
+        week_end,
+        device_type,
+        user_id,
+        CASE
+            WHEN LOWER(COALESCE(product_name, '')) LIKE '%credit%'
+              OR LOWER(COALESCE(product_name, '')) LIKE '%addon%' THEN NULL
+            WHEN LOWER(COALESCE(product_name, '')) LIKE '%api%' THEN NULL
+            WHEN LOWER(COALESCE(product_name, '')) LIKE 'free%'
+              OR LOWER(COALESCE(price_id, '')) LIKE '%free%' THEN 'Free'
+            WHEN LOWER(COALESCE(product_name, '')) LIKE '%ultra%' THEN 'Ultra'
+            WHEN LOWER(COALESCE(product_name, '')) LIKE '%max%' THEN 'Max'
+            WHEN LOWER(COALESCE(product_name, '')) LIKE '%premium%'
+              OR LOWER(COALESCE(price_id, '')) LIKE '%premium%' THEN 'Premium'
+            WHEN LOWER(COALESCE(product_name, '')) LIKE '%pro%'
+              AND LOWER(COALESCE(product_name, '')) NOT LIKE '%lite%'
+              AND LOWER(COALESCE(product_name, '')) NOT LIKE '%premium%'
+              AND LOWER(COALESCE(product_name, '')) NOT LIKE '%plus%' THEN 'Pro'
+            WHEN LOWER(COALESCE(product_name, '')) LIKE '%plus%' THEN 'Plus'
+            WHEN LOWER(COALESCE(product_name, '')) LIKE '%lite%' THEN 'Lite'
+            ELSE '未知档位'
+        END AS subscription_tier,
+        gmv_usd
+    FROM classified_paid_orders
+    WHERE pay_type_l1 = '自动续订'
+),
+
 renewal_summary AS (
     SELECT
         stat_date,
@@ -451,14 +498,16 @@ renewal_summary AS (
         '自动续订' AS pay_type,
         CAST(NULL AS STRING) AS function_name,
         CAST(NULL AS STRING) AS user_tag,
+        subscription_tier,
+        COUNT(DISTINCT user_id) AS pay_user_cnt,
         SUM(gmv_usd) AS gmv_usd
-    FROM classified_paid_orders
-    WHERE pay_type_l1 = '自动续订'
+    FROM renewal_detail
     GROUP BY
         stat_date,
         week_start,
         week_end,
-        device_type
+        device_type,
+        subscription_tier
 ),
 
 daily_gmv AS (
@@ -475,6 +524,8 @@ SELECT
     pay_type,
     function_name,
     user_tag,
+    subscription_tier,
+    pay_user_cnt,
     CAST(ROUND(gmv_usd, 2) AS DECIMAL(18, 2)) AS gmv_usd
 FROM daily_gmv
 ORDER BY
@@ -482,7 +533,8 @@ ORDER BY
     device_type,
     pay_type,
     COALESCE(function_name, ''),
-    COALESCE(user_tag, '')
+    COALESCE(user_tag, ''),
+    COALESCE(subscription_tier, '')
 `.trim();
     case 'chain':
       return `

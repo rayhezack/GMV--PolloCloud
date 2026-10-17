@@ -102,7 +102,7 @@ const FACT_NUMERIC_COLUMNS = [
 const FACT_VALUE_COLUMNS = [
   'dataset', 'source_record_id', 'period', 'week_start', 'week_end', 'platform',
   'device_type', 'platform_type', 'dataset_kind', 'analysis_level', 'pay_type',
-  'function_name', 'user_tag', 'creation_cnt_30d_level_id', 'creation_cnt_30d',
+  'function_name', 'user_tag', 'subscription_tier', 'creation_cnt_30d_level_id', 'creation_cnt_30d',
   'plan_tier', 'plan_cycle', 'active_uv', 'creation_uv', 'creation_task_cnt',
   'creation_penetration_rate', 'avg_creation_task_cnt_per_creator', 'sub_expose_uv',
   'sub_submit_uv', 'chain_pay_uv', 'chain_gmv_usd', 'sub_expose_rate',
@@ -395,7 +395,7 @@ function factSourceId(dataset: string, row: D1Row) {
     row.period, row.week_start, row.week_end, row.platform, row.device_type,
     row.dataset_kind, row.analysis_level, row.pay_type, row.function_name,
     row.user_tag, row.creation_cnt_30d_level_id, row.creation_cnt_30d,
-    row.platform_type, row.plan_tier, row.plan_cycle,
+    row.platform_type, row.plan_tier, row.plan_cycle, row.subscription_tier,
   ].map(value => asText(value)).join('|');
   return identity || crypto.randomUUID();
 }
@@ -415,6 +415,7 @@ function factValues(dataset: string, row: D1Row, now = Date.now()) {
     pay_type: asText(row.pay_type) || null,
     function_name: asText(row.function_name) || null,
     user_tag: asText(row.user_tag) || null,
+    subscription_tier: asText(row.subscription_tier) || null,
     creation_cnt_30d_level_id: null,
     creation_cnt_30d: asText(row.creation_cnt_30d) || null,
     plan_tier: asText(row.plan_tier) || null,
@@ -1182,7 +1183,7 @@ async function attributions(env: Env, request: Request) {
 
 const PREVIEW_FIELDS: Record<string, string[]> = {
   run_log: ['run_id', 'status', 'stage', 'start_date', 'end_date', 'platforms', 'rows_synced', 'error_message', 'started_at', 'finished_at'],
-  pay_type_daily: ['platform', 'dataset_kind', 'period', 'week_start', 'week_end', 'device_type', 'pay_type', 'function_name', 'user_tag', 'gmv_usd'],
+  pay_type_daily: ['platform', 'dataset_kind', 'period', 'week_start', 'week_end', 'device_type', 'pay_type', 'function_name', 'user_tag', 'subscription_tier', 'pay_user_cnt', 'gmv_usd'],
   chain_daily: ['platform', 'dataset_kind', 'period', 'week_start', 'week_end', 'device_type', 'user_tag', 'creation_cnt_30d_level_id', 'creation_cnt_30d', 'active_uv', 'sub_expose_uv', 'sub_submit_uv', 'chain_pay_uv', 'chain_gmv_usd', 'sub_expose_rate', 'sub_submit_rate', 'chain_pay_success_rate', 'chain_arppu'],
   creative_daily: ['platform', 'dataset_kind', 'period', 'week_start', 'week_end', 'creation_cnt_30d_level_id', 'creation_cnt_30d', 'active_uv', 'creation_uv', 'creation_task_cnt', 'creation_penetration_rate', 'avg_creation_task_cnt_per_creator'],
   renewal_daily: ['platform', 'dataset_kind', 'period', 'week_start', 'week_end', 'platform_type', 'plan_tier', 'plan_cycle', 'expire_user_cnt', 'renew_user_cnt', 'renew_amount_usd'],
