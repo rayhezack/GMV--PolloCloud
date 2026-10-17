@@ -2499,6 +2499,7 @@ function ContributionTable({
   selectedPrimaryType,
   onSelectPrimaryType,
   itemLabel,
+  hideHeading = false,
 }: {
   section: AttributionSection;
   comparison: DashboardAttributionsResponse['comparison'];
@@ -2512,6 +2513,7 @@ function ContributionTable({
   selectedPrimaryType?: PaymentChainType;
   onSelectPrimaryType?: (chainType: PaymentChainType) => void;
   itemLabel?: (key: string) => string;
+  hideHeading?: boolean;
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const [hoveredSegment, setHoveredSegment] = useState<number | null>(null);
@@ -2529,6 +2531,7 @@ function ContributionTable({
   // keep the legacy “一级付费类型贡献” title compatible as well so the
   // overview donut and summary cards do not disappear when the title changes.
   const isPrimary = section.title.includes('一级') || section.title === '付费类型贡献';
+  const hideComparisonDates = section.title === '自动续订套餐下钻';
   const labelColumnWidth = onSelectItem ? '21%' : '23%';
   const metricColumnWidth = onSelectItem ? '13.1667%' : '15.4%';
   const analysisTotal = section.items.reduce((total, item) => total + item.analysisDailyAvg, 0);
@@ -2543,17 +2546,19 @@ function ContributionTable({
   );
   return (
     <div className="payment-section">
-      <div className="payment-section-heading">
-        <SectionHeaderLine title={section.title} description={section.description} />
-        {isPrimary ? (
-          <button type="button" onClick={() => setShowDetails((current) => !current)}>{showDetails ? '返回概览' : '查看明细'}<ChevronRight size={15} aria-hidden="true" /></button>
-        ) : null}
-      </div>
+      {!hideHeading ? (
+        <div className="payment-section-heading">
+          <SectionHeaderLine title={section.title} description={section.description} />
+          {isPrimary ? (
+            <button type="button" onClick={() => setShowDetails((current) => !current)}>{showDetails ? '返回概览' : '查看明细'}<ChevronRight size={15} aria-hidden="true" /></button>
+          ) : null}
+        </div>
+      ) : null}
       <motion.div layout className="payment-layout-content" transition={{ layout: { type: 'spring', stiffness: 360, damping: 34 } }}>
       <AnimatePresence mode="sync" initial={false}>
       {(isPrimary ? showDetails : true) ? (
       <motion.div layout key="details" initial={{ opacity: 0, scale: 0.985 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.985 }} transition={{ layout: { type: 'spring', stiffness: 360, damping: 32 }, opacity: { duration: 0.16 }, scale: { type: 'spring', stiffness: 360, damping: 32 } }}>
-      <div className="hidden overflow-hidden rounded-2xl bg-white lg:block">
+      <div className={cn('payment-contribution-table-wrap', 'hidden overflow-hidden rounded-2xl bg-white lg:block', hideHeading && 'payment-contribution-table-wrap--compact')}>
         <Table className="dashboard-data-table w-full table-fixed [&_th]:whitespace-normal">
           <colgroup>
             <col style={{ width: labelColumnWidth }} />
@@ -2564,15 +2569,19 @@ function ContributionTable({
               <TableHead>{isPrimary ? '指标' : '付费类型'}</TableHead>
               <TableHead className="text-right">
                 基准期日均
-                <div className="text-[11px] font-normal text-muted-foreground">
-                  {comparison?.baselinePeriod ?? '-'}
-                </div>
+                {!hideComparisonDates ? (
+                  <div className="text-[11px] font-normal text-muted-foreground">
+                    {comparison?.baselinePeriod ?? '-'}
+                  </div>
+                ) : null}
               </TableHead>
               <TableHead className="text-right">
                 分析期日均
-                <div className="text-[11px] font-normal text-muted-foreground">
-                  {comparison?.analysisPeriod ?? '-'}
-                </div>
+                {!hideComparisonDates ? (
+                  <div className="text-[11px] font-normal text-muted-foreground">
+                    {comparison?.analysisPeriod ?? '-'}
+                  </div>
+                ) : null}
               </TableHead>
               <TableHead className="text-right">
                 绝对变化
@@ -2825,12 +2834,152 @@ function PaymentDrillChart({
                 <span className={cn(contribution < 0 && 'is-negative')} style={{ width: `${Math.min(50, Math.abs(contribution) / maxContribution * 50)}%` }} />
                 <span className="payment-drill-chart-tooltip" role="tooltip">贡献度 {formatSignedPercent(item.contribution)}</span>
               </span>
-              <strong className={cn(contribution < 0 ? 'is-negative' : 'is-positive')}>{formatSignedPercent(item.contribution)}</strong>
             </div>
           </motion.div>
         );
       })}
     </div>
+  );
+}
+
+type PaymentTrendMode = 'day' | 'week';
+
+const ACTIVE_PAYMENT_STACK_ORDER = ['首订', '积分包', '套餐升级', '重新订阅', '其他'];
+const RENEWAL_PAYMENT_STACK_ORDER = ['Lite', 'Pro', 'Ultra', '其他'];
+const PAYMENT_STACK_COLORS = ['#9D7BF5', '#5B8DEF', '#9AB8DB', '#F2C46D', '#74DCAE'];
+
+function PaymentTrendPanel({
+  type,
+  section,
+  comparison,
+  breakdown,
+}: {
+  type: 'active' | 'renewal';
+  section: AttributionSection;
+  comparison: DashboardAttributionsResponse['comparison'];
+  breakdown: PaymentBreakdownRow[];
+}) {
+  const [mode, setMode] = useState<PaymentTrendMode>('day');
+  const [hovered, setHovered] = useState<number | null>(null);
+  const trendRef = useRef<HTMLElement | null>(null);
+  const trendVisible = useInView(trendRef, { once: true, amount: 0.2 });
+  const reducedMotion = useReducedMotion();
+  const order = type === 'active' ? ACTIVE_PAYMENT_STACK_ORDER : RENEWAL_PAYMENT_STACK_ORDER;
+  const label = type === 'active' ? '主动付费' : '自动续订';
+  const categoryOf = (row: PaymentBreakdownRow) => {
+    if (type === 'active') return order.includes(row.payType) ? row.payType : '其他';
+    const tier = String(row.subscriptionTier || '').trim();
+    if (/^lite$/i.test(tier)) return 'Lite';
+    if (/^pro$/i.test(tier)) return 'Pro';
+    if (/^ultra$/i.test(tier)) return 'Ultra';
+    return '其他';
+  };
+  const rows = useMemo(() => {
+    const scoped = breakdown.filter((row) => (
+      (type === 'active' ? row.payType !== '自动续订' : row.payType === '自动续订')
+      && (row.weekStart === comparison?.baselinePeriod || row.weekStart === comparison?.analysisPeriod)
+    ));
+    const grouped = new Map<string, { period: string; weekStart: string; values: Record<string, number> }>();
+    scoped.forEach((row) => {
+      const key = mode === 'week' ? row.weekStart : row.period;
+      const current = grouped.get(key) ?? { period: key, weekStart: row.weekStart, values: {} };
+      const category = categoryOf(row);
+      current.values[category] = (current.values[category] ?? 0) + row.gmvUsd;
+      grouped.set(key, current);
+    });
+    const daysByWeek = new Map<string, number>([
+      [comparison?.baselinePeriod ?? '', comparison?.baselinePeriodDays || WEEK_DAYS],
+      [comparison?.analysisPeriod ?? '', comparison?.analysisPeriodDays || WEEK_DAYS],
+    ]);
+    return [...grouped.values()]
+      .sort((a, b) => a.period.localeCompare(b.period))
+      .map((row) => ({
+        ...row,
+        label: mode === 'week'
+          ? row.weekStart === comparison?.analysisPeriod ? '分析周' : '基准周'
+          : (() => {
+            const [month, day] = row.period.slice(5).split('-');
+            return `${Number(month)}/${Number(day)}`;
+          })(),
+        values: mode === 'week'
+          ? Object.fromEntries(Object.entries(row.values).map(([key, value]) => [key, value / (daysByWeek.get(row.weekStart) || WEEK_DAYS)]))
+          : row.values,
+      }));
+  }, [breakdown, comparison, mode, order, type]);
+  const categories = order.filter((key) => rows.some((row) => Number(row.values[key] ?? 0) > 0));
+  const activeRows = rows.filter((row) => row.weekStart === comparison?.analysisPeriod);
+  const analysisTotal = section.items.reduce((sum, item) => sum + item.analysisDailyAvg, 0);
+  const baselineTotal = section.items.reduce((sum, item) => sum + item.baselineDailyAvg, 0);
+  const change = baselineTotal ? analysisTotal / baselineTotal - 1 : null;
+  const maxTotal = Math.max(1, ...rows.map((row) => categories.reduce((sum, key) => sum + Number(row.values[key] ?? 0), 0)));
+  const money = (value: number) => formatContributionValue(value, 'GMV');
+  const hoveredRow = hovered === null ? null : rows[hovered] ?? null;
+
+  return (
+    <section ref={trendRef} className={cn('payment-trend-card', trendVisible && 'is-revealed')} aria-label={`${label}日周趋势`}>
+      <div className="payment-trend-card-head">
+        <div>
+          <h4>{label}</h4>
+          <p>{mode === 'day' ? '分析周逐日 GMV' : '基准周 vs 分析周'}</p>
+        </div>
+        <div className="payment-trend-mode" role="group" aria-label="趋势粒度">
+          {(['day', 'week'] as PaymentTrendMode[]).map((value) => (
+            <button key={value} type="button" aria-pressed={mode === value} onClick={() => { setMode(value); setHovered(null); }}>
+              {value === 'day' ? '日' : '周'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="payment-trend-summary">
+        <div><span>分析周日均 GMV</span><strong>{money(analysisTotal)}</strong></div>
+        <div><span>WoW</span><b className={cn(change !== null && change < 0 ? 'is-negative' : 'is-positive')}>{formatSignedPercent(change)}</b></div>
+      </div>
+      <div className="payment-trend-plot" role="img" aria-label={`${label}${mode === 'day' ? '日' : '周'}趋势图`}>
+        <div className="payment-trend-columns">
+          {rows.map((row, index) => {
+            const total = categories.reduce((sum, key) => sum + Number(row.values[key] ?? 0), 0);
+            return (
+              <button
+                key={`${row.period}-${index}`}
+                type="button"
+                className={cn('payment-trend-column', hovered === index && 'is-hovered')}
+                aria-label={`${row.label} ${money(total)}`}
+                onPointerEnter={() => setHovered(index)}
+                onPointerMove={() => setHovered(index)}
+                onFocus={() => setHovered(index)}
+                onPointerLeave={() => setHovered(null)}
+                onPointerCancel={() => setHovered(null)}
+                onBlur={() => setHovered(null)}
+              >
+                <span className="payment-trend-stack" style={{ height: `${Math.max(8, total / maxTotal * 100)}%` }}>
+                  {categories.map((key, categoryIndex) => (
+                    <motion.span
+                      key={key}
+                      className="payment-trend-segment"
+                      style={{ background: PAYMENT_STACK_COLORS[categoryIndex % PAYMENT_STACK_COLORS.length], height: `${Math.max(3, Number(row.values[key] ?? 0) / Math.max(total, 1) * 100)}%` }}
+                      initial={reducedMotion ? false : { scaleY: 0, opacity: 0 }}
+                      animate={trendVisible || reducedMotion ? { scaleY: 1, opacity: 1 } : { scaleY: 0, opacity: 0 }}
+                      transition={reducedMotion ? { duration: 0 } : { duration: 0.55, delay: index * 0.025 + categoryIndex * 0.035, ease: 'easeOut' }}
+                    />
+                  ))}
+                </span>
+                <span className="payment-trend-column-label">{index === 0 || index === rows.length - 1 ? row.label : ''}</span>
+              </button>
+            );
+          })}
+        </div>
+        {hoveredRow && (
+          <div className="payment-trend-tooltip" role="status">
+            <strong>{hoveredRow.label}</strong>
+            <b>{money(categories.reduce((sum, key) => sum + Number(hoveredRow.values[key] ?? 0), 0))}</b>
+            {categories.map((key, index) => (
+              <span key={key}><i style={{ background: PAYMENT_STACK_COLORS[index % PAYMENT_STACK_COLORS.length] }} />{key}<b>{money(Number(hoveredRow.values[key] ?? 0))}</b></span>
+            ))}
+          </div>
+        )}
+      </div>
+      {activeRows.length === 0 && <div className="payment-trend-empty">当前分析周暂无逐日明细。</div>}
+    </section>
   );
 }
 
@@ -2864,7 +3013,7 @@ function PaymentDrillExplorer({
   }, [selectedKey]);
   const baselineDays = comparison?.baselinePeriodDays || WEEK_DAYS;
   const analysisDays = comparison?.analysisPeriodDays || WEEK_DAYS;
-  const periodRows = breakdown.filter((row) => row.weekStart === comparison?.baselinePeriod || row.weekStart === comparison?.analysisPeriod);
+  const periodRows = breakdown.filter((row) => row.payType !== '自动续订' && (row.weekStart === comparison?.baselinePeriod || row.weekStart === comparison?.analysisPeriod));
   const dayOffset = (row: PaymentBreakdownRow) => {
     const period = Date.parse(`${row.period}T00:00:00Z`);
     const week = Date.parse(`${row.weekStart}T00:00:00Z`);
@@ -2961,6 +3110,9 @@ function PaymentDrillExplorer({
           </div>
         </div>
       </div>
+      <div className={cn(dimension === 'payType' ? 'payment-explorer-layout' : 'payment-explorer-layout--table-only')}>
+        {dimension === 'payType' && <PaymentTrendPanel type="active" section={section} comparison={comparison} breakdown={breakdown} />}
+        <div className="payment-explorer-table-column">
       {dimension === 'function' && <div className="payment-explorer-search"><Search value={query} onChange={(value) => { setQuery(value); closeDetail(); }} placeholder="搜索功能" /><span>{visibleItems.length} 项功能</span></div>}
       {breakdown.length === 0 && <div className="payment-explorer-notice">当前比较窗口暂无注册新老与功能明细。</div>}
       <div className={cn('payment-explorer-body', 'is-table', (selected || detailExiting) && 'has-detail')}>
@@ -2976,10 +3128,13 @@ function PaymentDrillExplorer({
                 <span className={cn('payment-explorer-absolute', item.analysisDailyAvg - item.baselineDailyAvg > 0 && 'is-positive', item.analysisDailyAvg - item.baselineDailyAvg < 0 && 'is-negative')}>{formatSignedContributionValue(item.analysisDailyAvg - item.baselineDailyAvg, 'GMV')}</span>
                 <span className={cn('payment-explorer-change', (item.wowChange ?? 0) > 0 && 'is-positive', (item.wowChange ?? 0) < 0 && 'is-negative')}>{formatSignedPercent(item.wowChange)}</span>
                 <span className="payment-explorer-contribution">
-                  <span className="payment-explorer-table-meter" aria-hidden="true">
+                  <span
+                    className="payment-explorer-table-meter"
+                    aria-label={`${label(item.key)}贡献度 ${formatSignedPercent(item.contribution)}`}
+                    data-tooltip={`贡献度 ${formatSignedPercent(item.contribution)}`}
+                  >
                     <i className={contribution < 0 ? 'is-negative' : ''} style={{ width: `${Math.min(50, Math.abs(contribution) / maxContribution * 50)}%` }} />
                   </span>
-                  <b className={contribution < 0 ? 'is-negative' : 'is-positive'}>{formatSignedPercent(item.contribution)}</b>
                 </span>
               </button>;
             })}
@@ -3007,6 +3162,8 @@ function PaymentDrillExplorer({
           </motion.div>}
           </AnimatePresence>
           </aside>}
+      </div>
+        </div>
       </div>
     </div>
   );
@@ -3346,14 +3503,16 @@ function ContributionRow({
       </TableCell>
       <TableCell className="text-right font-mono text-sm">
         <div className="payment-table-contribution">
-          <span className="payment-explorer-table-meter" aria-hidden="true">
+          <span
+            className="payment-explorer-table-meter"
+            aria-label={`${label}贡献度 ${formatSignedPercent(item.contribution)}`}
+            data-tooltip={`贡献度 ${formatSignedPercent(item.contribution)}`}
+            tabIndex={0}
+          >
             <i
               className={contribution < 0 ? 'is-negative' : undefined}
               style={{ width: `${Math.min(50, Math.abs(contribution) / (maxContribution || 0.01) * 50)}%` }}
             />
-          </span>
-          <span className={contribution >= 0 ? 'text-success' : 'text-destructive'}>
-            {formatSignedPercent(item.contribution)}
           </span>
         </div>
       </TableCell>
@@ -3930,15 +4089,9 @@ const DashboardPage = () => {
     [granularity, selectedTrendWindow],
   );
   const cardTrendWindow = selectedTrendWindow;
-  const trendWindowDays = dayjs(selectedTrendWindow.endDate).diff(
-    dayjs(selectedTrendWindow.startDate),
-    'day',
-  ) + 1;
-  // Keep the headline cards readable over long ranges without changing the
-  // user's selected grain for the main trend chart.
-  // Weekly chart mode must keep the headline cards on the same business-week
-  // grain, even when the selected date window is shorter than one month.
-  const cardGranularity: Granularity = granularity === 'week' || trendWindowDays > 31 ? 'week' : 'day';
+  // Headline cards always show the latest daily values. The day/week control
+  // belongs to the trend chart and must not change the card metric grain.
+  const cardGranularity: Granularity = 'day';
 
   const updateSearchParam = useCallback(
     (
@@ -4640,11 +4793,28 @@ const DashboardPage = () => {
                             breakdown={attributions.payType?.paymentBreakdown ?? []}
                           />
                         ) : (
-                          <ContributionTable
-                            section={section}
-                            comparison={attributions.payType?.comparison ?? null}
-                            itemLabel={formatPlanTierLabel}
-                          />
+                          <div className="payment-explorer">
+                            <div className="payment-explorer-heading">
+                              <div>
+                                <h3>自动续订下钻</h3>
+                                <p>按订阅档位比较 GMV 变化</p>
+                              </div>
+                            </div>
+                            <div className="payment-renewal-layout">
+                              <PaymentTrendPanel
+                                type="renewal"
+                                section={section}
+                                comparison={attributions.payType?.comparison ?? null}
+                                breakdown={attributions.payType?.paymentBreakdown ?? []}
+                              />
+                              <ContributionTable
+                                section={section}
+                                comparison={attributions.payType?.comparison ?? null}
+                                itemLabel={formatPlanTierLabel}
+                                hideHeading
+                              />
+                            </div>
+                          </div>
                         )}
                       </motion.div>
                     ))}

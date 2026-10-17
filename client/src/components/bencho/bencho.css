@@ -21,7 +21,7 @@
   --tst-mute: color-mix(in srgb, var(--fill-on) 52%, var(--fill-slab));
   --tst-wash: color-mix(in srgb, var(--fill-on) 6%, var(--fill-slab));
 }
-.tst-toast { position: absolute; left: 0; top: 0; width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px; border-radius: var(--tst-r); background: var(--fill-slab); transform-origin: 50% 0; transition: background-color 220ms ease, box-shadow 220ms ease; }
+.tst-toast { position: absolute; left: 0; top: 0; width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px; border-radius: var(--tst-r); background: var(--fill-slab); transform-origin: 50% 0; transition: background-color 220ms ease, box-shadow 220ms ease; cursor: pointer; }
 .tst:not([data-open]) .tst-toast:not([data-front]) { background: color-mix(in srgb, var(--fill-on) 6%, var(--fill-slab)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--fill-on) 6%, transparent); }
 .tst-toast > * { transition: opacity 220ms ease; }
 .tst:not([data-open]) .tst-toast:not([data-front]) > * { opacity: 0; }
@@ -38,5 +38,12 @@
 .tst-x { display: grid; width: 28px; height: 28px; flex: none; place-items: center; border-radius: 999px; background: none; color: var(--tst-mute); }
 .tst-x:hover, .tst-act:hover { background: var(--tst-wash); color: var(--fill-on); }
 .tst-act:focus-visible, .tst-x:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--signal); }
+.tst-detail { position: absolute; right: 0; bottom: 0; z-index: 10; width: min(360px, calc(100vw - 32px)); box-sizing: border-box; padding: 16px 16px 14px; border: 1px solid var(--pane-edge); border-radius: 20px; background: var(--fill-slab); color: var(--fill-on); box-shadow: 0 18px 42px rgb(37 36 61 / 18%); }
+.tst-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.tst-detail-head strong { font-size: 15px; font-weight: 650; line-height: 20px; }
+.tst-detail-head .tst-x { margin: -4px -4px 0 0; }
+.tst-detail p { margin: 10px 0 14px; color: var(--tst-mute); font-size: 13px; line-height: 19px; white-space: pre-line; }
+.tst-detail a { display: inline-flex; align-items: center; gap: 5px; color: var(--signal); font-size: 12px; font-weight: 650; text-decoration: none; }
+.tst-detail a:hover { text-decoration: underline; }
 @media (max-width: 560px) { .tst { right: 16px; bottom: 16px; width: min(300px, calc(100vw - 32px)) !important; } }
 @media (prefers-reduced-motion: reduce) { .tst-toast, .tst-toast > * { transition: none; } }

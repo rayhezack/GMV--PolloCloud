@@ -259,6 +259,7 @@ export interface PaymentBreakdownRow {
   period: string;
   weekStart: string;
   payType: string;
+  subscriptionTier?: string;
   functionName: string;
   userTag: string;
   gmvUsd: number;

@@ -706,7 +706,12 @@ function creativeMetrics(rows: D1Row[], days: number) {
   };
 }
 
-function payTrend(rows: D1Row[], periods: string[], days: Map<string, number>) {
+function payTrend(
+  rows: D1Row[],
+  periods: string[],
+  days: Map<string, number>,
+  renewalGmvForPeriod: (period: string) => number,
+) {
   return periods.map((period) => {
     const group = rows.filter((row) => asText(row.period) === period);
     const divisor = days.get(period) || 1;
@@ -719,8 +724,7 @@ function payTrend(rows: D1Row[], periods: string[], days: Map<string, number>) {
     }
     const total = sum(primary.map((row) => asNumber(row.gmv_usd)));
     const active = sum(activeDrill.map((row) => asNumber(row.gmv_usd)));
-    const renewal = sum(primary.filter((row) => normalizePayType(asText(row.pay_type)) === RENEWAL_PAY_TYPE).map((row) => asNumber(row.gmv_usd)));
-    return { period, totalGmv: total / divisor, activeGmv: active / divisor, renewalGmv: renewal / divisor, activePayTypeGmv, gmv: 0, dau: 0, paywallExposureRate: 0, submitRate: 0, payRate: 0, aov: 0 };
+    return { period, totalGmv: total / divisor, activeGmv: active / divisor, renewalGmv: renewalGmvForPeriod(period), activePayTypeGmv, gmv: 0, dau: 0, paywallExposureRate: 0, submitRate: 0, payRate: 0, aov: 0 };
   });
 }
 
@@ -773,16 +777,28 @@ async function overview(env: Env, request: Request) {
     dailyRows(env, 'pay_type_daily', { platform, startDate, endDate }),
     dailyRows(env, 'renewal_daily', { platform, startDate, endDate }),
   ]);
+  const payForTrend = pay.map((row) => ({ ...row, period: granularity === 'week' ? row.week_start : row.period }));
   const renewal = renewalPlatformRows(renewalRecords, platform, deviceType)
     .filter((row) => !planTier || asText(row.plan_tier).toUpperCase() === planTier);
+  const renewalForTrend = renewal.map((row) => ({
+    ...row,
+    period: granularity === 'week' ? row.week_start : row.period,
+  }));
   const filteredChain = trendUserTag ? chain.filter((row) => asText(row.user_tag) === trendUserTag) : chain;
+  // Divisors must be computed from the original daily rows. After weekly
+  // grouping, every row shares one week_start and would otherwise look like
+  // a one-day week.
   const payDays = trendPeriodDivisors(pay, granularity);
   const chainDays = trendPeriodDivisors(filteredChain, granularity);
   const renewalDays = trendPeriodDivisors(renewal, granularity);
   const periods = groupByPeriod([...filteredChain, ...pay, ...renewal], granularity).filter((period) => dateInRange(period, startDate, endDate));
-  const payTrendRows = payTrend(pay.map((row) => ({ ...row, period: granularity === 'week' ? row.week_start : row.period })), periods, payDays);
+  const renewalGmvForPeriod = (period: string) => {
+    const divisor = renewalDays.get(period) || 1;
+    return sum(periodRows(renewalForTrend, period, granularity).map((row) => asNumber(row.renew_amount_usd))) / divisor;
+  };
+  const payTrendRows = payTrend(payForTrend, periods, payDays, renewalGmvForPeriod);
   const payPeriods = groupByPeriod(pay, granularity).filter((period) => dateInRange(period, startDate, endDate));
-  const cardTrend = payTrend(pay.map((row) => ({ ...row, period: granularity === 'week' ? row.week_start : row.period })), payPeriods, payDays);
+  const cardTrend = payTrend(payForTrend, payPeriods, payDays, renewalGmvForPeriod);
   const chainTrendRows = chainTrend(filteredChain.map((row) => ({ ...row, period: granularity === 'week' ? row.week_start : row.period })), periods, chainDays);
   const trend = payTrendRows.map((row, index) => {
     const chainRow = chainTrendRows[index];
@@ -792,7 +808,6 @@ async function overview(env: Env, request: Request) {
       ...row,
       ...chainRow,
       activeGmv: chainRow.gmv,
-      renewalGmv: renewalTotal.renewAmountUsd / renewalPeriodDays,
       expireUserCnt: renewalTotal.expireUserCnt / renewalPeriodDays,
       renewalRate: renewalTotal.expireUserCnt ? renewalTotal.renewUserCnt / renewalTotal.expireUserCnt : 0,
       renewalAov: renewalTotal.renewUserCnt ? renewalTotal.renewAmountUsd / renewalTotal.renewUserCnt : 0,
@@ -961,15 +976,6 @@ async function attributions(env: Env, request: Request) {
   if (dimension === 'pay_type') {
     const rawRows = await dailyRows(env, 'pay_type_daily', { platform, startDate, endDate });
     const rows = alignComparisonWeekdays(rawRows, baselinePeriod, analysisPeriod);
-    const renewalRows = alignComparisonWeekdays(
-      renewalPlatformRows(
-        await dailyRows(env, 'renewal_daily', { platform, startDate, endDate }),
-        platform,
-        deviceType,
-      ),
-      baselinePeriod,
-      analysisPeriod,
-    );
     const comparison = buildComparison(rows, startDate, endDate, baselinePeriod, analysisPeriod);
     const days = comparison?.dayCounts || weekDayCounts(rows);
     const periods = [...new Set(rows.map((row) => asText(row.week_start)))].filter((period) => dateInRange(period, startDate, endDate)).sort();
@@ -983,10 +989,6 @@ async function attributions(env: Env, request: Request) {
       const previousRows = sourceRows.filter((row) => asText(row.week_start) === comparison.baselinePeriod);
       const current = aggregatePay(currentRows, () => true);
       const previous = aggregatePay(previousRows, () => true);
-      if (sourceRows === primaryRows) {
-        current.set('自动续订', sumRenewal(renewalRows.filter((row) => asText(row.week_start) === comparison.analysisPeriod)).renewAmountUsd);
-        previous.set('自动续订', sumRenewal(renewalRows.filter((row) => asText(row.week_start) === comparison.baselinePeriod)).renewAmountUsd);
-      }
       const keys = [...new Set([...order.filter((key) => current.has(key) || previous.has(key)), ...current.keys(), ...previous.keys()])];
       const denominator = sum([...current.values()]) / comparison.analysisPeriodDays - sum([...previous.values()]) / comparison.baselinePeriodDays;
       return {
@@ -998,25 +1000,37 @@ async function attributions(env: Env, request: Request) {
       };
     };
     const primaryRows = rows.map((row) => isActivePayDetailRow(row) ? { ...row, pay_type: '主动付费' } : row);
+    const activeGroupedRows = activePayDetailRows(rows).map((row) => {
+      const payType = asText(row.pay_type);
+      const groupedPayType = ['首订', '积分包', '套餐升级', '重新订阅'].includes(payType) ? payType : '其他';
+      return { ...row, pay_type: groupedPayType };
+    });
     const makeRenewalPlanSection = () => {
+      const renewalRows = rows.filter((row) => normalizePayType(asText(row.pay_type)) === RENEWAL_PAY_TYPE);
       const currentRows = renewalRows.filter((row) => asText(row.week_start) === comparison.analysisPeriod);
       const previousRows = renewalRows.filter((row) => asText(row.week_start) === comparison.baselinePeriod);
       const current = new Map<string, number>();
       const previous = new Map<string, number>();
+      const normalizeRenewalTier = (value: string) => {
+        if (/^lite$/i.test(value)) return 'Lite';
+        if (/^pro$/i.test(value)) return 'Pro';
+        if (/^ultra$/i.test(value)) return 'Ultra';
+        return '其他';
+      };
       for (const row of currentRows) {
-        const key = asText(row.plan_tier).toUpperCase();
-        if (key) current.set(key, (current.get(key) || 0) + asNumber(row.renew_amount_usd));
+        const key = normalizeRenewalTier(asText(row.subscription_tier));
+        if (key) current.set(key, (current.get(key) || 0) + asNumber(row.gmv_usd));
       }
       for (const row of previousRows) {
-        const key = asText(row.plan_tier).toUpperCase();
-        if (key) previous.set(key, (previous.get(key) || 0) + asNumber(row.renew_amount_usd));
+        const key = normalizeRenewalTier(asText(row.subscription_tier));
+        if (key) previous.set(key, (previous.get(key) || 0) + asNumber(row.gmv_usd));
       }
-      const order = ['LITE', 'PRO', 'ULTRA'];
+      const order = ['Lite', 'Pro', 'Ultra', '其他'];
       const keys = [...new Set([...order.filter((key) => current.has(key) || previous.has(key)), ...current.keys(), ...previous.keys()])];
       const denominator = sum([...current.values()]) / comparison.analysisPeriodDays - sum([...previous.values()]) / comparison.baselinePeriodDays;
       return {
         title: '自动续订套餐下钻',
-        description: '只在自动续订内部拆解 Lite、Pro、Ultra 套餐对 GMV 变化的贡献。',
+        description: '只在自动续订内部按订阅档位拆解 GMV 变化的贡献。',
         valueLabel: 'GMV',
         metricLabels: {},
         items: keys.map((key) => attributionItem({
@@ -1031,7 +1045,7 @@ async function attributions(env: Env, request: Request) {
     };
     const sections = [
       makeSection('付费类型贡献', '主动付费明细汇总后与自动续订汇总比较 GMV 变化。', primaryRows, ['主动付费', '自动续订']),
-      makeSection('主动付费下钻', '主动付费明细按付费类型汇总；功能和注册新老明细见下方。', activePayDetailRows(rows), ['首订', '积分包', '套餐升级', '重新订阅', '其他']),
+      makeSection('主动付费下钻', '主动付费明细按付费类型汇总；功能和注册新老明细见下方。', activeGroupedRows, ['首订', '积分包', '套餐升级', '重新订阅', '其他']),
       makeRenewalPlanSection(),
     ];
     // Attribution uses aligned weekdays, but the detail trend must retain every
@@ -1039,17 +1053,23 @@ async function attributions(env: Env, request: Request) {
     const breakdownDates = [...new Set(rawRows.filter((row) =>
       asText(row.week_start) === comparison.baselinePeriod || asText(row.week_start) === comparison.analysisPeriod,
     ).map((row) => asText(row.period)))];
-    const conditions = ["dataset = 'pay_type'", "function_name IS NOT NULL", "user_tag IS NOT NULL", `period IN (${breakdownDates.map(() => '?').join(', ')})`, 'week_start IN (?, ?)'];
+    const conditions = [
+      "dataset = 'pay_type'",
+      "((pay_type != '自动续订' AND function_name IS NOT NULL AND user_tag IS NOT NULL) OR (pay_type = '自动续订' AND subscription_tier IS NOT NULL))",
+      `period IN (${breakdownDates.map(() => '?').join(', ')})`,
+      'week_start IN (?, ?)',
+    ];
     const binds: unknown[] = [...breakdownDates, comparison.baselinePeriod, comparison.analysisPeriod];
     conditions.push('platform = ?');
     binds.push(platform);
     const breakdownRows = breakdownDates.length
-      ? await queryRows(env, `SELECT period, week_start, pay_type, function_name, user_tag, SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows WHERE ${conditions.join(' AND ')} GROUP BY period, week_start, pay_type, function_name, user_tag`, ...binds)
+      ? await queryRows(env, `SELECT period, week_start, pay_type, subscription_tier, function_name, user_tag, SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows WHERE ${conditions.join(' AND ')} GROUP BY period, week_start, pay_type, subscription_tier, function_name, user_tag`, ...binds)
       : [];
     const paymentBreakdown = breakdownRows.map((row) => ({
       period: asText(row.period),
       weekStart: asText(row.week_start),
       payType: normalizePayType(asText(row.pay_type)),
+      subscriptionTier: asText(row.subscription_tier) || '未分类档位',
       functionName: asText(row.function_name) || 'not_attributed',
       userTag: asText(row.user_tag) || '未知',
       gmvUsd: asNumber(row.gmv_usd),

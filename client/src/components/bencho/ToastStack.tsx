@@ -1,6 +1,6 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { CircleCheck, CircleX, Info, TriangleAlert, X, type LucideIcon } from 'lucide-react';
+import { ArrowUpRight, CircleCheck, CircleX, Info, TriangleAlert, X, type LucideIcon } from 'lucide-react';
 import './bencho.css';
 
 export type ToastStackKind = 'success' | 'info' | 'error' | 'warning';
@@ -12,6 +12,9 @@ export type ToastStackItem = {
   action?: string;
   onAction?: () => void;
   duration?: number;
+  detail?: string;
+  href?: string;
+  linkLabel?: string;
 };
 
 const ICON: Record<ToastStackKind, LucideIcon> = {
@@ -47,6 +50,7 @@ export function ToastStack({ peek = 14, gap = 10, corner = 20 }: { peek?: number
   const [stack, setStack] = useState<ToastStackItem[]>([]);
   const [leaving, setLeaving] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const root = useRef<HTMLDivElement | null>(null);
   const timers = useRef(new Map<string, number>());
 
@@ -67,6 +71,22 @@ export function ToastStack({ peek = 14, gap = 10, corner = 20 }: { peek?: number
     };
   }, []);
 
+  useEffect(() => {
+    if (!expandedId) return undefined;
+    const closeOutside = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setExpandedId(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setExpandedId(null);
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [expandedId]);
+
   const dismiss = (id: string) => {
     if (leaving !== null) return;
     const timer = timers.current.get(id);
@@ -76,6 +96,7 @@ export function ToastStack({ peek = 14, gap = 10, corner = 20 }: { peek?: number
     window.setTimeout(() => {
       setStack(current => current.filter(item => item.id !== id));
       setLeaving(current => current === id ? null : current);
+      setExpandedId(current => current === id ? null : current);
     }, 220);
   };
 
@@ -89,6 +110,7 @@ export function ToastStack({ peek = 14, gap = 10, corner = 20 }: { peek?: number
   };
 
   if (!stack.length) return null;
+  const expandedToast = stack.find(toast => toast.id === expandedId) ?? null;
   return (
     <div
       ref={root}
@@ -121,14 +143,39 @@ export function ToastStack({ peek = 14, gap = 10, corner = 20 }: { peek?: number
             animate={out ? { y: position.y, scale: position.scale, opacity: 0, x: 60 } : { y: position.y, scale: position.scale, opacity: 1, x: 0 }}
             transition={out ? { duration: 0.22, ease: [0.4, 0, 1, 1] } : SPRING}
             aria-hidden={!open && !front ? true : undefined}
+            role="button"
+            tabIndex={open || front ? 0 : -1}
+            aria-expanded={expandedId === toast.id}
+            onClick={() => setExpandedId(current => current === toast.id ? null : toast.id)}
+            onKeyDown={event => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                setExpandedId(current => current === toast.id ? null : toast.id);
+              }
+            }}
           >
             <span className="tst-icon"><Icon size={18} strokeWidth={2} aria-hidden="true" /></span>
             <span className="tst-text"><b>{toast.title}</b><span>{toast.body}</span></span>
-            {toast.action && <button type="button" className="tst-act" tabIndex={open || front ? 0 : -1} onClick={() => toast.onAction?.()}>{toast.action}</button>}
-            <button type="button" className="tst-x" aria-label={`关闭 ${toast.title}`} tabIndex={open || front ? 0 : -1} onClick={() => dismiss(toast.id)}><X size={16} strokeWidth={2} aria-hidden="true" /></button>
+            {toast.action && <button type="button" className="tst-act" tabIndex={open || front ? 0 : -1} onClick={event => { event.stopPropagation(); toast.onAction?.(); }}>{toast.action}</button>}
+            <button type="button" className="tst-x" aria-label={`关闭 ${toast.title}`} tabIndex={open || front ? 0 : -1} onClick={event => { event.stopPropagation(); dismiss(toast.id); }}><X size={16} strokeWidth={2} aria-hidden="true" /></button>
           </motion.div>
         );
       })}
+      {expandedToast && (
+        <motion.div
+          className="tst-detail"
+          role="dialog"
+          aria-label={`${expandedToast.title}详情`}
+          initial={{ opacity: 0, y: 8, scale: .97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 8, scale: .97 }}
+          onClick={event => event.stopPropagation()}
+        >
+          <div className="tst-detail-head"><strong>{expandedToast.title}</strong><button type="button" className="tst-x" aria-label="关闭详情" onClick={() => setExpandedId(null)}><X size={16} strokeWidth={2} aria-hidden="true" /></button></div>
+          <p>{expandedToast.detail || expandedToast.body}</p>
+          {expandedToast.href && <a href={expandedToast.href} onClick={() => setExpandedId(null)}>{expandedToast.linkLabel || '前往相关看板'}<ArrowUpRight size={14} strokeWidth={2} aria-hidden="true" /></a>}
+        </motion.div>
+      )}
     </div>
   );
 }

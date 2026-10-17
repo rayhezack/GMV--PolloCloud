@@ -197,7 +197,11 @@ rates AS (
         LOWER(base_currency_code) AS currency_code,
         MAX(CAST(exchange_rate AS DOUBLE)) AS exchange_rate
     FROM mc_prd.dim_pollo_common_global_exchange_rate_dip
-    WHERE p_date = IF('${endKey}' < '20260522', '20260522', '${endKey}')
+    WHERE p_date = (
+        SELECT MAX(p_date)
+        FROM mc_prd.dim_pollo_common_global_exchange_rate_dip
+        WHERE p_date <= IF('${endKey}' < '20260522', '20260522', '${endKey}')
+    )
       AND quote_currency_code = 'USD'
     GROUP BY LOWER(base_currency_code)
 ),

@@ -40,6 +40,9 @@ async function notifyGmvAnomalies() {
       kind: alert.direction === 'up' ? 'warning' : 'error',
       title: `${platformLabel(alert.platform)} · ${metricLabel(alert.metric)}异动`,
       body: `${alert.period} 日均 ${change}，超过阈值 ${threshold}`,
+      detail: `分析周期：${alert.period}\n最新业务周日均变化 ${change}，已超过历史分位阈值 ${threshold}。\n建议：前往「GMV 趋势」Tab 查看该平台的日趋势，再进入「付费类型」Tab 做主动付费与续订下钻。`,
+      href: `/?tab=trend&platform=${alert.platform}${alert.metric === 'activeGmv' || alert.metric === 'renewalGmv' ? `&metric=${alert.metric}` : ''}&analysisWeek=${alert.period}`,
+      linkLabel: '查看 GMV 趋势',
     });
   }
 }
@@ -59,6 +62,11 @@ function notifyTaskCompletion(task: Task) {
     kind: failed ? 'error' : 'success',
     title: task.kind === 'sync' ? (failed ? '数据同步失败' : '数据同步完成') : (failed ? '诊断报告生成失败' : '诊断报告已生成'),
     body: failed ? (task.errorMessage || '任务执行失败，请打开任务详情查看') : task.context,
+    detail: failed
+      ? (task.errorMessage || '任务执行失败，请打开任务详情查看')
+      : `${task.kind === 'sync' ? '数据同步任务' : '诊断报告任务'}已完成。\n${task.context}`,
+    href: task.href,
+    linkLabel: task.kind === 'sync' ? '查看数据与口径' : '查看诊断报告',
   });
   return true;
 }

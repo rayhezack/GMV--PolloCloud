@@ -21,7 +21,7 @@ import type { Platform, ReportGenerationStatus } from '@shared/api.interface';
 import type { SyncRunStatus } from '@shared/api.interface';
 import { executeSyncRun, getLatestSyncRun } from '@/api/sync';
 import { ReportTask } from './dashboard/ReportTask';
-import { ToastStack } from './bencho/ToastStack';
+import { pushToast, ToastStack } from './bencho/ToastStack';
 
 const REPORT_GENERATION_KEEPALIVE_INTERVAL_MS = 10_000;
 const REPORT_GENERATION_PLATFORMS: Platform[] = ['web', 'app'];
@@ -72,6 +72,25 @@ const Layout = () => {
   const [syncJob, setSyncJob] = useState<SyncRunStatus | null>(null);
   const executingJobs = useRef(new Set<string>());
   const executingSyncJobs = useRef(new Set<string>());
+  useEffect(() => {
+    if (!import.meta.env.DEV || !new URLSearchParams(window.location.search).has('toastTest')) return;
+    pushToast({
+      kind: 'success',
+      title: '数据同步完成',
+      body: '测试：已更新 1,248 条分析记录',
+      detail: '完成时间：今天 09:30\n已从 MaxCompute 拉取并写入 D1，共更新 1,248 条分析记录。',
+      href: '/?tab=data',
+      linkLabel: '查看数据与口径',
+    });
+    pushToast({
+      kind: 'warning',
+      title: 'Web · 大盘 GMV 异动',
+      body: '测试：最新业务周日均 +12.4%，超过阈值 +10.0%',
+      detail: '分析周期：2026-10-10\n最新业务周日均 GMV 上升 12.4%，超过历史 p95 与 +10% 门槛。\n建议：先查看「GMV 趋势」Tab，再进入「付费类型」Tab 做下钻。',
+      href: '/?tab=trend&platform=web&metric=activeGmv&analysisWeek=2026-10-10',
+      linkLabel: '查看 GMV 趋势',
+    });
+  }, []);
   const trackReport = useCallback((job: ReportGenerationStatus) => { setJobs(current => [...current.filter(item => item.platform !== job.platform), job]); }, []);
   const trackSync = useCallback((job: SyncRunStatus) => { setSyncJob(job); }, []);
   useEffect(() => {
