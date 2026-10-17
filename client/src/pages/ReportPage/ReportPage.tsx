@@ -71,6 +71,7 @@ export default function ReportPage() {
 
   const generate = async (scope: CreateMenuScope) => {
     if (!isAdmin || generating) return;
+    if (report && !window.confirm('当前业务周已有报告，确认重新生成吗？')) return;
     setSubmitting(true);
     try {
       const platforms: Platform[] = scope === 'both' ? ['web', 'app'] : [scope];

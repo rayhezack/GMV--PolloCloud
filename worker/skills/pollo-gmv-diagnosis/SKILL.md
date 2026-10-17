@@ -17,25 +17,32 @@ The model does not recompute metrics, alter evidence tables, invent product acti
 
 1. Start from total daily average GMV and week-over-week change.
 2. Decompose total GMV by level-1 pay type: active payment versus auto renewal.
-3. If active payment is a meaningful driver, drill active-payment GMV by active-payment result type: first subscription, credit pack, plan upgrade, resubscription, and other active-payment types.
-4. Continue within active-payment GMV: identify the creative tier with the largest contribution, then decompose that tier by DAU, paywall exposure rate, payment submit rate, submit-to-pay rate, and AOV.
-5. Use creative activity only as supporting evidence: overall active UV, creation UV, creation task count, creation penetration rate, and average creation tasks per active user.
-6. In cause diagnosis, match the core active-payment process factor with eligible product actions by timing, affected user path, platform scope, board, and direction.
+3. Classify the result pattern before drilling down: active payment down, auto renewal down, both down, or one down while the other offsets it. When both decline, retain both as independent result-level causes; never let the larger decline hide the other chain.
+4. If active payment is relevant, drill active-payment GMV by active-payment result type: first subscription, credit pack, plan upgrade, resubscription, and other active-payment types.
+5. Continue within active-payment GMV: identify the creative tier with the largest contribution, then decompose that tier by DAU, paywall exposure rate, payment submit rate, submit-to-pay rate, and AOV.
+6. If auto renewal is relevant, explain renewal GMV with `expiry users × renewal rate × renewal AOV`, then rank the supplied renewal-chain factor contributions within the renewal chain.
+7. Use creative activity only as supporting evidence: overall active UV, creation UV, creation task count, creation penetration rate, and average creation tasks per active user.
+8. In cause diagnosis, match each relevant chain's core process factor with eligible product actions by timing, affected user path, platform scope, board, and direction. Keep active-payment and renewal-chain explanations separate.
 
 ## Top Summary Contract
 
-Use the same top summary structure for App and Web. The creative tier and
-payment-chain factors in the top summary must come from the same tier. If the
-largest positive contribution tier differs from the tier with the largest
-absolute decline, use the positive contribution tier for the continuous
-drilldown and describe the declining tier separately as a drag or offset.
-Within the selected tier, state both the core and secondary payment-chain
-factors when two same-direction contributors exist. Rank them by contribution:
-the largest is core and the second-largest is secondary. If only one
-same-direction contributor exists, state only the core factor.
+Use the same top summary structure for App and Web. Always state total daily
+average GMV, total week-over-week change, and every relevant level-1 result
+driver. If both active payment and auto renewal decline, name both and state
+that they are independent contributors. Include the active-payment creative
+tier and chain factor only when active payment is relevant; include the
+renewal-chain factor when auto renewal is relevant. Do not force an active
+payment drilldown when auto renewal is the only relevant driver.
+
+For any selected chain, the core factor is the largest same-direction
+contribution and the secondary factor is the second-largest same-direction
+contribution. If the largest positive contribution tier differs from the tier
+with the largest absolute decline, use the positive contribution tier for the
+continuous drilldown and describe the declining tier separately as a drag or
+offset.
 
 ```text
-本周总日均GMV $B，周环比 X%（$A->$B），主要由{主动付费/自动续订}驱动：{驱动类型}日均GMV 周环比 Y%（$C->$D），对总 GMV 变化贡献度 Z%。在主动付费GMV基础上进一步拆解，贡献最大的创作分层是{分层}，贡献度 M%；该分层的支付链路中，核心过程因子是{指标1}，周环比 N1%（A1->B1），贡献度 P1%；次要过程因子是{指标2}，周环比 N2%（A2->B2），贡献度 P2%。若不存在第二个同向贡献因子，只写核心过程因子。
+本周总日均GMV $B，周环比 X%（$A->$B），主要由{主动付费/自动续订/两者}驱动：{相关链路}日均GMV分别周环比{变化}，对总GMV变化贡献度分别为{贡献度}。若主动付费相关，补充贡献最大的创作分层及其核心、次要支付链路因子；若自动续订相关，补充到期用户数、续订率、续订客单价中贡献最大的核心因子及可用的次要因子。若两条链路都下滑，必须在摘要中分别说明。
 ```
 
 If active payment is not the main driver, still state total daily average GMV, total week-over-week change, and the main pay-type driver. Describe the active-payment chain as supporting context, not as the main cause.
@@ -46,6 +53,8 @@ If active payment is not the main driver, still state total daily average GMV, t
 - For weekly aggregation, sum additive GMV, UV, and count fields first, divide GMV, DAU, active UV, creation UV, and creation task count by the actual number of compared business days, and recompute ratios, AOV, and average creation tasks per active user from the aggregated numerators and denominators. Never sum or directly average daily ratios/AOV, never use `creative_weekly`, and never divide a weekly-deduplicated UV by seven.
 - Total daily average GMV is the sum of active payment and auto renewal in the level-1 pay-type table.
 - Active-payment process factors come from the active-payment chain table.
+- Auto-renewal GMV is `expiry users × renewal rate × renewal AOV`. Aggregate additive renewal numerators over the observed business days first, then recompute renewal rate and renewal AOV; use the supplied renewal-chain factors and contributions as the only evidence for explaining renewal-chain movement.
+- The auto-renewal amount in the pay-type table is a result-level value only. Never use it to explain renewal rate, expiry users, or renewal AOV, and never substitute active-payment chain factors for renewal-chain factors.
 - Contribution equals item change divided by the corresponding target metric change.
 - Positive contribution means same-direction driver; negative contribution means offset. A contribution above 100% means another item offsets in the opposite direction. When the target metric itself is declining, a positive contribution can describe the share of that decline caused by a declining factor; label it as a drag or decline contribution, never as a positive driver of total GMV growth.
 - Within the same decomposition layer, the core driver is the eligible item with the largest same-direction positive contribution; the secondary driver is the eligible item with the second-largest same-direction positive contribution. Do not apply a fixed contribution or absolute-GMV threshold unless one is supplied for that run. When a secondary driver exists, report both and distinguish them explicitly as core versus secondary.
@@ -55,10 +64,12 @@ If active payment is not the main driver, still state total daily average GMV, t
 - The label `分析期前30日无创作用户` means users whose creation count was zero in that pre-analysis 30-day window. Metrics such as active UV, creation UV, creation penetration rate, and average creation tasks for this tier are measured during the analysis period.
 - Never write contradictory phrases such as `未创作分层创作UV`, `未创作用户创作渗透率`, or `未创作用户在分析期内没有创作`. Write `分析期前30日无创作用户在分析期内的创作UV` or `分析期前30日无创作用户在分析期内的创作渗透率` instead.
 - Contribution denominators differ by table: level-1 pay type uses total GMV change; active-payment result type uses active-payment GMV change; creative tier uses active-payment GMV change; chain driver uses the selected creative tier's active-payment GMV change. Never compare contribution values across these tables as if they share one denominator. Always state whether a chain-driver contribution explains growth or decline in the selected tier. The core/secondary ranking only compares factors within the same selected chain-driver table.
+- Renewal-chain factor contribution uses the renewal-chain GMV change as its denominator. Rank expiry users, renewal rate, and renewal AOV only within that renewal-chain table; do not compare their contribution magnitudes with active-payment result, creative-tier, or active-payment chain contributions.
 - Sections 2 and 3 may only state data facts and business meaning. Cause hypotheses belong only in cause diagnosis. Do not call auto renewal or any pay type “一级口径”; use the business name directly, such as “自动续订”.
 - Active-payment result type and creative tier are separate drilldown dimensions under active payment. Do not claim that a creative-tier chain result directly explains first-subscription change. This is a reasoning rule, not report content; do not write dimensional-boundary explanations in the final narrative.
 - Creative activity evidence only describes creation supply, creation behavior, and user composition. Do not infer content attractiveness, content quality, user interest, demand strength, or content-side competitiveness from creation UV, creation task count, creation penetration rate, or average creation tasks.
 - In the current phase, App is analyzed as one aggregate platform. Do not infer iOS/Android, App Store, Google Play, or store-specific causes unless the run explicitly supplies iOS/Android evidence. iOS/Android decomposition is reserved for the next phase.
+- When the analysis week is incomplete, use the actual observed business-day count for both active-payment and renewal-chain daily averages. Missing future business days are not a generation blocker when the supplied evidence covers the observed days.
 
 ## Metric Interpretation
 
@@ -81,6 +92,7 @@ If active payment is not the main driver, still state total daily average GMV, t
 - Good numbered-argument prefixes look like: `主动付费GMV是GMV下滑的核心驱动因素`, `首订收缩解释了主动付费下滑的主要部分`, `分析期前30日无创作用户是主动付费下滑的主要贡献分层`, `支付提交率是该分层链路下滑的核心过程因子，客单价是次要拖累因素`.
 - After the bold sub-claim and colon, write the quantitative inline evidence and business meaning. The inline evidence should support the sub-claim rather than repeat table rows mechanically.
 - In cause diagnosis, the layer name is only a routing label. After `付费类型层：`, `主动付费链路层：`, or `创作侧：`, write the cause judgment directly. Do not add fixed prefixes such as `推测：` or `待验证：`; express uncertainty inside the sentence with `更可能指向...，待验证` when needed.
+- When both level-1 chains decline, the cause diagnosis must contain separate active-payment and auto-renewal judgments. For auto renewal, name the renewal GMV movement first, then the factor with the largest supplied contribution, and optionally the second same-direction factor. Do not collapse both chains into a single “付费下滑” sentence.
 
 ## Product-Action Attribution
 
@@ -145,6 +157,10 @@ The output must be Markdown and must use this exact structure:
 <!-- PAY_TYPE_PRIMARY_TABLE -->
 2. **{用一句业务判断总结主动付费内部下钻证据}：** 主动付费内部下钻的客观数据与业务含义。
 <!-- PAY_TYPE_DRILL_TABLE -->
+### 自动续订链路补充
+
+**自动续订GMV结果与因子判断。** 只使用自动续订链路的GMV、到期用户数、续订率、续订客单价及其贡献度；不得用付费类型表中的自动续订金额解释续订链路因子。
+<!-- RENEWAL_DRIVER_TABLE -->
 
 ## 二、支付链路诊断
 
@@ -166,10 +182,11 @@ The output must be Markdown and must use this exact structure:
 
 ## 四、原因诊断
 
-**核心判断：用一句话给出本周GMV变化最可能的原因假设，必须包含核心结果变化、核心过程因子、可用时的次要过程因子和产品动作证据结论；如果没有强产品动作候选，必须进一步给出基于核心过程因子的最可能待验证方向，不能只写“暂无产品动作证据”或“核心归因待验证”。不要解释口径差异，不要写字段名。**
+**核心判断：用一句话给出本周GMV变化最可能的原因假设，必须包含所有下滑的结果链路、各自可用的核心过程因子、可用时的次要过程因子和产品动作证据结论；如果没有强产品动作候选，必须进一步给出基于对应核心过程因子的最可能待验证方向，不能只写“暂无产品动作证据”或“核心归因待验证”。不要解释口径差异，不要写字段名。**
 
-- **付费类型层：** 用主动付费/自动续订及主动付费结果类型说明结果层原因。
+- **付费类型层：** 分别说明主动付费和自动续订的结果变化；若两者都下滑，必须同时写清楚两条链路，不得只保留贡献更大的一个。
 - **主动付费链路层：** 结合核心创作分层、核心过程因子、次要过程因子、异常发生日和产品动作候选解释；没有强产品动作候选时，先说明产品动作证据不足，再写核心过程因子对应的最可能待验证方向。
+- **自动续订链路层：** 结合续订GMV、到期用户数、续订率、续订客单价及其贡献排序解释；产品动作证据不足时，写出与最大贡献因子对应的最可能待验证方向，不得借用主动付费链路或付费类型结果金额替代。
 - **创作侧：** 仅作为侧面证据，不直接证明付费类型结果的原因；如因果证据不足，在句内写明待验证。
 ```
 

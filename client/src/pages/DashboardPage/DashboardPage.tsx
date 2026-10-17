@@ -799,6 +799,12 @@ function formatContributionValue(value: number, valueLabel: string): string {
   return formatDecimal(value);
 }
 
+function formatSignedContributionValue(value: number, valueLabel: string): string {
+  if (!Number.isFinite(value)) return '-';
+  const sign = value >= 0 ? '+' : '-';
+  return `${sign}${formatContributionValue(Math.abs(value), valueLabel)}`;
+}
+
 function formatMetricByKey(key: string, value: number): string {
   if (key.endsWith('Rate')) return formatPercent(value);
   if (key === 'chainArppu' || key === 'renewalAov') return formatCurrency(value, false);
@@ -2511,7 +2517,11 @@ function ContributionTable({
   }
 
   const changeLabel = getChangeColumnLabel(comparison);
-  const isPrimary = section.title.includes('一级');
+  // The API's current pay-type primary section is named “付费类型贡献”;
+  // keep the legacy “一级付费类型贡献” title compatible as well so the
+  // overview donut and summary cards do not disappear when the title changes.
+  const isPrimary = section.title.includes('一级') || section.title === '付费类型贡献';
+  const equalColumnWidth = onSelectItem ? 'w-[14.2857%]' : 'w-[16.6667%]';
   const analysisTotal = section.items.reduce((total, item) => total + item.analysisDailyAvg, 0);
   const baselineTotal = section.items.reduce((total, item) => total + item.baselineDailyAvg, 0);
   const totalWowChange = baselineTotal
@@ -2538,25 +2548,28 @@ function ContributionTable({
         <Table className="dashboard-data-table w-full table-fixed [&_th]:whitespace-normal">
           <TableHeader className="[&_tr]:border-gray-100">
               <TableRow className="bg-gray-50 hover:bg-gray-50">
-              <TableHead className="w-[26%]">{isPrimary ? '指标' : '付费类型'}</TableHead>
-              <TableHead className="w-[21%] text-right">
+              <TableHead className={equalColumnWidth}>{isPrimary ? '指标' : '付费类型'}</TableHead>
+              <TableHead className={cn(equalColumnWidth, 'text-right')}>
                 基准期日均
                 <div className="text-[11px] font-normal text-muted-foreground">
                   {comparison?.baselinePeriod ?? '-'}
                 </div>
               </TableHead>
-              <TableHead className="w-[21%] text-right">
+              <TableHead className={cn(equalColumnWidth, 'text-right')}>
                 分析期日均
                 <div className="text-[11px] font-normal text-muted-foreground">
                   {comparison?.analysisPeriod ?? '-'}
                 </div>
               </TableHead>
-              <TableHead className="w-[13%] text-right">
+              <TableHead className={cn(equalColumnWidth, 'text-right')}>
+                绝对变化
+              </TableHead>
+              <TableHead className={cn(equalColumnWidth, 'text-right')}>
                 {changeLabel}
               </TableHead>
-              <TableHead className="w-[13%] text-right">贡献度</TableHead>
+              <TableHead className={cn(equalColumnWidth, 'text-right')}>贡献度</TableHead>
               {onSelectItem ? (
-                <TableHead className="w-[6%] text-right">下钻</TableHead>
+                <TableHead className={cn(equalColumnWidth, 'text-right')}>下钻</TableHead>
               ) : null}
             </TableRow>
           </TableHeader>
@@ -2580,7 +2593,7 @@ function ContributionTable({
                     key={`${item.key}-expanded`}
                     className="border-0 hover:bg-transparent"
                   >
-                    <TableCell colSpan={onSelectItem ? 6 : 5} className="p-0">
+                    <TableCell colSpan={onSelectItem ? 7 : 6} className="p-0">
                       <InlineContributionTable
                         section={expandedSection}
                         comparison={comparison}
@@ -2763,6 +2776,7 @@ function PaymentDrillChart({
       <div className="payment-drill-chart-head" role="row">
         <span role="columnheader">付费类型</span>
         <span role="columnheader">分析期日均 GMV</span>
+        <span role="columnheader">绝对变化</span>
         <span role="columnheader">{changeLabel}</span>
         <span role="columnheader">贡献度</span>
       </div>
@@ -2783,6 +2797,9 @@ function PaymentDrillChart({
               <small>基准期 {formatContributionValue(item.baselineDailyAvg, section.valueLabel)}</small>
             </div>
             <strong className="payment-drill-chart-value" role="cell">{formatContributionValue(item.analysisDailyAvg, section.valueLabel)}</strong>
+            <strong className={cn('payment-drill-chart-absolute', item.analysisDailyAvg - item.baselineDailyAvg < 0 && 'is-negative', item.analysisDailyAvg - item.baselineDailyAvg > 0 && 'is-positive')} role="cell">
+              {formatSignedContributionValue(item.analysisDailyAvg - item.baselineDailyAvg, section.valueLabel)}
+            </strong>
             <span className={cn('payment-drill-chart-wow', wowChange > 0 && 'is-positive', wowChange < 0 && 'is-negative')} role="cell">
               {formatSignedPercent(item.wowChange)}
             </span>
@@ -2935,7 +2952,7 @@ function PaymentDrillExplorer({
       {breakdown.length === 0 && <div className="payment-explorer-notice">当前比较窗口暂无注册新老与功能明细。</div>}
       <div className={cn('payment-explorer-body', 'is-table', (selected || detailExiting) && 'has-detail')}>
         <div className="payment-explorer-list" role="group" aria-label={`${dimension === 'payType' ? '付费类型' : '功能'}收入列表`}>
-          <div className="payment-explorer-columns"><span>{dimension === 'payType' ? '付费类型' : '功能'}</span><span>基准期日均</span><span>分析期日均</span><span>{changeLabel}</span><span>贡献度</span></div>
+          <div className="payment-explorer-columns"><span>{dimension === 'payType' ? '付费类型' : '功能'}</span><span>基准期日均</span><span>分析期日均</span><span>绝对变化</span><span>{changeLabel}</span><span>贡献度</span></div>
           <div className="payment-explorer-rows">
             {visibleItems.map((item) => {
               const contribution = item.contribution ?? 0;
@@ -2943,6 +2960,7 @@ function PaymentDrillExplorer({
                 <span className="payment-explorer-name"><strong>{label(item.key)}</strong></span>
                 <span className="payment-explorer-baseline"><small>基准期</small>{formatContributionValue(item.baselineDailyAvg, 'GMV')}</span>
                 <span className="payment-explorer-value"><small>分析期</small>{formatContributionValue(item.analysisDailyAvg, 'GMV')}</span>
+                <span className={cn('payment-explorer-absolute', item.analysisDailyAvg - item.baselineDailyAvg > 0 && 'is-positive', item.analysisDailyAvg - item.baselineDailyAvg < 0 && 'is-negative')}>{formatSignedContributionValue(item.analysisDailyAvg - item.baselineDailyAvg, 'GMV')}</span>
                 <span className={cn('payment-explorer-change', (item.wowChange ?? 0) > 0 && 'is-positive', (item.wowChange ?? 0) < 0 && 'is-negative')}>{formatSignedPercent(item.wowChange)}</span>
                 <span className="payment-explorer-contribution">
                   <b className={contribution < 0 ? 'is-negative' : 'is-positive'}>{formatSignedPercent(item.contribution)}</b>
@@ -3039,6 +3057,12 @@ function ContributionMobileRow({
           <div className="text-[11px] text-muted-foreground">{changeLabel}</div>
           <div className="mt-1 text-sm text-foreground">
             {formatSignedPercent(item.wowChange)}
+          </div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-foreground">绝对变化</div>
+          <div className={cn('mt-1 font-mono text-sm', item.analysisDailyAvg - item.baselineDailyAvg < 0 ? 'text-destructive' : 'text-success')}>
+            {formatSignedContributionValue(item.analysisDailyAvg - item.baselineDailyAvg, valueLabel)}
           </div>
         </div>
         <div>
@@ -3173,6 +3197,14 @@ function InlineContributionTable({
                 </div>
                 <div>
                   <div className="text-[11px] text-muted-foreground">
+                    绝对变化
+                  </div>
+                  <div className={cn('mt-1 font-mono text-sm', item.analysisDailyAvg - item.baselineDailyAvg < 0 ? 'text-destructive' : 'text-success')}>
+                    {formatSignedContributionValue(item.analysisDailyAvg - item.baselineDailyAvg, section.valueLabel)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-muted-foreground">
                     贡献度
                   </div>
                   <div
@@ -3288,6 +3320,9 @@ function ContributionRow({
       </TableCell>
       <TableCell className="text-right font-mono text-sm text-foreground">
         {formatContributionValue(item.analysisDailyAvg, valueLabel)}
+      </TableCell>
+      <TableCell className={cn('text-right font-mono text-sm', item.analysisDailyAvg - item.baselineDailyAvg < 0 ? 'text-destructive' : 'text-success')}>
+        {formatSignedContributionValue(item.analysisDailyAvg - item.baselineDailyAvg, valueLabel)}
       </TableCell>
       <TableCell className="text-right text-sm text-foreground">
         {formatSignedPercent(item.wowChange)}
@@ -3884,7 +3919,9 @@ const DashboardPage = () => {
   ) + 1;
   // Keep the headline cards readable over long ranges without changing the
   // user's selected grain for the main trend chart.
-  const cardGranularity: Granularity = trendWindowDays > 31 ? 'week' : 'day';
+  // Weekly chart mode must keep the headline cards on the same business-week
+  // grain, even when the selected date window is shorter than one month.
+  const cardGranularity: Granularity = granularity === 'week' || trendWindowDays > 31 ? 'week' : 'day';
 
   const updateSearchParam = useCallback(
     (
@@ -4394,7 +4431,7 @@ const DashboardPage = () => {
           },
       ]
       : [];
-  const primaryPaySection = paySections.find((section) => section.title.includes('一级')) ?? null;
+  const primaryPaySection = paySections.find((section) => section.title.includes('一级') || section.title === '付费类型贡献') ?? null;
   const selectedPayDrillSections = selectedPaymentType === 'renewal'
     ? paySections.filter((section) => section.title.includes('自动续订套餐'))
     : paySections.filter((section) => section.title === '主动付费下钻');

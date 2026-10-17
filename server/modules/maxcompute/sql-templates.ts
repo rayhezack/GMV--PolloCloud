@@ -65,6 +65,17 @@ function buildPaymentDeviceTypeExpression(platform: string): string {
       ].join(' ');
 }
 
+function buildPayTypeDeviceTypeExpression(platform: string): string {
+  if (platform === 'all') return "'all'";
+  if (platform === 'web') return "'web'";
+  return [
+    'CASE',
+    "WHEN LOWER(COALESCE(s.platform_name, '')) = 'apple' OR LOWER(COALESCE(p.price_id, '')) LIKE '%ios%' THEN 'ios'",
+    "WHEN LOWER(COALESCE(s.platform_name, '')) = 'google' OR LOWER(COALESCE(p.price_id, '')) LIKE '%android%' THEN 'android'",
+    'END',
+  ].join(' ');
+}
+
 function buildEventDeviceTypeExpression(platform: string): string {
   if (platform === 'all') return "'all'";
   return platform === 'web' ? "'web'" : 'LOWER(platform_type)';
@@ -101,12 +112,15 @@ export function buildDatasetSql(
     dataset === 'chain'
       ? buildChainEventPlatformCondition(platform)
       : buildEventPlatformCondition(platform);
+  const payTypeEventPlatformCondition = buildChainEventPlatformCondition(platform);
   const creationPlatformCondition = buildCreationPlatformCondition(platform);
   const creationDeviceJoinCondition =
     buildCreationDeviceJoinCondition(platform);
   const paymentPlatformCondition = buildPaymentPlatformCondition(platform);
   const paymentDeviceTypeExpression =
     buildPaymentDeviceTypeExpression(platform);
+  const payTypeDeviceTypeExpression =
+    buildPayTypeDeviceTypeExpression(platform);
   const eventDeviceTypeExpression = buildEventDeviceTypeExpression(platform);
   const paywallExposureCondition = buildPaywallExposureCondition(platform);
   const renewalPlatformCondition = buildRenewalPlatformCondition(platform);
@@ -177,8 +191,6 @@ ORDER BY
 `.trim();
     case 'pay_type':
       return `
-SET odps.sql.type.system.odps2=true;
-
 WITH
 rates AS (
     SELECT
@@ -212,11 +224,12 @@ product_relation AS (
 
 all_paid_orders AS (
     SELECT
+        CAST(s.id AS STRING) AS payment_id,
         CAST(s.user_id AS STRING) AS user_id,
         CAST(s.date_created AS DATETIME) AS pay_time,
         CAST(s.date_created AS DATE) AS pay_date,
         LOWER(COALESCE(s.description, '')) AS description,
-        ${paymentDeviceTypeExpression} AS device_type,
+        ${payTypeDeviceTypeExpression} AS device_type,
         CASE
             WHEN LOWER(s.currency) = 'usd'
                 THEN CAST(s.amount AS DOUBLE) / 100.0000
@@ -252,6 +265,7 @@ all_paid_orders AS (
 
 target_paid_orders AS (
     SELECT
+        o.payment_id,
         o.user_id,
         o.pay_time,
         o.pay_date,
@@ -279,16 +293,24 @@ target_paid_orders AS (
 ),
 
 first_subscription AS (
-    SELECT
-        user_id,
-        MIN(pay_time) AS first_subscription_time
-    FROM all_paid_orders
-    WHERE description = 'subscription_create'
-    GROUP BY user_id
+    SELECT user_id, payment_id AS first_subscription_payment_id
+    FROM (
+        SELECT
+            user_id,
+            payment_id,
+            ROW_NUMBER() OVER (
+                PARTITION BY user_id
+                ORDER BY pay_time, payment_id
+            ) AS subscription_rank
+        FROM all_paid_orders
+        WHERE description = 'subscription_create'
+    ) ranked
+    WHERE subscription_rank = 1
 ),
 
 classified_paid_orders AS (
     SELECT
+        o.payment_id,
         o.pay_date AS stat_date,
         o.week_start,
         CAST(
@@ -314,8 +336,7 @@ classified_paid_orders AS (
             WHEN o.description = 'subscription_cycle'
                 THEN '自动续订'
             WHEN o.description = 'subscription_create'
-             AND CAST(fs.first_subscription_time AS DATE) >= o.week_start
-             AND CAST(fs.first_subscription_time AS DATE) < DATE_ADD(o.week_start, 7)
+             AND o.payment_id = fs.first_subscription_payment_id
                 THEN '首订'
             WHEN o.description = 'subscription_create'
                 THEN '重新订阅'
@@ -330,48 +351,120 @@ classified_paid_orders AS (
         ON o.user_id = fs.user_id
 ),
 
-daily_level_1 AS (
+user_base AS (
     SELECT
-        stat_date,
-        week_start,
-        week_end,
-        device_type,
-        '一级_付费类型' AS analysis_level,
-        pay_type_l1 AS pay_type,
-        SUM(gmv_usd) AS gmv_usd
-    FROM classified_paid_orders
-    WHERE pay_type_l1 IS NOT NULL
-    GROUP BY
-        stat_date,
-        week_start,
-        week_end,
-        device_type,
-        pay_type_l1
+        CAST(id AS STRING) AS user_id,
+        MIN(CAST(date_created AS DATE)) AS min_signup_date
+    FROM mc_prd.dwd_ai_video_pollo_user_dfp
+    WHERE p_date = MAX_PT('mc_prd.dwd_ai_video_pollo_user_dfp')
+    GROUP BY CAST(id AS STRING)
 ),
 
-daily_level_3 AS (
+function_events AS (
+    SELECT
+        CAST(uid AS STRING) AS user_id,
+        CAST(event_time AS DATETIME) AS event_time,
+        COALESCE(
+            NULLIF(GET_JSON_OBJECT(properties, '$.source_function'), ''),
+            NULLIF(GET_JSON_OBJECT(properties, '$.form_type'), '')
+        ) AS function_name
+    FROM mc_prd.ods_pollo_log_event_dip
+    WHERE p_date BETWEEN '${startKey}' AND '${endKey}'
+      AND TO_CHAR(event_time, 'yyyymmdd') BETWEEN '${startKey}' AND '${endKey}'
+      AND ${payTypeEventPlatformCondition}
+      AND (${paywallExposureCondition})
+      AND COALESCE(
+            NULLIF(GET_JSON_OBJECT(properties, '$.source_function'), ''),
+            NULLIF(GET_JSON_OBJECT(properties, '$.form_type'), '')
+          ) IS NOT NULL
+),
+
+order_event_candidates AS (
+    SELECT
+        o.*,
+        COALESCE(e.function_name, 'not_attributed') AS function_name,
+        ROW_NUMBER() OVER (
+            PARTITION BY o.payment_id
+            ORDER BY
+                e.event_time DESC
+        ) AS event_rank
+    FROM classified_paid_orders o
+    LEFT JOIN function_events e
+        ON o.pay_type_l1 = '主动付费'
+       AND o.user_id = e.user_id
+       AND e.event_time <= o.pay_time
+),
+
+attributed_paid_orders AS (
+    SELECT
+        o.payment_id,
+        o.stat_date,
+        o.week_start,
+        o.week_end,
+        o.device_type,
+        o.pay_type_l1,
+        o.pay_type_l3,
+        o.function_name,
+        CASE
+            WHEN u.min_signup_date IS NULL THEN '未知'
+            WHEN u.min_signup_date >= o.week_start
+             AND u.min_signup_date < DATE_ADD(o.week_start, 7)
+                THEN '新用户'
+            ELSE '老用户'
+        END AS user_tag,
+        o.gmv_usd
+    FROM order_event_candidates o
+    LEFT JOIN user_base u
+        ON CAST(o.user_id AS STRING) = u.user_id
+    WHERE o.event_rank = 1
+),
+
+active_payment_detail AS (
     SELECT
         stat_date,
         week_start,
         week_end,
         device_type,
-        '三级_主动付费下钻' AS analysis_level,
         pay_type_l3 AS pay_type,
+        function_name,
+        user_tag,
         SUM(gmv_usd) AS gmv_usd
-    FROM classified_paid_orders
+    FROM attributed_paid_orders
     WHERE pay_type_l1 = '主动付费'
+      AND pay_type_l3 IS NOT NULL
     GROUP BY
         stat_date,
         week_start,
         week_end,
         device_type,
-        pay_type_l3
+        pay_type_l3,
+        function_name,
+        user_tag
+),
+
+renewal_summary AS (
+    SELECT
+        stat_date,
+        week_start,
+        week_end,
+        device_type,
+        '自动续订' AS pay_type,
+        CAST(NULL AS STRING) AS function_name,
+        CAST(NULL AS STRING) AS user_tag,
+        SUM(gmv_usd) AS gmv_usd
+    FROM classified_paid_orders
+    WHERE pay_type_l1 = '自动续订'
+    GROUP BY
+        stat_date,
+        week_start,
+        week_end,
+        device_type
 ),
 
 daily_gmv AS (
-    SELECT * FROM daily_level_1
+    SELECT * FROM active_payment_detail
     UNION ALL
-    SELECT * FROM daily_level_3
+    SELECT * FROM renewal_summary
 )
 
 SELECT
@@ -379,24 +472,17 @@ SELECT
     week_start,
     week_end,
     device_type,
-    analysis_level,
     pay_type,
+    function_name,
+    user_tag,
     CAST(ROUND(gmv_usd, 2) AS DECIMAL(18, 2)) AS gmv_usd
 FROM daily_gmv
 ORDER BY
     period,
     device_type,
-    analysis_level,
-    CASE pay_type
-        WHEN '主动付费' THEN 1
-        WHEN '自动续订' THEN 2
-        WHEN '首订' THEN 1
-        WHEN '积分包' THEN 2
-        WHEN '套餐升级' THEN 3
-        WHEN '重新订阅' THEN 4
-        WHEN '其他' THEN 5
-        ELSE 9
-    END
+    pay_type,
+    COALESCE(function_name, ''),
+    COALESCE(user_tag, '')
 `.trim();
     case 'chain':
       return `

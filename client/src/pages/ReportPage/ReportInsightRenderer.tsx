@@ -1,10 +1,13 @@
 import type { ComponentProps } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ChevronDown, Copy } from 'lucide-react';
 import { omit } from 'es-toolkit';
 import { Streamdown } from '@/components/ui/streamdown';
 import { copyAnalysis } from '@/components/dashboard/AnalysisWidgets';
 import type { ReportSummary } from '@shared/api.interface';
 import { formatGeneratedAt } from './report-page.utils';
+import { ReportPlatformSelect } from './ReportPlatformSelect';
+import type { Platform } from '@shared/api.interface';
 import './report-reading.css';
 
 type Section = { title: string; body: string };
@@ -70,6 +73,7 @@ const normalizeReportNarrative = (markdown: string) => markdown.replace(/自动�
 const analysisWeekStart = (baselineStart: string) => new Date(Date.parse(`${baselineStart}T00:00:00Z`) + 7 * 86400000).toISOString().slice(0, 10);
 
 export function ReportInsightArticle({ report }: { report: ReportSummary }) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { summary, sections } = parseReport(normalizeReportNarrative(report.markdown));
   const cause = sections.find(section => /原因诊断/.test(section.title));
   const advice = sections.find(section => /行动建议|优化建议|建议/.test(section.title));
@@ -79,7 +83,15 @@ export function ReportInsightArticle({ report }: { report: ReportSummary }) {
     <article className="report-reading" key={`${report.platform}-${report.periodStart}-${report.generatedAt}`}>
       <aside className="report-reading-rail">
         <div className="report-edition">
-          <span>{report.platform === 'web' ? 'Web' : 'App'} 端 · 业务周报</span>
+          <ReportPlatformSelect
+            value={report.platform}
+            className="report-reading-platform-select"
+            onValueChange={(platform: Platform) => {
+              const next = new URLSearchParams(searchParams);
+              next.set('platform', platform);
+              setSearchParams(next);
+            }}
+          />
           <strong>{analysisWeekStart(report.periodStart)}<br /><span className="report-date-to">至</span> {report.periodEnd}</strong>
           <p>对比前一业务周</p>
         </div>

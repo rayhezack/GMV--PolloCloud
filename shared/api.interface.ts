@@ -49,10 +49,12 @@ export type PaymentChainType = 'active' | 'renewal';
 /* ===== 同步链路 ===== */
 
 export type SyncMode = 'latest_day' | 'latest_week' | 'full_refresh';
+export type SyncDataset = 'pay_type' | 'chain' | 'creative' | 'renewal';
 
 export interface SyncRunRequest {
   mode?: SyncMode;
   platforms?: DashboardPlatform[];
+  datasets?: SyncDataset[];
 }
 
 export interface SyncRunResponse {
@@ -63,6 +65,7 @@ export interface SyncRunResponse {
   platforms: DashboardPlatform[];
   status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed';
   rowsSynced: number;
+  datasets?: SyncDataset[];
   skipped?: boolean;
   skipReason?: string;
   errorMessage?: string;
@@ -77,6 +80,7 @@ export interface SyncRunStatus {
   endDate: string;
   platforms: DashboardPlatform[];
   rowsSynced: number;
+  datasets?: SyncDataset[];
   errorMessage?: string;
   startedAt: string;
   finishedAt?: string;
@@ -102,6 +106,8 @@ export interface LatestWeekSyncPlan {
   canSync: boolean;
   running: boolean;
   missingItems: SyncPlanMissingItem[];
+  datasets?: SyncDataset[];
+  fullRefreshRequired?: boolean;
 }
 
 export interface LatestDaySyncPlan {
@@ -114,6 +120,8 @@ export interface LatestDaySyncPlan {
   canSync: boolean;
   running: boolean;
   missingItems: SyncPlanMissingItem[];
+  datasets?: SyncDataset[];
+  fullRefreshRequired?: boolean;
 }
 
 /* ===== 看板 ===== */

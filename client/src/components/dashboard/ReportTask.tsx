@@ -69,7 +69,9 @@ export function ReportTask({
   const visible = tasks.filter(task => !dismissed.includes(task.id));
   const job = visible.find(item => item.id === selected) ?? visible.filter(active).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]
     ?? [...visible].sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
-  const expanded = Boolean(job && expandedTaskId === job.id);
+  // The selected report tab and the visibility of the task details are separate
+  // states. Switching tabs must replace the details without collapsing the dock.
+  const expanded = Boolean(job && expandedTaskId);
   useEffect(() => {
     try {
       window.localStorage.setItem(DISMISSED_TASKS_KEY, JSON.stringify(dismissed));
@@ -91,10 +93,12 @@ export function ReportTask({
   useEffect(() => {
     if (!expanded) return undefined;
     const collapseOutside = (event: PointerEvent) => {
-      if (dockRef.current && !event.composedPath().includes(dockRef.current)) setExpandedTaskId('');
+      const target = event.target;
+      if (target instanceof Node && dockRef.current?.contains(target)) return;
+      setExpandedTaskId('');
     };
-    window.addEventListener('pointerdown', collapseOutside, true);
-    return () => window.removeEventListener('pointerdown', collapseOutside, true);
+    document.addEventListener('pointerdown', collapseOutside);
+    return () => document.removeEventListener('pointerdown', collapseOutside);
   }, [expanded]);
   if (!job) return null;
   const done = job.steps.filter(step => step.status === 'success').length;
@@ -146,7 +150,7 @@ export function ReportTask({
     <aside ref={dockRef} className="report-task-dock" aria-label="后台任务" data-expanded={expanded}>
       {expanded && <section id="report-task-details" className="report-task-details">
         <header><strong>{job.kind === 'sync' ? '数据同步任务' : '报告任务'}</strong><button type="button" aria-label="收起任务详情" onClick={() => setExpandedTaskId('')}><ChevronDown size={18} /></button></header>
-        {visible.length > 1 && <div className="report-task-platforms">{visible.map(item => <button type="button" key={item.id} aria-pressed={item.id === job.id} onClick={() => setSelected(item.id)}>{item.name}</button>)}</div>}
+        {visible.length > 1 && <div className="report-task-platforms">{visible.map(item => <button type="button" key={item.id} aria-pressed={item.id === job.id} onClick={() => { setSelected(item.id); setExpandedTaskId(item.id); }}>{item.name}</button>)}</div>}
         <p className="report-task-period">{job.context}</p>
         <ol className="report-task-list">
           {job.steps.map(step => <li key={step.key} data-state={step.status}>

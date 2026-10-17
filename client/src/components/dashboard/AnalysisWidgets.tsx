@@ -114,6 +114,16 @@ function rangeRows(
   }));
 }
 
+function selectCardTrendRows(
+  rows: OverviewTrendPoint[],
+  days: number,
+  metric: RevenueMetric,
+  granularity: Granularity,
+) {
+  if (granularity !== 'week') return rangeRows(rows, days, metric);
+  return rows.slice(-Math.max(1, Math.ceil(days / 7)));
+}
+
 export function RevenueCards({
   items,
   loading,
@@ -200,12 +210,9 @@ export function RevenueCards({
           : null;
         const selectedDays = trendDays[item.metric];
         const cardRows = sourceRows.map((row) => ({ ...row, activeGmv: valueOf(row, 'activeGmv') }));
-        // Weekly card data already represents the complete selected window.
-        // Do not apply the per-card 30-day slice, or a long global range would
-        // silently lose all but the latest month.
-        const miniRows = granularity === 'week'
-          ? cardRows
-          : rangeRows(cardRows, selectedDays, item.metric);
+        // Keep the card's quick range independent from the global trend range.
+        // Weekly source rows are sliced by business-week count in the helper.
+        const miniRows = selectCardTrendRows(cardRows, selectedDays, item.metric, granularity);
         const chartType = chartTypes[item.metric];
         return (
           <ActionNode
@@ -337,7 +344,7 @@ export function RevenueCards({
                       metric={item.metric}
                       color={item.color}
                       formatValue={money}
-                      label={`${item.key}近一个月${granularity === 'week' ? '周' : '日'}趋势`}
+                      label={`${item.key}${TREND_RANGE_OPTIONS.find((option) => option.value === selectedDays)?.label ?? '趋势'}${granularity === 'week' ? '周' : '日'}趋势`}
                       chartType={chartType}
                     />
                   </motion.div>
@@ -349,13 +356,12 @@ export function RevenueCards({
       })}
       <TrendDialog
         metric={expandedMetric}
-        rows={granularity === 'week'
-          ? (dailyTrend.length ? dailyTrend : trend)
-          : rangeRows(
-              dailyTrend.length ? dailyTrend : trend,
-              expandedMetric ? trendDays[expandedMetric] : 30,
-              expandedMetric ?? 'totalGmv',
-            )}
+        rows={selectCardTrendRows(
+          dailyTrend.length ? dailyTrend : trend,
+          expandedMetric ? trendDays[expandedMetric] : 30,
+          expandedMetric ?? 'totalGmv',
+          granularity,
+        )}
         definitions={definitions}
         onClose={() => setExpandedMetric(null)}
       />

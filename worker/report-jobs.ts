@@ -136,7 +136,7 @@ export async function reportGenerations(env: Env, request: Request, dependencies
   return reply({ message: '报告任务接口不存在' }, 404);
 }
 
-async function executeReport(env: Env, job: ReportGenerationStatus, deps: Dependencies) {
+export async function executeReport(env: Env, job: ReportGenerationStatus, deps: Dependencies) {
   let writes = Promise.resolve();
   const persist = () => {
     writes = writes.catch(() => undefined).then(() => save(env, job, deps.persistTask));

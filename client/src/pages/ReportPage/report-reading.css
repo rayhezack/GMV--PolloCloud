@@ -2,6 +2,10 @@
 .report-reading-page .dashboard-heading h1 { color: #222; }
 .report-reading { display: grid; grid-template-columns: 144px minmax(0, 1fr); gap: 44px; padding: 40px; background: #fff; border-radius: 16px; color: #292929; }
 .report-reading-rail { align-self: start; position: sticky; top: 36px; font-size: 12px; line-height: 1.7; color: #737373; }
+.report-reading-platform-select { width: 100%; justify-content: flex-start; padding: 0; border-radius: 4px; background: transparent; color: #737373; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.report-reading-platform-select > span:first-child { min-width: 0; white-space: nowrap; }
+.report-reading-platform-select > span:last-child { color: #737373; }
+.report-reading-platform-select:hover { color: #292929; background: transparent; }
 .report-edition > span { display: block; margin-bottom: 14px; }
 .report-edition strong { font-size: 15px; font-weight: 600; line-height: 1.9; color: #292929; font-variant-numeric: tabular-nums; }
 .report-date-to { font-size: 12px; font-weight: 400; color: #737373; }
