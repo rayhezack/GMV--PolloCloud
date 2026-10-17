@@ -6,6 +6,7 @@ import { formatAnalysisWeekLabel, formatGeneratedAt, getReportPeriodKey } from '
 import { generateReport, pauseReportGeneration, resumeReportGeneration } from '@/api/report';
 import { pauseSyncRun, resumeSyncRun, retrySyncRun } from '@/api/sync';
 import { toast } from 'sonner';
+import { pushToast } from '@/components/bencho/ToastStack';
 
 type Step = { key: string; label: string; status: 'waiting' | 'running' | 'success' | 'failed'; detail?: string };
 type Task = {
@@ -22,6 +23,8 @@ type Task = {
 };
 
 const DISMISSED_TASKS_KEY = 'pollo-dismissed-task-runs';
+
+const isActiveStatus = (status: Task['status']) => ['queued', 'running', 'pausing', 'paused'].includes(status);
 
 function readDismissedTasks(): string[] {
   try {
@@ -49,6 +52,7 @@ export function ReportTask({
   const [selected, setSelected] = useState('');
   const [dismissed, setDismissed] = useState(readDismissedTasks);
   const [retrying, setRetrying] = useState('');
+  const previousStatuses = useRef(new Map<string, Task['status']>());
   const tasks: Task[] = [
     ...jobs.map(job => ({
       id: job.runId, kind: 'report' as const, name: `报告 · ${job.platform === 'web' ? 'Web' : 'App'}`,
@@ -72,6 +76,38 @@ export function ReportTask({
   // The selected report tab and the visibility of the task details are separate
   // states. Switching tabs must replace the details without collapsing the dock.
   const expanded = Boolean(job && expandedTaskId);
+  useEffect(() => {
+    const nextStatuses = new Map(tasks.map(task => [task.id, task.status]));
+    const cleanupTimers: number[] = [];
+    for (const task of tasks) {
+      const previous = previousStatuses.current.get(task.id);
+      if (!previous && !isActiveStatus(task.status)) {
+        // A completed task may be the first state returned after a page reload.
+        // Give a fresh completion a short reading window, then remove it too.
+        const age = Date.now() - Date.parse(task.updatedAt);
+        const timer = window.setTimeout(() => {
+          setDismissed(current => current.includes(task.id) ? current : [...current, task.id]);
+        }, Math.max(1000, 3500 - Math.max(0, age)));
+        cleanupTimers.push(timer);
+        continue;
+      }
+      if (!previous || !isActiveStatus(previous) || isActiveStatus(task.status)) continue;
+      const failed = task.status === 'failed';
+      pushToast({
+        kind: failed ? 'error' : 'success',
+        title: task.kind === 'sync' ? (failed ? '数据同步失败' : '数据同步完成') : (failed ? '诊断报告生成失败' : '诊断报告已生成'),
+        body: failed ? (task.errorMessage || '任务执行失败，请打开任务详情查看') : task.context,
+      });
+      const delay = failed ? 6500 : 4000;
+      const timer = window.setTimeout(() => {
+        setExpandedTaskId(current => current === task.id ? '' : current);
+        setDismissed(current => current.includes(task.id) ? current : [...current, task.id]);
+      }, delay);
+      cleanupTimers.push(timer);
+    }
+    previousStatuses.current = nextStatuses;
+    return () => cleanupTimers.forEach(timer => window.clearTimeout(timer));
+  }, [jobs, syncJob]);
   useEffect(() => {
     try {
       window.localStorage.setItem(DISMISSED_TASKS_KEY, JSON.stringify(dismissed));

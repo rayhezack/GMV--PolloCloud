@@ -1,0 +1,42 @@
+/* ══ Toast stack ══════════════════════════════════════════
+   Three toasts stacked, fanning into a list on hover. Tones are the
+   reference's: the front one white, the tucked ones a barely-there
+   2% grey — both the same, so they read as paper behind paper rather
+   than a darkening ramp. Where the reference separates them with a
+   soft shadow, this uses a faint hairline (no drop shadows on the bench).
+   Status icons are their own solid colours, never faded. */
+.tst {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 80;
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  color: var(--ui-ink, #25243d);
+  --fill-on: var(--ui-ink, #25243d);
+  --fill-slab: var(--ui-surface, #ffffff);
+  --font-ui: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  --ink: var(--ui-ink, #25243d);
+  --pane-edge: var(--ui-line, #e7e7ef);
+  --signal: var(--ui-purple, #5b3ff2);
+  --tst-mute: color-mix(in srgb, var(--fill-on) 52%, var(--fill-slab));
+  --tst-wash: color-mix(in srgb, var(--fill-on) 6%, var(--fill-slab));
+}
+.tst-toast { position: absolute; left: 0; top: 0; width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px; border-radius: var(--tst-r); background: var(--fill-slab); transform-origin: 50% 0; transition: background-color 220ms ease, box-shadow 220ms ease; }
+.tst:not([data-open]) .tst-toast:not([data-front]) { background: color-mix(in srgb, var(--fill-on) 6%, var(--fill-slab)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--fill-on) 6%, transparent); }
+.tst-toast > * { transition: opacity 220ms ease; }
+.tst:not([data-open]) .tst-toast:not([data-front]) > * { opacity: 0; }
+.tst-icon { flex: none; display: grid; place-items: center; }
+.tst-toast[data-kind='success'] .tst-icon { color: var(--ui-positive, #2f7d5c); }
+.tst-toast[data-kind='error'] .tst-icon { color: var(--ui-negative, #cf4b7e); }
+.tst-toast[data-kind='warning'] .tst-icon { color: var(--ui-orange, #a96f16); }
+.tst-toast[data-kind='info'] .tst-icon { color: var(--tst-mute); }
+.tst-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tst-text b { overflow: hidden; color: var(--fill-on); font-size: 14px; font-weight: 600; line-height: 18px; white-space: nowrap; text-overflow: ellipsis; }
+.tst-text span { overflow: hidden; color: var(--tst-mute); font-size: 13px; line-height: 17px; white-space: nowrap; text-overflow: ellipsis; }
+.tst-act, .tst-x { border: 0; color: inherit; cursor: pointer; }
+.tst-act { flex: none; height: 28px; padding: 0 12px; border-radius: 999px; background: var(--tst-wash); font: inherit; font-size: 13px; font-weight: 600; }
+.tst-x { display: grid; width: 28px; height: 28px; flex: none; place-items: center; border-radius: 999px; background: none; color: var(--tst-mute); }
+.tst-x:hover, .tst-act:hover { background: var(--tst-wash); color: var(--fill-on); }
+.tst-act:focus-visible, .tst-x:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--signal); }
+@media (max-width: 560px) { .tst { right: 16px; bottom: 16px; width: min(300px, calc(100vw - 32px)) !important; } }
+@media (prefers-reduced-motion: reduce) { .tst-toast, .tst-toast > * { transition: none; } }

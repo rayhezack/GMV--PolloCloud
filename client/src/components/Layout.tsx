@@ -21,6 +21,7 @@ import type { Platform, ReportGenerationStatus } from '@shared/api.interface';
 import type { SyncRunStatus } from '@shared/api.interface';
 import { executeSyncRun, getLatestSyncRun } from '@/api/sync';
 import { ReportTask } from './dashboard/ReportTask';
+import { ToastStack } from './bencho/ToastStack';
 
 const REPORT_GENERATION_KEEPALIVE_INTERVAL_MS = 10_000;
 const REPORT_GENERATION_PLATFORMS: Platform[] = ['web', 'app'];
@@ -334,6 +335,7 @@ const Layout = () => {
         </main>
       </div>
       {isAdmin && <ReportTask jobs={jobs} syncJob={syncJob} onTrackReport={trackReport} onTrackSync={trackSync} />}
+      <ToastStack />
     </div>
   );
 };
