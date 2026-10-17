@@ -2886,13 +2886,13 @@
 .payment-explorer-contribution { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; font-size: 12px; white-space: nowrap; }
 .payment-explorer-contribution b { min-width: 63px; text-align: right; font-weight: 600; }
 .payment-explorer-rows { max-height: 600px; overflow-y: auto; overscroll-behavior: contain; }
-.payment-explorer-body.is-table .payment-explorer-list { overflow: hidden; border: 1px solid #e7e7ec; border-radius: 8px; background: #fbfbfc; box-shadow: 0 8px 24px rgb(37 36 61 / 4%); }
-.payment-explorer-body.is-table .payment-explorer-columns { min-height: 45px; padding: 0 18px; border-bottom: 1px solid #e9e9ee; background: transparent; font-weight: 550; }
-.payment-explorer-body.is-table .payment-explorer-rows { padding: 6px 8px 10px; }
-.payment-explorer-body.is-table .payment-explorer-row { min-height: 58px; padding: 9px 10px; border-top: 0; border-bottom: 1px solid #ebebef; border-radius: 7px; transition: background .16s ease, box-shadow .16s ease, transform .16s ease; }
+.payment-explorer-body.is-table .payment-explorer-list { overflow: hidden; border: 1px solid var(--ui-line); border-radius: 12px; background: var(--ui-surface); box-shadow: none; }
+.payment-explorer-body.is-table .payment-explorer-columns { min-height: 44px; padding: 10px 16px; border-bottom: 1px solid var(--ui-line); background: var(--ui-surface-subtle); font-weight: 600; }
+.payment-explorer-body.is-table .payment-explorer-rows { padding: 0; }
+.payment-explorer-body.is-table .payment-explorer-row { min-height: 68px; padding: 14px 16px; border-top: 0; border-bottom: 1px solid var(--ui-line); border-radius: 0; transition: background .16s ease; }
 .payment-explorer-body.is-table .payment-explorer-row:last-child { border-bottom-color: transparent; }
 .payment-explorer-body.is-table .payment-explorer-row:hover,
-.payment-explorer-body.is-table .payment-explorer-row[aria-pressed='true'] { position: relative; z-index: 1; border-bottom-color: transparent; background: #fff; box-shadow: 0 8px 20px rgb(37 36 61 / 9%), inset 0 0 0 1px #e3e3e9; transform: translateY(-1px); }
+.payment-explorer-body.is-table .payment-explorer-row[aria-pressed='true'] { position: relative; z-index: 1; border-bottom-color: var(--ui-line); background: var(--ui-state-bg); box-shadow: none; transform: none; }
 .payment-explorer-body.is-table .payment-explorer-baseline,
 .payment-explorer-body.is-table .payment-explorer-value { font-weight: 550; }
 .payment-explorer-body.is-table .payment-explorer-contribution { gap: 12px; }

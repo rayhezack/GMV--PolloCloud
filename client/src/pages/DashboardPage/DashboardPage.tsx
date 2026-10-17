@@ -2963,10 +2963,10 @@ function PaymentDrillExplorer({
                 <span className={cn('payment-explorer-absolute', item.analysisDailyAvg - item.baselineDailyAvg > 0 && 'is-positive', item.analysisDailyAvg - item.baselineDailyAvg < 0 && 'is-negative')}>{formatSignedContributionValue(item.analysisDailyAvg - item.baselineDailyAvg, 'GMV')}</span>
                 <span className={cn('payment-explorer-change', (item.wowChange ?? 0) > 0 && 'is-positive', (item.wowChange ?? 0) < 0 && 'is-negative')}>{formatSignedPercent(item.wowChange)}</span>
                 <span className="payment-explorer-contribution">
-                  <b className={contribution < 0 ? 'is-negative' : 'is-positive'}>{formatSignedPercent(item.contribution)}</b>
                   <span className="payment-explorer-table-meter" aria-hidden="true">
                     <i className={contribution < 0 ? 'is-negative' : ''} style={{ width: `${Math.min(50, Math.abs(contribution) / maxContribution * 50)}%` }} />
                   </span>
+                  <b className={contribution < 0 ? 'is-negative' : 'is-positive'}>{formatSignedPercent(item.contribution)}</b>
                 </span>
               </button>;
             })}
@@ -3324,7 +3324,11 @@ function ContributionRow({
       <TableCell className={cn('text-right font-mono text-sm', item.analysisDailyAvg - item.baselineDailyAvg < 0 ? 'text-destructive' : 'text-success')}>
         {formatSignedContributionValue(item.analysisDailyAvg - item.baselineDailyAvg, valueLabel)}
       </TableCell>
-      <TableCell className="text-right text-sm text-foreground">
+      <TableCell className={cn(
+        'text-right text-sm',
+        (item.wowChange ?? 0) > 0 && 'text-success',
+        (item.wowChange ?? 0) < 0 && 'text-destructive',
+      )}>
         {formatSignedPercent(item.wowChange)}
       </TableCell>
       <TableCell className="text-right font-mono text-sm">
