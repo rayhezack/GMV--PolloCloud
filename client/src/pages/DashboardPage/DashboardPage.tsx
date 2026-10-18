@@ -2994,6 +2994,47 @@ function PaymentDrillExplorer({
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [detailExiting, setDetailExiting] = useState(false);
   const [query, setQuery] = useState('');
+  const [tableDragging, setTableDragging] = useState(false);
+  const tableDragRef = useRef({ active: false, moved: false, startX: 0, startScrollLeft: 0 });
+  const suppressTableClickRef = useRef(false);
+  const handleTablePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const element = event.currentTarget;
+    if (element.scrollWidth <= element.clientWidth) return;
+    tableDragRef.current = {
+      active: true,
+      moved: false,
+      startX: event.clientX,
+      startScrollLeft: element.scrollLeft,
+    };
+    setTableDragging(true);
+    element.setPointerCapture?.(event.pointerId);
+  };
+  const handleTablePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = tableDragRef.current;
+    if (!drag.active) return;
+    const element = event.currentTarget;
+    const delta = event.clientX - drag.startX;
+    if (Math.abs(delta) > 4) drag.moved = true;
+    if (drag.moved) {
+      event.preventDefault();
+      element.scrollLeft = drag.startScrollLeft - delta;
+    }
+  };
+  const handleTablePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = tableDragRef.current;
+    if (!drag.active) return;
+    suppressTableClickRef.current = drag.moved;
+    tableDragRef.current.active = false;
+    setTableDragging(false);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  };
+  const handleTableClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!suppressTableClickRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressTableClickRef.current = false;
+  };
   const closeDetail = () => {
     if (selectedKey) setDetailExiting(true);
     setSelectedKey(null);
@@ -3114,7 +3155,16 @@ function PaymentDrillExplorer({
       {dimension === 'function' && <div className="payment-explorer-search"><Search value={query} onChange={(value) => { setQuery(value); closeDetail(); }} placeholder="搜索功能" /><span>{visibleItems.length} 项功能</span></div>}
       {breakdown.length === 0 && <div className="payment-explorer-notice">当前比较窗口暂无注册新老与功能明细。</div>}
       <div className={cn('payment-explorer-body', 'is-table', (selected || detailExiting) && 'has-detail')}>
-        <div className="payment-explorer-list" role="group" aria-label={`${dimension === 'payType' ? '付费类型' : '功能'}收入列表`}>
+        <div
+          className={cn('payment-explorer-list', tableDragging && 'is-dragging')}
+          role="group"
+          aria-label={`${dimension === 'payType' ? '付费类型' : '功能'}收入列表`}
+          onPointerDown={handleTablePointerDown}
+          onPointerMove={handleTablePointerMove}
+          onPointerUp={handleTablePointerUp}
+          onPointerCancel={handleTablePointerUp}
+          onClickCapture={handleTableClickCapture}
+        >
           <div className="payment-explorer-table-scroll">
             <div className="payment-explorer-columns"><span>{dimension === 'payType' ? '付费类型' : '功能'}</span><span>基准期日均</span><span>分析期日均</span><span>绝对变化</span><span>{changeLabel}</span><span>贡献度</span></div>
             <div className="payment-explorer-rows">

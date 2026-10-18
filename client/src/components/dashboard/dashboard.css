@@ -2996,6 +2996,12 @@
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: #c7c9d0 #f3f4f6;
+  cursor: grab;
+  touch-action: pan-y;
+}
+.payment-explorer-body.has-detail .payment-explorer-list.is-dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 .payment-explorer-body.has-detail .payment-explorer-list::-webkit-scrollbar { height: 10px; }
 .payment-explorer-body.has-detail .payment-explorer-list::-webkit-scrollbar-track { background: #f3f4f6; border-radius: 999px; }
