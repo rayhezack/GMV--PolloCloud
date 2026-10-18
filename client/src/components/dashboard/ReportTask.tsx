@@ -98,6 +98,7 @@ export function ReportTask({
   const [dismissed, setDismissed] = useState(readDismissedTasks);
   const [retrying, setRetrying] = useState('');
   const previousStatuses = useRef(new Map<string, Task['status']>());
+  const completionTimers = useRef(new Map<string, number>());
   const tasks: Task[] = [
     ...jobs.map(job => ({
       id: job.runId, kind: 'report' as const, name: `报告 · ${job.platform === 'web' ? 'Web' : 'App'}`,
@@ -123,35 +124,33 @@ export function ReportTask({
   const expanded = Boolean(job && expandedTaskId);
   useEffect(() => {
     const nextStatuses = new Map(tasks.map(task => [task.id, task.status]));
-    const cleanupTimers: number[] = [];
     for (const task of tasks) {
       const previous = previousStatuses.current.get(task.id);
       if (!previous && !isActiveStatus(task.status)) {
-        const newlyNotified = notifyTaskCompletion(task);
-        if (newlyNotified && task.kind === 'sync' && task.status === 'success') void notifyGmvAnomalies().catch(() => undefined);
-        // A completed task may be the first state returned after a page reload.
-        // Give a fresh completion a short reading window, then remove it too.
-        const age = Date.now() - Date.parse(task.updatedAt);
-        const timer = window.setTimeout(() => {
-          setDismissed(current => current.includes(task.id) ? current : [...current, task.id]);
-        }, Math.max(1000, 3500 - Math.max(0, age)));
-        cleanupTimers.push(timer);
-        continue;
+        if (task.kind !== 'sync' || task.status !== 'success') notifyTaskCompletion(task);
+        if (task.kind === 'sync' && task.status === 'success') void notifyGmvAnomalies().catch(() => undefined);
       }
-      if (!previous || !isActiveStatus(previous) || isActiveStatus(task.status)) continue;
-      notifyTaskCompletion(task);
-      if (task.kind === 'sync' && task.status === 'success') void notifyGmvAnomalies().catch(() => undefined);
-      const failed = task.status === 'failed';
-      const delay = failed ? 6500 : 4000;
-      const timer = window.setTimeout(() => {
-        setExpandedTaskId(current => current === task.id ? '' : current);
-        setDismissed(current => current.includes(task.id) ? current : [...current, task.id]);
-      }, delay);
-      cleanupTimers.push(timer);
+      if (previous && isActiveStatus(previous) && !isActiveStatus(task.status)) {
+        if (task.kind !== 'sync' || task.status !== 'success') notifyTaskCompletion(task);
+        if (task.kind === 'sync' && task.status === 'success') void notifyGmvAnomalies().catch(() => undefined);
+      }
+      if (!isActiveStatus(task.status) && !dismissed.includes(task.id) && !completionTimers.current.has(task.id)) {
+        const age = previous ? 0 : Date.now() - Date.parse(task.updatedAt);
+        const delay = previous ? (task.status === 'failed' ? 6500 : 4000) : Math.max(1000, 3500 - Math.max(0, age));
+        const timer = window.setTimeout(() => {
+          completionTimers.current.delete(task.id);
+          setExpandedTaskId(current => current === task.id ? '' : current);
+          setDismissed(current => current.includes(task.id) ? current : [...current, task.id]);
+        }, delay);
+        completionTimers.current.set(task.id, timer);
+      }
     }
     previousStatuses.current = nextStatuses;
-    return () => cleanupTimers.forEach(timer => window.clearTimeout(timer));
-  }, [jobs, syncJob]);
+  }, [dismissed, jobs, syncJob]);
+  useEffect(() => () => {
+    completionTimers.current.forEach(timer => window.clearTimeout(timer));
+    completionTimers.current.clear();
+  }, []);
   useEffect(() => {
     try {
       window.localStorage.setItem(DISMISSED_TASKS_KEY, JSON.stringify(dismissed));

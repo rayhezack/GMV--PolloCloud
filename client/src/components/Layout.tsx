@@ -25,6 +25,21 @@ import { pushToast, ToastStack } from './bencho/ToastStack';
 
 const REPORT_GENERATION_KEEPALIVE_INTERVAL_MS = 10_000;
 const REPORT_GENERATION_PLATFORMS: Platform[] = ['web', 'app'];
+const SYNC_TOAST_SEEN_PREFIX = 'pollo-sync-toast-seen';
+
+function shanghaiDate(value: string | Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(
+    typeof value === 'string' ? new Date(value) : value,
+  );
+}
+
+function shanghaiTime(value: string): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
 
 function LogoWatcher() {
   const ref = useRef<HTMLSpanElement | null>(null);
@@ -72,6 +87,7 @@ const Layout = () => {
   const [syncJob, setSyncJob] = useState<SyncRunStatus | null>(null);
   const executingJobs = useRef(new Set<string>());
   const executingSyncJobs = useRef(new Set<string>());
+  const notifiedSyncDays = useRef(new Set<string>());
   useEffect(() => {
     if (!import.meta.env.DEV || !new URLSearchParams(window.location.search).has('toastTest')) return;
     pushToast({
@@ -183,7 +199,7 @@ const Layout = () => {
   }, [isAdmin]);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!userInfo) return;
     let cancelled = false;
     const refresh = async () => {
       try {
@@ -194,7 +210,33 @@ const Layout = () => {
     void refresh();
     const timer = window.setInterval(refresh, 3000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [isAdmin]);
+  }, [userInfo]);
+
+  useEffect(() => {
+    if (!userInfo || syncJob?.status !== 'success' || syncJob.skipped || !syncJob.finishedAt) return;
+    const today = shanghaiDate(new Date());
+    if (shanghaiDate(syncJob.finishedAt) !== today) return;
+    const seenKey = `${SYNC_TOAST_SEEN_PREFIX}:${userInfo.userId}:${today}`;
+    if (notifiedSyncDays.current.has(seenKey)) return;
+    try {
+      if (window.localStorage.getItem(seenKey)) {
+        notifiedSyncDays.current.add(seenKey);
+        return;
+      }
+      window.localStorage.setItem(seenKey, syncJob.runId);
+    } catch {
+      // The in-memory guard still prevents duplicate notifications in this tab.
+    }
+    notifiedSyncDays.current.add(seenKey);
+    pushToast({
+      kind: 'success',
+      title: '数据同步完成',
+      body: `已更新 ${syncJob.rowsSynced.toLocaleString('en-US')} 条分析记录`,
+      detail: `完成时间：今天 ${shanghaiTime(syncJob.finishedAt)}\n数据已从 MaxCompute 拉取并写入 D1。`,
+      href: '/?tab=data',
+      linkLabel: '查看数据与口径',
+    });
+  }, [syncJob, userInfo]);
 
   const displayName = accessLoading ? '读取权限' : userInfo?.userName || 'Pollo Cloud';
   const avatarUrl = userInfo?.avatar;

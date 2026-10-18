@@ -758,7 +758,7 @@
 .date-range-weekdays, .date-range-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .date-range-weekdays { color: #99979f; font-size: 10px; font-weight: 700; text-align: center; }
 .date-range-day { position: relative; min-height: 34px; border-radius: 10px; background: transparent; color: #68676f; font-size: 12px; font-variant-numeric: tabular-nums; transition: background .14s ease, color .14s ease, transform .14s ease; }
-.date-range-day:hover:not(:disabled) { background: #fff; }
+.date-range-day:hover:not(:disabled) { background: #eef1f0; color: #4f5958; }
 .date-range-day.is-outside { color: #b9b8bd; }
 .date-range-day.is-in-range { background: #e8eceb; color: #56605f; }
 .date-range-day.is-boundary { z-index: 1; border-radius: 999px; background: #6b7473 !important; color: #fff !important; box-shadow: 0 3px 10px rgba(70, 80, 80, .2); }
@@ -2886,6 +2886,7 @@
 .payment-trend-summary b { font-size: 14px; font-weight: 650; }
 .payment-trend-summary .is-positive, .payment-trend-contributor .is-positive { color: var(--ui-positive); }
 .payment-trend-summary .is-negative, .payment-trend-contributor .is-negative { color: var(--ui-negative); }
+.payment-trend-card-legend { min-height: 44px; align-content: center; margin-top: 22px; }
 .payment-trend-plot { position: relative; height: 188px; margin-top: 20px; padding: 0 2px; }
 .payment-trend-yline { display: none; }
 .payment-trend-columns { position: relative; z-index: 1; display: flex; align-items: stretch; justify-content: space-between; height: 160px; gap: 4px; }
@@ -2989,7 +2990,16 @@
 .payment-explorer-table-meter > i { position: absolute; inset: 0 auto 0 50%; border-radius: 0 999px 999px 0; background: repeating-linear-gradient(135deg, var(--ui-purple) 0 3px, #8c78f7 3px 5px); }
 .payment-explorer-table-meter > i.is-negative { right: 50%; left: auto; border-radius: 999px 0 0 999px; background: repeating-linear-gradient(135deg, var(--ui-negative) 0 3px, #eb8fb1 3px 5px); }
 .payment-explorer-body.has-detail.is-table .payment-explorer-table-meter { display: none; }
-.payment-explorer-body.has-detail .payment-explorer-list { overflow-x: auto; overflow-y: hidden; }
+.payment-explorer-body.has-detail .payment-explorer-list {
+  overflow-x: scroll;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #c7c9d0 #f3f4f6;
+}
+.payment-explorer-body.has-detail .payment-explorer-list::-webkit-scrollbar { height: 10px; }
+.payment-explorer-body.has-detail .payment-explorer-list::-webkit-scrollbar-track { background: #f3f4f6; border-radius: 999px; }
+.payment-explorer-body.has-detail .payment-explorer-list::-webkit-scrollbar-thumb { background: #c7c9d0; border: 2px solid #f3f4f6; border-radius: 999px; }
 .payment-explorer-body.has-detail .payment-explorer-table-scroll { min-width: 700px; }
 .payment-explorer-body.has-detail .payment-explorer-columns,
 .payment-explorer-body.has-detail .payment-explorer-row { min-width: 700px; grid-template-columns: minmax(160px, 1.5fr) repeat(4, minmax(82px, 1fr)) minmax(86px, .9fr); gap: 10px; }

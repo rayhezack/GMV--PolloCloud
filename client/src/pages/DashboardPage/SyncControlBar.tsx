@@ -209,9 +209,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
       await refreshPlan();
       if (response.skipped) {
         toast.info(response.skipReason ?? '最新日期已更新，已跳过拉取');
-      } else if (response.status === 'success') {
-        toast.success(`同步完成 · 共处理 ${response.rowsSynced} 条分析记录`);
-      } else {
+      } else if (response.status !== 'success') {
         setErrorMsg(response.errorMessage ?? '同步失败，请稍后重试');
         toast.error('同步失败');
       }

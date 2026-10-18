@@ -2908,9 +2908,6 @@ function PaymentTrendPanel({
   }, [breakdown, comparison, mode, order, type]);
   const categories = order.filter((key) => rows.some((row) => Number(row.values[key] ?? 0) > 0));
   const activeRows = rows.filter((row) => row.weekStart === comparison?.analysisPeriod);
-  const analysisTotal = section.items.reduce((sum, item) => sum + item.analysisDailyAvg, 0);
-  const baselineTotal = section.items.reduce((sum, item) => sum + item.baselineDailyAvg, 0);
-  const change = baselineTotal ? analysisTotal / baselineTotal - 1 : null;
   const maxTotal = Math.max(1, ...rows.map((row) => categories.reduce((sum, key) => sum + Number(row.values[key] ?? 0), 0)));
   const money = (value: number) => formatContributionValue(value, 'GMV');
   const hoveredRow = hovered === null ? null : rows[hovered] ?? null;
@@ -2930,9 +2927,10 @@ function PaymentTrendPanel({
           ))}
         </div>
       </div>
-      <div className="payment-trend-summary">
-        <div><span>分析周日均 GMV</span><strong>{money(analysisTotal)}</strong></div>
-        <div><span>WoW</span><b className={cn(change !== null && change < 0 ? 'is-negative' : 'is-positive')}>{formatSignedPercent(change)}</b></div>
+      <div className="payment-trend-legend payment-trend-card-legend" aria-label={`${label}数据图例`}>
+        {categories.map((key, index) => (
+          <span key={key}><i style={{ background: PAYMENT_STACK_COLORS[index % PAYMENT_STACK_COLORS.length] }} />{key}</span>
+        ))}
       </div>
       <div className="payment-trend-plot" role="img" aria-label={`${label}${mode === 'day' ? '日' : '周'}趋势图`}>
         <div className="payment-trend-columns">
