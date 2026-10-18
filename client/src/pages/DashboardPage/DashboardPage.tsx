@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
   type ReactNode,
 } from 'react';
 import dayjs from 'dayjs';
@@ -2994,53 +2995,23 @@ function PaymentDrillExplorer({
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [detailExiting, setDetailExiting] = useState(false);
   const [query, setQuery] = useState('');
-  const [tableDragging, setTableDragging] = useState(false);
-  const tableDragRef = useRef({ active: false, moved: false, startX: 0, startScrollLeft: 0 });
-  const suppressTableClickRef = useRef(false);
-  const handleTablePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
+  const handleTableWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     const element = event.currentTarget;
     if (element.scrollWidth <= element.clientWidth) return;
-    tableDragRef.current = {
-      active: true,
-      moved: false,
-      startX: event.clientX,
-      startScrollLeft: element.scrollLeft,
-    };
-    setTableDragging(true);
-    element.setPointerCapture?.(event.pointerId);
-  };
-  const handleTablePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = tableDragRef.current;
-    if (!drag.active) return;
-    const element = event.currentTarget;
-    const delta = event.clientX - drag.startX;
-    // Keep ordinary clicks from being treated as a drag. Trackpad and mouse
-    // button presses can move a few pixels before the click is released.
-    if (Math.abs(delta) > 8) drag.moved = true;
-    if (drag.moved) {
+    const rows = element.querySelector<HTMLElement>('.payment-explorer-rows');
+    const hasVerticalOverflow = Boolean(rows && rows.scrollHeight > rows.clientHeight + 1);
+    const horizontalDelta = event.deltaX || (event.shiftKey ? event.deltaY : 0);
+    if (horizontalDelta) {
       event.preventDefault();
-      element.scrollLeft = drag.startScrollLeft - delta;
+      element.scrollLeft += horizontalDelta;
+      return;
     }
-  };
-  const handleTablePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = tableDragRef.current;
-    if (!drag.active) return;
-    suppressTableClickRef.current = drag.moved;
-    tableDragRef.current.active = false;
-    setTableDragging(false);
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    // Payment-type tables fit vertically, so a normal mouse wheel can move
+    // them horizontally without requiring a scrollbar or modifier key.
+    if (!hasVerticalOverflow && event.deltaY) {
+      event.preventDefault();
+      element.scrollLeft += event.deltaY;
     }
-    // If the browser does not dispatch a click after pointer capture, do not
-    // leave the next row click suppressed.
-    window.setTimeout(() => { suppressTableClickRef.current = false; }, 0);
-  };
-  const handleTableClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!suppressTableClickRef.current) return;
-    event.preventDefault();
-    event.stopPropagation();
-    suppressTableClickRef.current = false;
   };
   const closeDetail = () => {
     if (selectedKey) setDetailExiting(true);
@@ -3163,14 +3134,10 @@ function PaymentDrillExplorer({
       {breakdown.length === 0 && <div className="payment-explorer-notice">当前比较窗口暂无注册新老与功能明细。</div>}
       <div className={cn('payment-explorer-body', 'is-table', (selected || detailExiting) && 'has-detail')}>
         <div
-          className={cn('payment-explorer-list', tableDragging && 'is-dragging')}
+          className="payment-explorer-list"
           role="group"
           aria-label={`${dimension === 'payType' ? '付费类型' : '功能'}收入列表`}
-          onPointerDown={handleTablePointerDown}
-          onPointerMove={handleTablePointerMove}
-          onPointerUp={handleTablePointerUp}
-          onPointerCancel={handleTablePointerUp}
-          onClickCapture={handleTableClickCapture}
+          onWheel={handleTableWheel}
         >
           <div className="payment-explorer-table-scroll">
             <div className="payment-explorer-columns"><span>{dimension === 'payType' ? '付费类型' : '功能'}</span><span>基准期日均</span><span>分析期日均</span><span>绝对变化</span><span>{changeLabel}</span><span>贡献度</span></div>
