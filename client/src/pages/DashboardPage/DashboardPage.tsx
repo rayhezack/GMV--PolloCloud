@@ -38,7 +38,7 @@ import {
 import { Link, useSearchParams } from 'react-router-dom';
 import { flushSync } from 'react-dom';
 import { FileText } from 'lucide-react';
-import { CanvasToolbar, PullToRefresh, Search, StackedBars } from '@/components/bencho';
+import { CanvasToolbar, IconBar, PullToRefresh, Search, StackedBars } from '@/components/bencho';
 import {
   RevenueCards,
   ContributionBars,
@@ -3907,7 +3907,10 @@ const DashboardPage = () => {
       if (!chainPlanTierRef.current?.contains(event.target as Node)) setChainPlanTierOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setChainPlanTierOpen(false);
+      if (event.key === 'Escape') {
+        setChainPlanTierOpen(false);
+        chainPlanTierRef.current?.querySelector<HTMLButtonElement>('.chain-plan-tier-trigger')?.focus();
+      }
     };
     document.addEventListener('pointerdown', closeOnOutsidePointer);
     document.addEventListener('keydown', closeOnEscape);
@@ -4831,22 +4834,16 @@ const DashboardPage = () => {
               : '先看整体支付链路；点击创作分层行，原位展开新老用户并联动下方链路。'}
             action={(
               <div className="chain-panel-controls">
-                <div className="chain-type-filter chain-type-filter-primary">
-                  <div className="chain-primary-group" role="group" aria-label="支付链路类型">
-                    {([['active', '主动付费'], ['renewal', '自动续订']] as const).map(([value, label]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        aria-pressed={chainType === value}
-                        onClick={() => {
-                          setChainPlanTierOpen(false);
-                          updateSearchParams({ chainType: value === 'active' ? undefined : value }, ['creationTier', 'userTag']);
-                        }}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
+                <div className="chain-type-filter-primary">
+                  <IconBar
+                    items={[{ value: 'active', label: '主动付费' }, { value: 'renewal', label: '自动续订' }]}
+                    value={chainType}
+                    label="支付链路类型"
+                    onChange={(value) => {
+                      setChainPlanTierOpen(false);
+                      updateSearchParams({ chainType: value === 'active' ? undefined : value }, ['creationTier', 'userTag']);
+                    }}
+                  />
                   {isRenewalChain ? (
                     <div ref={chainPlanTierRef} className="chain-plan-tier-menu">
                       <button
@@ -4855,16 +4852,33 @@ const DashboardPage = () => {
                         aria-expanded={chainPlanTierOpen}
                         aria-haspopup="menu"
                         onClick={() => setChainPlanTierOpen((open) => !open)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'ArrowDown') {
+                            event.preventDefault();
+                            setChainPlanTierOpen(true);
+                            requestAnimationFrame(() => chainPlanTierRef.current?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')?.focus());
+                          }
+                        }}
                       >
-                        <BarChart3 size={13} />
-                        <span>{planTier === 'all' ? '套餐' : PLAN_TIER_OPTIONS.find((option) => option.value === planTier)?.label}</span>
+                        <span className="chain-plan-tier-label">套餐：</span>
+                        <span>{planTier === 'all' ? '全部' : PLAN_TIER_OPTIONS.find((option) => option.value === planTier)?.label}</span>
                         <ChevronDown size={13} />
                       </button>
                       {chainPlanTierOpen ? (
-                        <div className="chain-plan-tier-options" role="menu" aria-label="订阅类型">
+                        <div className="chain-plan-tier-options" role="menu" aria-label="订阅类型"
+                          onKeyDown={(event) => {
+                            const options = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
+                            const index = options.indexOf(document.activeElement as HTMLButtonElement);
+                            const next = event.key === 'ArrowDown' ? (index + 1) % options.length
+                              : event.key === 'ArrowUp' ? (index - 1 + options.length) % options.length
+                                : event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : null;
+                            if (next !== null) { event.preventDefault(); options[next]?.focus(); }
+                            if (event.key === 'Tab') setChainPlanTierOpen(false);
+                          }}>
                           {PLAN_TIER_OPTIONS.map((option) => (
-                            <button key={option.value} type="button" role="menuitemradio" aria-checked={planTier === option.value} onClick={() => { updateSearchParam('planTier', option.value === 'all' ? '' : option.value); setChainPlanTierOpen(false); }}>
-                              {option.label}
+                            <button key={option.value} type="button" role="menuitemradio" aria-checked={planTier === option.value} onClick={() => { updateSearchParam('planTier', option.value === 'all' ? '' : option.value); setChainPlanTierOpen(false); chainPlanTierRef.current?.querySelector<HTMLButtonElement>('.chain-plan-tier-trigger')?.focus(); }}>
+                              <span>{option.label}</span>
+                              {planTier === option.value && <Check size={13} aria-hidden="true" />}
                             </button>
                           ))}
                         </div>

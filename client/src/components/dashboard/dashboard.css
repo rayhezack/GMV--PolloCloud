@@ -169,19 +169,38 @@
 .week-menu-highlight { position: absolute; inset: 0; z-index: 0; border-radius: inherit; background: var(--ui-state-bg); }
 .week-menu-option.is-selected svg { color: var(--ui-ink); }
 .week-menu-option:disabled { cursor: not-allowed; opacity: .35; }
-.chain-panel-controls { display: flex; align-items: flex-start; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
-.chain-type-filter-primary { position: relative; display: inline-flex; align-items: center; gap: 3px; padding: 3px; border-radius: 9px; background: var(--ui-surface-subtle); }
-.chain-primary-group { display: inline-flex; align-items: center; gap: 3px; }
-.chain-plan-tier-menu { position: relative; margin-left: 1px; }
-/* Keep the package selector visually independent from the chain segmented
-   control. A left border on the old transparent trigger made the parent
-   pill's rounded edge read as a stray curve beside the selector. */
-.chain-plan-tier-trigger { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px; border: 1px solid transparent; border-radius: 8px; background: var(--ui-surface); color: var(--ui-muted); font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: border-color .14s ease, background .14s ease, color .14s ease; }
-.chain-plan-tier-trigger:hover, .chain-plan-tier-trigger[aria-expanded='true'] { border-color: var(--ui-line); background: var(--ui-state-bg); color: var(--ui-ink); }
-.chain-plan-tier-trigger:focus-visible { outline: 2px solid var(--ui-purple); outline-offset: 2px; }
-.chain-plan-tier-options { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: grid; min-width: 116px; gap: 2px; padding: 6px; border: 0; border-radius: 12px; background: var(--ui-surface); box-shadow: 0 12px 28px rgba(37,36,61,.12); animation: icon-control-popover-in 160ms ease-out both; }
-.chain-plan-tier-options button { min-height: 30px; padding: 0 9px; border: 0; border-radius: 7px; background: transparent; color: var(--ui-muted); font-size: 11px; text-align: left; cursor: pointer; }
-.chain-plan-tier-options button:hover, .chain-plan-tier-options button[aria-checked='true'] { background: var(--ui-state-bg); color: var(--ui-ink); }
+/* Reserve the filter footprint so revealing the renewal sub-filter does not
+   move either primary slot. All control states use the same neutral surface. */
+.chain-panel-controls { display: flex; align-items: flex-start; justify-content: flex-start; width: 300px; max-width: 100%; }
+.chain-type-filter-primary { position: relative; display: inline-flex; align-items: center; gap: 0; padding: 3px; border-radius: 9px; background: var(--ui-surface-subtle); }
+.chain-icon-bar { position: relative; display: inline-flex; align-items: center; gap: 3px; isolation: isolate; }
+.chain-icon-bar > button { position: relative; z-index: 1; width: 76px; height: 30px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--ui-muted); font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: color 160ms ease; }
+.chain-icon-bar > button:hover, .chain-icon-bar > button[aria-pressed='true'] { color: var(--ui-ink); }
+.chain-icon-bar > button:focus-visible, .chain-plan-tier-trigger:focus-visible, .chain-plan-tier-options button:focus-visible { outline: 2px solid var(--ui-purple); outline-offset: 2px; }
+.chain-icon-bar-indicator { position: absolute; top: 0; left: 0; height: 30px; border-radius: 7px; background: var(--ui-state-bg); pointer-events: none; }
+/* Bencho's two phases: the leading edge stretches across both fixed slots,
+   then the trailing edge catches up. Move and size settle separately. */
+.chain-icon-bar-indicator[data-phase='stretch'] { transition: transform 190ms cubic-bezier(.32,.72,.24,1), width 190ms cubic-bezier(.32,.72,.24,1); }
+.chain-icon-bar-indicator[data-phase='settle'] { transition: transform 420ms cubic-bezier(.28,1.28,.36,1), width 420ms cubic-bezier(.24,1.34,.38,1); }
+.chain-icon-bar-indicator[data-phase='idle'] { transition: none; }
+.chain-plan-tier-menu { position: relative; margin-left: 7px; padding-left: 8px; animation: chain-subfilter-in 160ms ease-out; }
+/* A short straight divider belongs to the wrapper, never to the rounded
+   trigger: this avoids the curved border artefact from the old selector. */
+.chain-plan-tier-menu::before { content: ''; position: absolute; top: 7px; bottom: 7px; left: 0; width: 1px; background: var(--ui-line); }
+.chain-plan-tier-trigger { display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: 112px; height: 30px; padding: 0 9px; border: 0; border-radius: 7px; background: transparent; color: var(--ui-ink); font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background 140ms ease; }
+.chain-plan-tier-label { color: var(--ui-muted); font-weight: 500; }
+.chain-plan-tier-trigger > svg { margin-left: auto; transition: transform 160ms ease; }
+.chain-plan-tier-trigger[aria-expanded='true'] > svg { transform: rotate(180deg); }
+.chain-plan-tier-trigger:hover, .chain-plan-tier-trigger[aria-expanded='true'] { background: var(--ui-state-bg); }
+.chain-plan-tier-options { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: grid; min-width: 132px; gap: 2px; padding: 6px; border: 0; border-radius: 12px; background: var(--ui-surface); box-shadow: 0 12px 28px rgba(37,36,61,.12); animation: icon-control-popover-in 160ms ease-out both; }
+.chain-plan-tier-options button { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 30px; padding: 0 9px; border: 0; border-radius: 7px; background: transparent; color: var(--ui-muted); font-size: 11px; font-weight: 600; text-align: left; cursor: pointer; }
+.chain-plan-tier-options button:hover, .chain-plan-tier-options button:focus-visible { background: var(--ui-surface-subtle); color: var(--ui-ink); }
+.chain-plan-tier-options button[aria-checked='true'] { background: var(--ui-state-bg); color: var(--ui-ink); }
+@keyframes chain-subfilter-in { from { opacity: 0; transform: translateX(-3px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .chain-icon-bar-indicator, .chain-plan-tier-trigger > svg { transition: none !important; }
+  .chain-plan-tier-menu, .chain-plan-tier-options { animation: none; }
+}
 @keyframes icon-control-popover-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .icon-control-popover-title,
 .icon-control-submenu > span {
@@ -665,8 +684,6 @@
   color: var(--ui-ink);
   box-shadow: none;
 }
-.chain-type-filter-primary { display: inline-flex; align-items: center; gap: 3px; }
-.chain-type-filter-primary > .chain-primary-group { display: inline-flex; align-items: center; gap: 3px; }
 @media (max-width: 700px) {
   .metric-menu-options { max-width: calc(100vw - 40px); }
 }

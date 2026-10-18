@@ -6,6 +6,7 @@ export { PullToRefresh } from './PullToRefresh';
 export type { PullToRefreshRow } from './PullToRefresh';
 export { Search } from './Search';
 export { CanvasToolbar } from './CanvasToolbar';
+export { IconBar } from './IconBar';
 export { CreateMenu } from './CreateMenu';
 export type { CreateMenuScope } from './CreateMenu';
 export { StackedBars } from './StackedBars';
