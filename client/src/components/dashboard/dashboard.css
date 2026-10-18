@@ -169,9 +169,9 @@
 .week-menu-highlight { position: absolute; inset: 0; z-index: 0; border-radius: inherit; background: var(--ui-state-bg); }
 .week-menu-option.is-selected svg { color: var(--ui-ink); }
 .week-menu-option:disabled { cursor: not-allowed; opacity: .35; }
-/* Reserve the filter footprint so revealing the renewal sub-filter does not
-   move either primary slot. All control states use the same neutral surface. */
-.chain-panel-controls { display: flex; align-items: flex-start; justify-content: flex-start; width: 300px; max-width: 100%; }
+/* Anchor the right edge: revealing the renewal sub-filter shifts the primary
+   slots left to make room. All control states use the same neutral surface. */
+.chain-panel-controls { display: flex; align-items: flex-start; justify-content: flex-end; width: 300px; max-width: 100%; }
 .chain-type-filter-primary { position: relative; display: inline-flex; align-items: center; gap: 0; padding: 3px; border-radius: 9px; background: var(--ui-surface-subtle); }
 .chain-icon-bar { position: relative; display: inline-flex; align-items: center; gap: 3px; isolation: isolate; }
 .chain-icon-bar > button { position: relative; z-index: 1; width: 76px; height: 30px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--ui-muted); font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: color 160ms ease; }
