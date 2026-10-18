@@ -38,7 +38,7 @@ import {
 import { Link, useSearchParams } from 'react-router-dom';
 import { flushSync } from 'react-dom';
 import { FileText } from 'lucide-react';
-import { CanvasToolbar, PullToRefresh, Search } from '@/components/bencho';
+import { CanvasToolbar, PullToRefresh, Search, StackedBars } from '@/components/bencho';
 import {
   RevenueCards,
   ContributionBars,
@@ -2861,10 +2861,8 @@ function PaymentTrendPanel({
   breakdown: PaymentBreakdownRow[];
 }) {
   const [mode, setMode] = useState<PaymentTrendMode>('day');
-  const [hovered, setHovered] = useState<number | null>(null);
   const trendRef = useRef<HTMLElement | null>(null);
   const trendVisible = useInView(trendRef, { once: true, amount: 0.2 });
-  const reducedMotion = useReducedMotion();
   const order = type === 'active' ? ACTIVE_PAYMENT_STACK_ORDER : RENEWAL_PAYMENT_STACK_ORDER;
   const label = type === 'active' ? '主动付费' : '自动续订';
   const categoryOf = (row: PaymentBreakdownRow) => {
@@ -2909,9 +2907,7 @@ function PaymentTrendPanel({
   }, [breakdown, comparison, mode, order, type]);
   const categories = order.filter((key) => rows.some((row) => Number(row.values[key] ?? 0) > 0));
   const activeRows = rows.filter((row) => row.weekStart === comparison?.analysisPeriod);
-  const maxTotal = Math.max(1, ...rows.map((row) => categories.reduce((sum, key) => sum + Number(row.values[key] ?? 0), 0)));
   const money = (value: number) => formatContributionValue(value, 'GMV');
-  const hoveredRow = hovered === null ? null : rows[hovered] ?? null;
 
   return (
     <section ref={trendRef} className={cn('payment-trend-card', trendVisible && 'is-revealed')} aria-label={`${label}日周趋势`}>
@@ -2922,7 +2918,7 @@ function PaymentTrendPanel({
         </div>
         <div className="payment-trend-mode" role="group" aria-label="趋势粒度">
           {(['day', 'week'] as PaymentTrendMode[]).map((value) => (
-            <button key={value} type="button" aria-pressed={mode === value} onClick={() => { setMode(value); setHovered(null); }}>
+            <button key={value} type="button" aria-pressed={mode === value} onClick={() => setMode(value)}>
               {value === 'day' ? '日' : '周'}
             </button>
           ))}
@@ -2934,48 +2930,19 @@ function PaymentTrendPanel({
         ))}
       </div>
       <div className="payment-trend-plot" role="img" aria-label={`${label}${mode === 'day' ? '日' : '周'}趋势图`}>
-        <div className="payment-trend-columns">
-          {rows.map((row, index) => {
-            const total = categories.reduce((sum, key) => sum + Number(row.values[key] ?? 0), 0);
-            return (
-              <button
-                key={`${row.period}-${index}`}
-                type="button"
-                className={cn('payment-trend-column', hovered === index && 'is-hovered')}
-                aria-label={`${row.label} ${money(total)}`}
-                onPointerEnter={() => setHovered(index)}
-                onPointerMove={() => setHovered(index)}
-                onFocus={() => setHovered(index)}
-                onPointerLeave={() => setHovered(null)}
-                onPointerCancel={() => setHovered(null)}
-                onBlur={() => setHovered(null)}
-              >
-                <span className="payment-trend-stack" style={{ height: `${Math.max(8, total / maxTotal * 100)}%` }}>
-                  {categories.map((key, categoryIndex) => (
-                    <motion.span
-                      key={key}
-                      className="payment-trend-segment"
-                      style={{ background: PAYMENT_STACK_COLORS[categoryIndex % PAYMENT_STACK_COLORS.length], height: `${Math.max(3, Number(row.values[key] ?? 0) / Math.max(total, 1) * 100)}%` }}
-                      initial={reducedMotion ? false : { scaleY: 0, opacity: 0 }}
-                      animate={trendVisible || reducedMotion ? { scaleY: 1, opacity: 1 } : { scaleY: 0, opacity: 0 }}
-                      transition={reducedMotion ? { duration: 0 } : { duration: 0.55, delay: index * 0.025 + categoryIndex * 0.035, ease: 'easeOut' }}
-                    />
-                  ))}
-                </span>
-                <span className="payment-trend-column-label">{index === 0 || index === rows.length - 1 ? row.label : ''}</span>
-              </button>
-            );
-          })}
-        </div>
-        {hoveredRow && (
-          <div className="payment-trend-tooltip" role="status">
-            <strong>{hoveredRow.label}</strong>
-            <b>{money(categories.reduce((sum, key) => sum + Number(hoveredRow.values[key] ?? 0), 0))}</b>
-            {categories.map((key, index) => (
-              <span key={key}><i style={{ background: PAYMENT_STACK_COLORS[index % PAYMENT_STACK_COLORS.length] }} />{key}<b>{money(Number(hoveredRow.values[key] ?? 0))}</b></span>
-            ))}
-          </div>
-        )}
+        <StackedBars
+          data={rows.map((row) => ({
+            label: row.label,
+            short: row.label,
+            values: categories.map((key) => Number(row.values[key] ?? 0)),
+          }))}
+          categories={categories}
+          colors={PAYMENT_STACK_COLORS}
+          formatValue={money}
+          gap={10}
+          isVisible={trendVisible}
+          ariaLabel={`${label}${mode === 'day' ? '日' : '周'}趋势图`}
+        />
       </div>
       {activeRows.length === 0 && <div className="payment-trend-empty">当前分析周暂无逐日明细。</div>}
     </section>

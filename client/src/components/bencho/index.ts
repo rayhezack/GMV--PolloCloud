@@ -8,5 +8,7 @@ export { Search } from './Search';
 export { CanvasToolbar } from './CanvasToolbar';
 export { CreateMenu } from './CreateMenu';
 export type { CreateMenuScope } from './CreateMenu';
+export { StackedBars } from './StackedBars';
+export type { StackedBarsDatum } from './StackedBars';
 export { ToastStack, pushToast } from './ToastStack';
 export type { ToastStackItem, ToastStackKind } from './ToastStack';
