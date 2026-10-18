@@ -3015,7 +3015,9 @@ function PaymentDrillExplorer({
     if (!drag.active) return;
     const element = event.currentTarget;
     const delta = event.clientX - drag.startX;
-    if (Math.abs(delta) > 4) drag.moved = true;
+    // Keep ordinary clicks from being treated as a drag. Trackpad and mouse
+    // button presses can move a few pixels before the click is released.
+    if (Math.abs(delta) > 8) drag.moved = true;
     if (drag.moved) {
       event.preventDefault();
       element.scrollLeft = drag.startScrollLeft - delta;
@@ -3027,7 +3029,12 @@ function PaymentDrillExplorer({
     suppressTableClickRef.current = drag.moved;
     tableDragRef.current.active = false;
     setTableDragging(false);
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
+    // If the browser does not dispatch a click after pointer capture, do not
+    // leave the next row click suppressed.
+    window.setTimeout(() => { suppressTableClickRef.current = false; }, 0);
   };
   const handleTableClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!suppressTableClickRef.current) return;
