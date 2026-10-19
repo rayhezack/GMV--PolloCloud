@@ -30,7 +30,7 @@ const NOTIFIED_ANOMALIES_KEY = 'pollo-notified-gmv-anomalies';
 const isActiveStatus = (status: Task['status']) => ['queued', 'running', 'pausing', 'paused'].includes(status);
 
 const platformLabel = (platform: 'all' | 'web' | 'app') => platform === 'all' ? '大盘' : platform === 'web' ? 'Web' : 'App';
-const metricLabel = (metric: string) => metric === 'totalGmv' ? '大盘 GMV' : metric === 'activeGmv' ? '主动付费' : '续订 GMV';
+const metricLabel = (metric: string) => metric === 'totalGmv' ? '大盘GMV' : metric === 'activeGmv' ? '主动付费GMV' : '续订GMV';
 
 async function notifyGmvAnomalies() {
   const result = await getGmvAnomalies();
@@ -53,15 +53,25 @@ async function notifyGmvAnomalies() {
   const evidence = alerts.map((alert) => {
     const label = alert.window === 'day' ? '日环比' : '周同比';
     const change = `${alert.change >= 0 ? '+' : ''}${(alert.change * 100).toFixed(1)}%`;
-    const threshold = `${alert.threshold >= 0 ? '+' : ''}${(alert.threshold * 100).toFixed(1)}%`;
-    return { alert, label, change, threshold };
+    return { alert, label, change };
   });
   const period = alerts[0]?.period || result.latestDay;
-  const evidenceSummary = evidence
-    .map(({ alert, label, change }) => `${platformLabel(alert.platform)} ${metricLabel(alert.metric)} ${label} ${change}`)
-    .join('；');
-  const evidenceDetail = evidence
-    .map(({ alert, label, change, threshold }) => `${platformLabel(alert.platform)} · ${metricLabel(alert.metric)}：${label} ${change}（对比 ${alert.baselinePeriod}，阈值 ${threshold}）`)
+  const evidenceGroups = new Map<string, typeof evidence>();
+  evidence.forEach((item) => {
+    const key = `${item.alert.platform}:${item.alert.metric}`;
+    const group = evidenceGroups.get(key) ?? [];
+    group.push(item);
+    evidenceGroups.set(key, group);
+  });
+  const evidenceDetail = [...evidenceGroups.values()]
+    .map((group) => {
+      const first = group[0].alert;
+      const comparisons = group
+        .sort((a, b) => (a.alert.window === 'week' ? 0 : 1) - (b.alert.window === 'week' ? 0 : 1))
+        .map(({ label, change }) => `${label} ${change}`)
+        .join('，');
+      return `${platformLabel(first.platform)}${metricLabel(first.metric)} ${comparisons}`;
+    })
     .join('\n');
   const metricOrder = { totalGmv: 0, activeGmv: 1, renewalGmv: 2 } as const;
   const platformOrder = { all: 0, app: 1, web: 2 } as const;
@@ -88,7 +98,7 @@ async function notifyGmvAnomalies() {
     kind,
     title: 'GMV 异动',
     body: `${period} 多种对比口径共同提示 GMV 异动`,
-    detail: `分析日期：${period}\n${evidenceDetail}\n历史基准：最近 12 个完整业务周。\n以上日环比与周同比共同说明最新 GMV 存在异动。可继续下钻主动付费和自动续订，定位具体变化来源。\n${evidenceSummary}`,
+    detail: `分析日期：${period}\n${evidenceDetail}\n日环比与周同比共同说明最新 GMV 存在异动。可继续下钻主动付费和自动续订，定位具体变化来源。`,
     href: `/?${focusParams.toString()}`,
     linkLabel: '查看 GMV 趋势',
   });
