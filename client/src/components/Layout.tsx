@@ -101,9 +101,9 @@ const Layout = () => {
     pushToast({
       kind: 'warning',
       title: 'Web · 大盘 GMV 异动',
-      body: '测试：最新业务周日均 +12.4%，超过阈值 +10.0%',
-      detail: '分析周期：2026-10-10\n最新业务周日均 GMV 上升 12.4%，超过历史 p95 与 +10% 门槛。\n建议：先查看「GMV 趋势」Tab，再进入「付费类型」Tab 做下钻。',
-      href: '/?tab=trend&platform=web&metric=activeGmv&analysisWeek=2026-10-10',
+      body: '测试：最新日环比 +12.4%，超过阈值 +10.0%',
+      detail: '分析日期：2026-10-18\n最新日环比 GMV 上升 12.4%，超过最近 12 个完整业务周的历史阈值。\n建议：先查看「GMV 趋势」Tab，再进入「付费类型」Tab 做下钻。',
+      href: '/?tab=trend&platform=web&metric=activeGmv&granularity=day&metricDate=2026-10-18',
       linkLabel: '查看 GMV 趋势',
     });
   }, []);

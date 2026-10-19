@@ -38,7 +38,7 @@ export async function getGmvCoverage(): Promise<DashboardGmvCoverageResponse> {
 }
 
 export async function getGmvAnomalies(): Promise<DashboardGmvAnomalyResponse> {
-  if (STATIC_DEMO_MODE) return { latestWeek: '', method: 'rolling_p95_p05_min_10pct', alerts: [] };
+  if (STATIC_DEMO_MODE) return { latestWeek: '', latestDay: '', method: 'daily_and_weekly_rolling_p95_p05_min_10pct', alerts: [] };
   const response = await axiosForBackend({
     url: '/api/dashboard/gmv-anomalies',
     method: 'GET',

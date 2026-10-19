@@ -25,6 +25,7 @@ type Task = {
 
 const DISMISSED_TASKS_KEY = 'pollo-dismissed-task-runs';
 const NOTIFIED_TASKS_KEY = 'pollo-notified-task-runs';
+const NOTIFIED_ANOMALIES_KEY = 'pollo-notified-gmv-anomalies';
 
 const isActiveStatus = (status: Task['status']) => ['queued', 'running', 'pausing', 'paused'].includes(status);
 
@@ -33,15 +34,28 @@ const metricLabel = (metric: string) => metric === 'totalGmv' ? '大盘 GMV' : m
 
 async function notifyGmvAnomalies() {
   const result = await getGmvAnomalies();
+  let notified: string[] = [];
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(NOTIFIED_ANOMALIES_KEY) || '[]');
+    if (Array.isArray(stored)) notified = stored.filter((item): item is string => typeof item === 'string');
+  } catch { /* optional */ }
+  const dayKey = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date());
   for (const alert of result.alerts) {
+    const fingerprint = `${dayKey}:${alert.window}:${alert.platform}:${alert.metric}:${alert.period}:${alert.direction}`;
+    if (notified.includes(fingerprint)) continue;
+    notified = [...notified.slice(-99), fingerprint];
+    try {
+      window.localStorage.setItem(NOTIFIED_ANOMALIES_KEY, JSON.stringify(notified));
+    } catch { /* optional */ }
     const change = `${alert.change >= 0 ? '+' : ''}${(alert.change * 100).toFixed(1)}%`;
     const threshold = `${alert.threshold >= 0 ? '+' : ''}${(alert.threshold * 100).toFixed(1)}%`;
+    const comparisonLabel = alert.window === 'day' ? '日环比' : '周同比';
     pushToast({
       kind: alert.direction === 'up' ? 'warning' : 'error',
       title: `${platformLabel(alert.platform)} · ${metricLabel(alert.metric)}异动`,
-      body: `${alert.period} 日均 ${change}，超过阈值 ${threshold}`,
-      detail: `分析周期：${alert.period}\n最新业务周日均变化 ${change}，已超过历史分位阈值 ${threshold}。\n建议：前往「GMV 趋势」Tab 查看该平台的日趋势，再进入「付费类型」Tab 做主动付费与续订下钻。`,
-      href: `/?tab=trend&platform=${alert.platform}${alert.metric === 'activeGmv' || alert.metric === 'renewalGmv' ? `&metric=${alert.metric}` : ''}&analysisWeek=${alert.period}`,
+      body: `${alert.period} ${comparisonLabel} ${change}，超过阈值 ${threshold}`,
+      detail: `分析日期：${alert.period}\n最新${comparisonLabel}变化 ${change}，基于最近 12 个完整业务周的历史分位阈值 ${threshold}。\n对比日期：${alert.baselinePeriod}\n建议：前往「GMV 趋势」Tab 查看该平台的日趋势，再进入「付费类型」Tab 做主动付费与续订下钻。`,
+      href: `/?tab=trend&platform=${alert.platform}&granularity=day${alert.metric === 'activeGmv' || alert.metric === 'renewalGmv' ? `&metric=${alert.metric}` : ''}&metricDate=${alert.period}`,
       linkLabel: '查看 GMV 趋势',
     });
   }

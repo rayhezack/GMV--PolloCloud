@@ -909,77 +909,126 @@ function percentile(values: number[], quantile: number) {
 }
 
 async function gmvAnomalies(env: Env) {
-  if (!env.DB) return json({ latestWeek: '', method: 'rolling_p95_p05_min_10pct', alerts: [] });
-  const latestPeriod = await Promise.all([
+  const empty = () => json({ latestWeek: '', latestDay: '', method: 'daily_and_weekly_rolling_p95_p05_min_10pct', alerts: [] });
+  if (!env.DB) return empty();
+  const latestPeriods = await Promise.all([
     latestDailyPeriod(env, 'pay_type_daily'),
     latestDailyPeriod(env, 'chain_daily'),
-  ]).then((periods) => periods.filter(Boolean).sort().at(-1) || '');
-  if (!latestPeriod) return json({ latestWeek: '', method: 'rolling_p95_p05_min_10pct', alerts: [] });
+    latestDailyPeriod(env, 'renewal_daily'),
+  ]).then((periods) => periods.filter(Boolean).sort());
+  // Wait until all three sources contain the same latest day. This prevents
+  // the four split sync jobs from alerting on a partially refreshed day.
+  const latestPeriod = latestPeriods[0] || '';
+  if (!latestPeriod || latestPeriods.length < 3) return empty();
   const endDate = latestPeriod;
-  const startDate = shiftDate(latestPeriod, -110);
+  // Keep enough data for twelve complete business weeks plus the current
+  // partial week and the prior-day / prior-week comparison points.
+  const startDate = shiftDate(latestPeriod, -120);
   const [payRows, chainRows, renewalRows] = await Promise.all([
     dailyRows(env, 'pay_type_daily', { startDate, endDate }),
     dailyRows(env, 'chain_daily', { startDate, endDate }),
     dailyRows(env, 'renewal_daily', { startDate, endDate }),
   ]);
   const alerts: Array<Record<string, unknown>> = [];
-  let latestCompleteWeek = '';
+  const MIN_COMPLETE_WEEKS = 12;
+  const MIN_THRESHOLD_SAMPLES = 8;
+  const directionFor = (change: number, history: number[]) => {
+    if (history.length < MIN_THRESHOLD_SAMPLES) return null;
+    const upper = Math.max(percentile(history, 0.95), 0.10);
+    const lower = Math.min(percentile(history, 0.05), -0.10);
+    if (change >= upper) return { direction: 'up' as const, threshold: upper };
+    if (change <= lower) return { direction: 'down' as const, threshold: lower };
+    return null;
+  };
   for (const platform of ['all', 'web', 'app'] as const) {
     const pay = payRows.filter((row) => asText(row.platform) === platform);
     const chain = chainRows.filter((row) => asText(row.platform) === platform);
     const renewal = renewalPlatformRows(renewalRows, platform);
-    const payDays = weekDayCounts(pay);
-    const chainDays = weekDayCounts(chain);
-    const renewalDays = weekDayCounts(renewal);
-    const completeWeeks = [...new Set([...payDays.keys()].filter((week) =>
-      (payDays.get(week) || 0) >= WEEK_DAYS && (chainDays.get(week) || 0) >= WEEK_DAYS,
-    ))].sort();
-    if (completeWeeks.length < 2) continue;
-    const latestWeek = completeWeeks.at(-1)!;
-    if (latestWeek > latestCompleteWeek) latestCompleteWeek = latestWeek;
-    const previousWeek = completeWeeks.at(-2)!;
     const metrics = [
-      { key: 'totalGmv', rows: pay, field: 'gmv_usd', days: payDays },
-      { key: 'activeGmv', rows: chain, field: 'chain_gmv_usd', days: chainDays },
-      { key: 'renewalGmv', rows: renewal, field: 'renew_amount_usd', days: renewalDays },
+      { key: 'totalGmv', rows: pay, field: 'gmv_usd' },
+      { key: 'activeGmv', rows: chain, field: 'chain_gmv_usd' },
+      { key: 'renewalGmv', rows: renewal, field: 'renew_amount_usd' },
     ] as const;
     for (const metric of metrics) {
-      const valueForWeek = (week: string) => {
-        const rows = metric.rows.filter((row) => asText(row.week_start) === week);
-        const days = metric.days.get(week) || WEEK_DAYS;
-        return sum(rows.map((row) => asNumber(row[metric.field]))) / days;
-      };
-      const values = completeWeeks.map((week) => ({ week, value: valueForWeek(week) }));
-      const changes = values.slice(1).flatMap((current, index) => {
-        const previous = values[index];
-        return previous.value > 0 && current.value > 0
-          ? [{ week: current.week, value: current.value / previous.value - 1 }]
-          : [];
-      });
-      const current = changes.at(-1);
-      if (!current) continue;
-      const history = changes.slice(Math.max(0, changes.length - 13), -1).map((item) => item.value);
-      if (history.length < 8) continue;
-      const upper = Math.max(percentile(history, 0.95), 0.10);
-      const lower = Math.min(percentile(history, 0.05), -0.10);
-      const direction = current.value >= upper ? 'up' : current.value <= lower ? 'down' : null;
-      if (!direction) continue;
-      const currentValue = values.at(-1)!.value;
-      const previousValue = values.at(-2)!.value;
-      alerts.push({
-        platform,
-        metric: metric.key,
-        period: latestWeek,
-        direction,
-        change: current.value,
-        threshold: direction === 'up' ? upper : lower,
-        currentDailyAvg: currentValue,
-        previousDailyAvg: previousValue,
-        historyCount: history.length,
-      });
+      const byDay = new Map<string, { value: number; week: string }>();
+      for (const row of metric.rows) {
+        const period = asText(row.period);
+        if (!period || period > latestPeriod) continue;
+        const current = byDay.get(period) || { value: 0, week: asText(row.week_start) };
+        current.value += asNumber(row[metric.field]);
+        if (!current.week) current.week = asText(row.week_start);
+        byDay.set(period, current);
+      }
+      const dates = [...byDay.keys()].sort();
+      if (dates.length < 2 || dates.at(-1) !== latestPeriod) continue;
+      const valueAt = (period: string) => byDay.get(period)?.value || 0;
+      const completeWeeks = new Set(
+        [...byDay.values()].reduce((weeks, item) => {
+          if (item.week) weeks.add(item.week);
+          return weeks;
+        }, new Set<string>()),
+      );
+      const weekDates = new Map<string, Set<string>>();
+      for (const [period, item] of byDay) {
+        if (!item.week) continue;
+        const set = weekDates.get(item.week) || new Set<string>();
+        set.add(period);
+        weekDates.set(item.week, set);
+      }
+      const completeWeekKeys = [...completeWeeks]
+        .filter((week) => (weekDates.get(week)?.size || 0) >= WEEK_DAYS)
+        .sort();
+      if (completeWeekKeys.length < MIN_COMPLETE_WEEKS) continue;
+      const historyWeeks = new Set(completeWeekKeys.slice(-MIN_COMPLETE_WEEKS));
+      const historicalDates = dates.filter((period) => historyWeeks.has(byDay.get(period)?.week || ''));
+
+      // Daily comparison: latest day versus the previous available day. The
+      // threshold is learned from day-over-day changes inside the last twelve
+      // complete business weeks, so it does not depend on a short 13-day tail.
+      const previousDate = shiftDate(latestPeriod, -1);
+      const currentValue = valueAt(latestPeriod);
+      const previousValue = valueAt(previousDate);
+      if (currentValue > 0 && previousValue > 0) {
+        const dailyHistory = historicalDates.slice(1).flatMap((period, index) => {
+          const previous = historicalDates[index];
+          const value = valueAt(period);
+          const prior = valueAt(previous);
+          return value > 0 && prior > 0 ? [value / prior - 1] : [];
+        });
+        const change = currentValue / previousValue - 1;
+        const signal = directionFor(change, dailyHistory);
+        if (signal) alerts.push({
+          platform, metric: metric.key, period: latestPeriod, baselinePeriod: previousDate,
+          window: 'day', direction: signal.direction, change, threshold: signal.threshold,
+          currentDailyAvg: currentValue, previousDailyAvg: previousValue,
+          historyCount: dailyHistory.length, baselineWindow: '12_complete_weeks',
+        });
+      }
+
+      // Weekly comparison: latest day versus the same weekday in the prior
+      // week. Historical samples use the same weekday pairs across the last
+      // twelve complete business weeks.
+      const previousWeekDate = shiftDate(latestPeriod, -7);
+      const previousWeekValue = valueAt(previousWeekDate);
+      if (currentValue > 0 && previousWeekValue > 0) {
+        const weeklyHistory = historicalDates.flatMap((period) => {
+          const priorPeriod = shiftDate(period, -7);
+          const value = valueAt(period);
+          const prior = valueAt(priorPeriod);
+          return value > 0 && prior > 0 ? [value / prior - 1] : [];
+        });
+        const change = currentValue / previousWeekValue - 1;
+        const signal = directionFor(change, weeklyHistory);
+        if (signal) alerts.push({
+          platform, metric: metric.key, period: latestPeriod, baselinePeriod: previousWeekDate,
+          window: 'week', direction: signal.direction, change, threshold: signal.threshold,
+          currentDailyAvg: currentValue, previousDailyAvg: previousWeekValue,
+          historyCount: weeklyHistory.length, baselineWindow: '12_complete_weeks',
+        });
+      }
     }
   }
-  return json({ latestWeek: latestCompleteWeek, method: 'rolling_p95_p05_min_10pct', alerts });
+  return json({ latestWeek: '', latestDay: latestPeriod, method: 'daily_and_weekly_rolling_p95_p05_min_10pct', alerts });
 }
 
 async function attributions(env: Env, request: Request) {

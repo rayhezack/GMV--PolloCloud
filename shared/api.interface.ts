@@ -165,17 +165,21 @@ export interface GmvAnomalyAlert {
   platform: DashboardPlatform;
   metric: GmvAnomalyMetric;
   period: string;
+  baselinePeriod: string;
+  window: 'day' | 'week';
   direction: 'up' | 'down';
   change: number;
   threshold: number;
   currentDailyAvg: number;
   previousDailyAvg: number;
   historyCount: number;
+  baselineWindow: '12_complete_weeks';
 }
 
 export interface DashboardGmvAnomalyResponse {
   latestWeek: string;
-  method: 'rolling_p95_p05_min_10pct';
+  latestDay: string;
+  method: 'daily_and_weekly_rolling_p95_p05_min_10pct';
   alerts: GmvAnomalyAlert[];
 }
 
