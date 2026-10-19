@@ -40,22 +40,38 @@ async function notifyGmvAnomalies() {
     if (Array.isArray(stored)) notified = stored.filter((item): item is string => typeof item === 'string');
   } catch { /* optional */ }
   const dayKey = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date());
+  const groups = new Map<string, typeof result.alerts>();
   for (const alert of result.alerts) {
-    const fingerprint = `${dayKey}:${alert.window}:${alert.platform}:${alert.metric}:${alert.period}:${alert.direction}`;
+    const groupKey = `${alert.platform}:${alert.metric}:${alert.period}`;
+    groups.set(groupKey, [...(groups.get(groupKey) || []), alert]);
+  }
+  for (const alerts of groups.values()) {
+    const first = alerts[0];
+    if (!first) continue;
+    // Daily and weekly evidence for the same metric is one user-facing event.
+    const fingerprint = `${dayKey}:${first.platform}:${first.metric}:${first.period}`;
     if (notified.includes(fingerprint)) continue;
     notified = [...notified.slice(-99), fingerprint];
     try {
       window.localStorage.setItem(NOTIFIED_ANOMALIES_KEY, JSON.stringify(notified));
     } catch { /* optional */ }
-    const change = `${alert.change >= 0 ? '+' : ''}${(alert.change * 100).toFixed(1)}%`;
-    const threshold = `${alert.threshold >= 0 ? '+' : ''}${(alert.threshold * 100).toFixed(1)}%`;
-    const comparisonLabel = alert.window === 'day' ? '日环比' : '周同比';
+    const evidence = alerts.map((alert) => {
+      const label = alert.window === 'day' ? '日环比' : '周同比';
+      const change = `${alert.change >= 0 ? '+' : ''}${(alert.change * 100).toFixed(1)}%`;
+      const threshold = `${alert.threshold >= 0 ? '+' : ''}${(alert.threshold * 100).toFixed(1)}%`;
+      return { alert, label, change, threshold };
+    });
+    const evidenceSummary = evidence.map(({ label, change }) => `${label} ${change}`).join('，');
+    const evidenceDetail = evidence
+      .map(({ alert, label, change, threshold }) => `${label} ${change}（对比 ${alert.baselinePeriod}，阈值 ${threshold}）`)
+      .join('\n');
+    const kind = alerts.some((alert) => alert.direction === 'down') ? 'error' : 'warning';
     pushToast({
-      kind: alert.direction === 'up' ? 'warning' : 'error',
-      title: `${platformLabel(alert.platform)} · ${metricLabel(alert.metric)}异动`,
-      body: `${alert.period} ${comparisonLabel} ${change}，超过阈值 ${threshold}`,
-      detail: `分析日期：${alert.period}\n最新${comparisonLabel}变化 ${change}，基于最近 12 个完整业务周的历史分位阈值 ${threshold}。\n对比日期：${alert.baselinePeriod}\n建议：前往「GMV 趋势」Tab 查看该平台的日趋势，再进入「付费类型」Tab 做主动付费与续订下钻。`,
-      href: `/?tab=trend&platform=${alert.platform}&granularity=day${alert.metric === 'activeGmv' || alert.metric === 'renewalGmv' ? `&metric=${alert.metric}` : ''}&metricDate=${alert.period}`,
+      kind,
+      title: `${platformLabel(first.platform)} · ${metricLabel(first.metric)}异动`,
+      body: `${first.period} 多口径共同提示 GMV 异动：${evidenceSummary}`,
+      detail: `分析日期：${first.period}\n${evidenceDetail}\n历史基准：最近 12 个完整业务周。\n建议：前往「GMV 趋势」Tab 查看该平台的日趋势，再进入「付费类型」Tab 做主动付费与续订下钻。`,
+      href: `/?tab=trend&platform=${first.platform}&granularity=day${first.metric === 'activeGmv' || first.metric === 'renewalGmv' ? `&metric=${first.metric}` : ''}&metricDate=${first.period}`,
       linkLabel: '查看 GMV 趋势',
     });
   }
