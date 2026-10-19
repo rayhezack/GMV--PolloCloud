@@ -103,7 +103,7 @@ const Layout = () => {
       title: 'GMV 异动',
       body: '测试：多种对比口径共同提示最新 GMV 异动',
       detail: '分析日期：2026-10-18\nApp · 主动付费：日环比 -29.3%，周同比 -17.2%。\n以上两种对比口径共同说明最新 GMV 存在异动。',
-      href: '/?tab=trend&platform=all&granularity=day&metricDate=2026-10-18',
+      href: '/?tab=trend&platform=app&granularity=day&metricDate=2026-10-18&focusMetric=activeGmv&focusPlatform=app&focusPeriod=2026-10-18',
       linkLabel: '查看 GMV 趋势',
     });
   }, []);

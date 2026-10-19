@@ -63,13 +63,33 @@ async function notifyGmvAnomalies() {
   const evidenceDetail = evidence
     .map(({ alert, label, change, threshold }) => `${platformLabel(alert.platform)} · ${metricLabel(alert.metric)}：${label} ${change}（对比 ${alert.baselinePeriod}，阈值 ${threshold}）`)
     .join('\n');
+  const metricOrder = { totalGmv: 0, activeGmv: 1, renewalGmv: 2 } as const;
+  const platformOrder = { all: 0, app: 1, web: 2 } as const;
+  const target = [...alerts].sort((a, b) => {
+    const directionRank = Number(a.direction !== 'down') - Number(b.direction !== 'down');
+    if (directionRank !== 0) return directionRank;
+    const magnitudeRank = Math.abs(b.change) - Math.abs(a.change);
+    if (magnitudeRank !== 0) return magnitudeRank;
+    const metricRank = metricOrder[a.metric] - metricOrder[b.metric];
+    if (metricRank !== 0) return metricRank;
+    return platformOrder[a.platform] - platformOrder[b.platform];
+  })[0];
   const kind = alerts.some((alert) => alert.direction === 'down') ? 'error' : 'warning';
+  const focusParams = new URLSearchParams({
+    tab: 'trend',
+    platform: target.platform,
+    granularity: 'day',
+    metricDate: target.period,
+    focusMetric: target.metric,
+    focusPlatform: target.platform,
+    focusPeriod: target.period,
+  });
   pushToast({
     kind,
     title: 'GMV 异动',
     body: `${period} 多种对比口径共同提示 GMV 异动`,
     detail: `分析日期：${period}\n${evidenceDetail}\n历史基准：最近 12 个完整业务周。\n以上日环比与周同比共同说明最新 GMV 存在异动。可继续下钻主动付费和自动续订，定位具体变化来源。\n${evidenceSummary}`,
-    href: `/?tab=trend&platform=all&granularity=day&metricDate=${period}`,
+    href: `/?${focusParams.toString()}`,
     linkLabel: '查看 GMV 趋势',
   });
 }

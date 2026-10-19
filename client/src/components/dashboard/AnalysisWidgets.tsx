@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { BarChart3, CalendarRange, Check, ChevronDown, Copy, Expand, Info, LineChart, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -159,6 +159,31 @@ export function RevenueCards({
   const [expandedMetric, setExpandedMetric] = useState<RevenueMetric | null>(null);
   const [drillOpen, setDrillOpen] = useState(false);
   const [activePayType, setActivePayType] = useState('整体');
+  const searchParams = useMemo(() => new URLSearchParams(search), [search]);
+  const focusMetricParam = searchParams.get('focusMetric');
+  const focusMetric: RevenueMetric | null = focusMetricParam === 'totalGmv' || focusMetricParam === 'activeGmv' || focusMetricParam === 'renewalGmv'
+    ? focusMetricParam
+    : null;
+  const focusPeriod = searchParams.get('focusPeriod') || searchParams.get('metricDate');
+  const focusHandledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusMetric || !focusPeriod || loading) return;
+    const focusKey = `${focusMetric}:${focusPeriod}`;
+    if (focusHandledRef.current === focusKey) return;
+    const card = document.querySelector<HTMLElement>(`.revenue-card-focus-${focusMetric}`);
+    if (!card) return;
+    focusHandledRef.current = focusKey;
+    const bounds = card.getBoundingClientRect();
+    const viewportBottom = window.innerHeight || document.documentElement.clientHeight;
+    if (bounds.top < 12 || bounds.bottom > viewportBottom - 12) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    }
+    card.classList.remove('revenue-card-focus');
+    void card.offsetWidth;
+    card.classList.add('revenue-card-focus');
+    const timer = window.setTimeout(() => card.classList.remove('revenue-card-focus'), 2600);
+    return () => window.clearTimeout(timer);
+  }, [dailyTrend.length, focusMetric, focusPeriod, items.length, loading, trend.length]);
   if (!trend.length && !items.length && !loading) return null;
   const addDays = (value: string, days: number) => {
     const date = new Date(`${value}T00:00:00Z`);
@@ -219,6 +244,7 @@ export function RevenueCards({
             key={item.key}
             className={cn(
               'revenue-card',
+              `revenue-card-focus-${item.metric}`,
               !loading && item.latestValue !== null && 'revenue-card-ready',
               i === 0 && 'revenue-card-primary',
             )}
@@ -346,6 +372,7 @@ export function RevenueCards({
                       formatValue={money}
                       label={`${item.key}${TREND_RANGE_OPTIONS.find((option) => option.value === selectedDays)?.label ?? '趋势'}${granularity === 'week' ? '周' : '日'}趋势`}
                       chartType={chartType}
+                      focusPeriod={focusMetric === item.metric ? focusPeriod ?? undefined : undefined}
                     />
                   </motion.div>
                 )}
@@ -424,6 +451,7 @@ function MiniTrendBars({
   formatValue,
   label,
   chartType,
+  focusPeriod,
 }: {
   rows: OverviewTrendPoint[];
   metric: RevenueMetric;
@@ -431,11 +459,16 @@ function MiniTrendBars({
   formatValue: (value: number) => string;
   label: string;
   chartType: 'bar' | 'line';
+  focusPeriod?: string;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const downRef = useRef(false);
   const values = useMemo(() => rows.map((row) => Number(row[metric] ?? 0)), [metric, rows]);
+  const focusIndex = useMemo(
+    () => focusPeriod ? rows.findIndex((row) => row.period === focusPeriod) : -1,
+    [focusPeriod, rows],
+  );
   const min = Math.min(...values, 0);
   const max = Math.max(...values, min + 1);
   const spread = Math.max(max - min, 1);
@@ -491,6 +524,7 @@ function MiniTrendBars({
             key={rows[index]?.period ?? index}
             className="revenue-mini-bar"
             data-hovered={hovered === index}
+            data-focus-target={focusIndex === index || undefined}
             style={{
               height: `${18 + ((value - min) / spread) * 82}%`,
               backgroundColor: color,

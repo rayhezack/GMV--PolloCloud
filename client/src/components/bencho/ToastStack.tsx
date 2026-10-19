@@ -100,6 +100,20 @@ export function ToastStack({ peek = 14, gap = 10, corner = 20 }: { peek?: number
     }, 220);
   };
 
+  const followToastLink = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    const target = new URL(href, window.location.href);
+    const current = new URL(window.location.href);
+    const staysOnTrend = target.pathname === current.pathname &&
+      target.searchParams.get('tab') === 'trend' &&
+      current.searchParams.get('tab') === 'trend';
+    if (staysOnTrend) {
+      event.preventDefault();
+      window.history.pushState({}, '', `${target.pathname}${target.search}${target.hash}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+    setExpandedId(null);
+  };
+
   const listH = SHOWN * H + (SHOWN - 1) * gap;
   const stackH = H + (SHOWN - 1) * peek;
   const frameH = listH;
@@ -173,7 +187,7 @@ export function ToastStack({ peek = 14, gap = 10, corner = 20 }: { peek?: number
         >
           <div className="tst-detail-head"><strong>{expandedToast.title}</strong><button type="button" className="tst-x" aria-label="关闭详情" onClick={() => setExpandedId(null)}><X size={16} strokeWidth={2} aria-hidden="true" /></button></div>
           <p>{expandedToast.detail || expandedToast.body}</p>
-          {expandedToast.href && <a href={expandedToast.href} onClick={() => setExpandedId(null)}>{expandedToast.linkLabel || '前往相关看板'}<ArrowUpRight size={14} strokeWidth={2} aria-hidden="true" /></a>}
+          {expandedToast.href && <a href={expandedToast.href} onClick={event => followToastLink(event, expandedToast.href!)}>{expandedToast.linkLabel || '前往相关看板'}<ArrowUpRight size={14} strokeWidth={2} aria-hidden="true" /></a>}
         </motion.div>
       )}
     </div>

@@ -941,6 +941,11 @@
 }
 .revenue-card:hover,
 .revenue-card:focus-within { background: #ffffff; }
+.revenue-card-focus {
+  position: relative;
+  z-index: 2;
+  animation: revenue-card-focus 2600ms ease-out both;
+}
 .revenue-label {
   display: flex;
   align-items: center;
@@ -1049,6 +1054,13 @@
   opacity: 1;
   filter: saturate(1.15);
   transform: scaleY(1.06);
+}
+.revenue-mini-bar[data-focus-target='true'] {
+  position: relative;
+  z-index: 1;
+  opacity: 1;
+  filter: saturate(1.2);
+  animation: revenue-bar-focus 1800ms ease-in-out 2;
 }
 .revenue-card:not(.revenue-card-ready) .revenue-number,
 .revenue-card:not(.revenue-card-ready) .revenue-date,
@@ -1551,6 +1563,18 @@
   from { transform: scaleY(0); }
   to { transform: scaleY(1); }
 }
+@keyframes revenue-card-focus {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(91, 63, 242, 0), 0 8px 20px rgba(91, 63, 242, 0);
+  }
+  22%, 62% {
+    box-shadow: 0 0 0 2px rgba(91, 63, 242, .42), 0 0 0 8px rgba(91, 63, 242, .1), 0 14px 34px rgba(91, 63, 242, .14);
+  }
+}
+@keyframes revenue-bar-focus {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(91, 63, 242, 0); }
+  35%, 70% { box-shadow: 0 0 0 3px rgba(91, 63, 242, .32), 0 0 0 6px rgba(91, 63, 242, .1); }
+}
 @keyframes dashboard-channel-arrive {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
@@ -1565,6 +1589,8 @@
   .revenue-card-ready .revenue-foot,
   .revenue-card-ready .revenue-mini-chart,
   .revenue-card-ready .revenue-mini-bar,
+  .revenue-card-focus,
+  .revenue-mini-bar[data-focus-target='true'],
   .driver-channels.is-revealed .driver-channel,
   .driver-channels.is-revealed .driver-channel-fill,
   .payment-drill-chart.is-revealed .payment-drill-chart-row,
