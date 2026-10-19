@@ -100,10 +100,10 @@ const Layout = () => {
     });
     pushToast({
       kind: 'warning',
-      title: 'Web · 大盘 GMV 异动',
-      body: '测试：最新日环比 +12.4%，超过阈值 +10.0%',
-      detail: '分析日期：2026-10-18\n最新日环比 GMV 上升 12.4%，超过最近 12 个完整业务周的历史阈值。\n建议：先查看「GMV 趋势」Tab，再进入「付费类型」Tab 做下钻。',
-      href: '/?tab=trend&platform=web&metric=activeGmv&granularity=day&metricDate=2026-10-18',
+      title: 'GMV 异动',
+      body: '测试：多种对比口径共同提示最新 GMV 异动',
+      detail: '分析日期：2026-10-18\nApp · 主动付费：日环比 -29.3%，周同比 -17.2%。\n以上两种对比口径共同说明最新 GMV 存在异动。',
+      href: '/?tab=trend&platform=all&granularity=day&metricDate=2026-10-18',
       linkLabel: '查看 GMV 趋势',
     });
   }, []);
