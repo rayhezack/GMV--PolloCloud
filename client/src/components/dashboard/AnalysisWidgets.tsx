@@ -165,9 +165,15 @@ export function RevenueCards({
     ? focusMetricParam
     : null;
   const focusPeriod = searchParams.get('focusPeriod') || searchParams.get('metricDate');
+  const selectedPlatform = searchParams.get('platform') || 'all';
+  const focusPlatform = searchParams.get('focusPlatform');
+  const focusApplies = !focusPlatform || focusPlatform === selectedPlatform;
   const focusHandledRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!focusMetric || !focusPeriod || loading) return;
+    if (!focusMetric || !focusPeriod || loading || !focusApplies) {
+      document.querySelectorAll('.revenue-card-focus').forEach((card) => card.classList.remove('revenue-card-focus'));
+      return;
+    }
     const focusKey = `${focusMetric}:${focusPeriod}`;
     if (focusHandledRef.current === focusKey) return;
     const card = document.querySelector<HTMLElement>(`.revenue-card-focus-${focusMetric}`);
@@ -183,7 +189,7 @@ export function RevenueCards({
     card.classList.add('revenue-card-focus');
     const timer = window.setTimeout(() => card.classList.remove('revenue-card-focus'), 2600);
     return () => window.clearTimeout(timer);
-  }, [dailyTrend.length, focusMetric, focusPeriod, items.length, loading, trend.length]);
+  }, [dailyTrend.length, focusApplies, focusMetric, focusPeriod, items.length, loading, trend.length]);
   if (!trend.length && !items.length && !loading) return null;
   const addDays = (value: string, days: number) => {
     const date = new Date(`${value}T00:00:00Z`);
@@ -372,7 +378,7 @@ export function RevenueCards({
                       formatValue={money}
                       label={`${item.key}${TREND_RANGE_OPTIONS.find((option) => option.value === selectedDays)?.label ?? '趋势'}${granularity === 'week' ? '周' : '日'}趋势`}
                       chartType={chartType}
-                      focusPeriod={focusMetric === item.metric ? focusPeriod ?? undefined : undefined}
+                      focusPeriod={focusApplies && focusMetric === item.metric ? focusPeriod ?? undefined : undefined}
                     />
                   </motion.div>
                 )}
