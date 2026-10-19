@@ -45,7 +45,7 @@ Set `VITE_DATA_MODE=demo` only for a local visual preview. Production uses the s
 
 `pollocloud.json` 已声明两个定时任务，时间使用北京时间：
 
-- 每天 09:30（`30 9 * * *` → `/api/cron/daily`）：拉取最新 T+1 日数据并写入 D1；目标日期已存在时幂等跳过。
+- 每天 09:30–09:45（每 5 分钟一个任务，分别调用 `/api/cron/daily-pay-type`、`/api/cron/daily-chain`、`/api/cron/daily-creative`、`/api/cron/daily-renewal`）：按数据类型分批拉取最新 T+1 日数据并写入 D1；目标日期已存在时幂等跳过。拆分任务是为了避免一次同步超过平台单次请求的 4 分钟上限。
 - 每周六 12:00（`0 12 * * 6` → `/api/cron/weekly-reports`）：选择上一完整周六至周五业务周，依次生成 Web 和 App 诊断报告。
 
 两个接口都会校验 `x-pollocloud-trigger: cron`，不会接受普通用户请求。发布后可用 `pollocloud cron list --name pollo-ai` 查看配置，并用 `pollocloud cron run --name pollo-ai <任务>` 做一次验证。

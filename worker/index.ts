@@ -1741,9 +1741,9 @@ function reportDependencies(env: Env) {
   };
 }
 
-async function runScheduledSync(env: Env) {
+async function runScheduledSync(env: Env, datasets: SyncDataset[]) {
   const response = await createSyncRun(env, new Request('https://schedule.internal/api/sync-runs', {
-    method: 'POST', body: JSON.stringify({ mode: 'latest_day', platforms: ['all', 'web', 'app'], datasets: [...SYNC_DATASETS] }),
+    method: 'POST', body: JSON.stringify({ mode: 'latest_day', platforms: ['all', 'web', 'app'], datasets }),
     headers: { 'content-type': 'application/json' },
   }));
   const job = await response.json() as SyncRunResponse;
@@ -1783,12 +1783,24 @@ async function runScheduledReports(env: Env) {
   }));
 }
 
-async function cronHandler(env: Env, request: Request): Promise<Response> {
+async function cronHandler(
+  env: Env,
+  request: Request,
+): Promise<Response> {
   if (request.headers.get('x-pollocloud-trigger') !== 'cron') return errorResponse('仅允许 Pollo Cloud 定时任务触发', 403);
   const path = new URL(request.url).pathname;
-  if (path === '/api/cron/daily') {
-    const result = await runScheduledSync(env);
-    return json({ ok: true, task: 'daily-sync', status: result.status, runId: result.runId });
+  const scheduledDataset = path === '/api/cron/daily-pay-type'
+    ? 'pay_type'
+    : path === '/api/cron/daily-chain'
+      ? 'chain'
+      : path === '/api/cron/daily-creative'
+        ? 'creative'
+        : path === '/api/cron/daily-renewal'
+          ? 'renewal'
+          : null;
+  if (scheduledDataset) {
+    const result = await runScheduledSync(env, [scheduledDataset]);
+    return json({ ok: true, task: `daily-${scheduledDataset}`, status: result.status, runId: result.runId });
   }
   if (path === '/api/cron/weekly-reports') {
     await runScheduledReports(env);
