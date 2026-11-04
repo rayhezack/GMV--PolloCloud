@@ -77,18 +77,22 @@ export function parseReportPeriodKey(
 export function reportWeekOptions(history: Array<{ periodStart: string; periodEnd: string }>) {
   const latestComplete = parseDateString(getLatestCompleteFriday());
   const latestAvailable = parseDateString(toDateString(new Date(Date.now() - DAY_MS)));
-  const weeks = new Map(history.map(item => [getReportPeriodKey(item.periodStart, item.periodEnd), item]));
+  const weeks = new Map<string, { periodStart: string; periodEnd: string }>();
+  for (const item of history) {
+    const previous = weeks.get(item.periodStart);
+    if (!previous || item.periodEnd > previous.periodEnd) weeks.set(item.periodStart, item);
+  }
   const latestIncompleteStart = parseDateString(getBusinessWeekStart(toDateString(latestAvailable)));
   if (latestIncompleteStart > latestComplete) {
     const periodStart = toDateString(new Date(latestIncompleteStart.getTime() - 7 * DAY_MS));
     const periodEnd = toDateString(latestAvailable);
-    weeks.set(getReportPeriodKey(periodStart, periodEnd), { periodStart, periodEnd });
+    weeks.set(periodStart, { periodStart, periodEnd });
   }
   for (let end = latestComplete; end.getFullYear() === latestComplete.getFullYear(); end = new Date(end.getTime() - 7 * DAY_MS)) {
     const periodEnd = toDateString(end);
     const periodStart = toDateString(new Date(end.getTime() - 13 * DAY_MS));
     if (periodStart < `${latestComplete.getFullYear()}-01-01`) continue;
-    weeks.set(getReportPeriodKey(periodStart, periodEnd), { periodStart, periodEnd });
+    weeks.set(periodStart, { periodStart, periodEnd });
   }
   return [...weeks.values()].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
 }

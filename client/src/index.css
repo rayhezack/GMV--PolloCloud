@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
 @import "./tailwind-theme.css";
 @import "./typography.css";
 
@@ -7,6 +9,21 @@
 @config "../../tailwind.config.ts";
 
 @layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  :focus-visible {
+    outline-color: var(--primary);
+  }
+
+  [data-slot='select-content'],
+  [data-slot='popover-content'],
+  [data-slot='dropdown-menu-content'] {
+    border-color: var(--border);
+    outline: none;
+  }
+
   html,
   body,
   #root {
@@ -17,5 +34,33 @@
     margin: 0;
     background: var(--background);
     color: var(--foreground);
+    font-feature-settings: "ss01";
   }
+}
+
+/* Borderless controls and floating menus are the product-wide convention. */
+[data-slot='select-trigger'],
+[data-slot='select-trigger']:hover,
+[data-slot='select-trigger'][data-state='open'],
+[data-slot='select-content'],
+[data-slot='popover-content'],
+[data-slot='dropdown-menu-content'] {
+  border: 0;
+}
+[data-slot='select-content'],
+[data-slot='popover-content'],
+[data-slot='dropdown-menu-content'] {
+  box-shadow: 0 8px 24px rgb(13 37 61 / 10%);
+}
+
+/* Selection surfaces also apply to menus and date controls rendered in portals. */
+[data-slot='select-item'][data-state='checked'],
+[data-slot='dropdown-menu-radio-item'][data-state='checked'],
+[data-slot='dropdown-menu-checkbox-item'][data-state='checked'],
+.finance-menu-item[data-state='checked'],
+[data-slot='calendar'] [data-selected-single='true'],
+[data-slot='calendar'] [data-range-start='true'],
+[data-slot='calendar'] [data-range-end='true'] {
+  background: var(--selection-bg);
+  color: var(--foreground);
 }

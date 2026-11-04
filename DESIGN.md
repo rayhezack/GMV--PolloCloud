@@ -1,95 +1,259 @@
 ---
-name: Pollo Decision Canvas
-description: A restrained analytics interface with white working surfaces, deep ink text, and one purple interaction accent.
-tokens:
-  color:
-    canvas: "#F7F7FA"
-    surface: "#FFFFFF"
-    surface_subtle: "#FAFAFC"
-    ink: "#25243D"
-    ink_muted: "#747487"
-    line: "#E7E7EF"
-    primary: "#5B3FF2"
-    primary_hover: "#4930D9"
-    primary_soft: "#EFECFF"
-    chart_secondary: "#9B93CF"
-    positive: "#2F7D5C"
-    negative: "#C4515B"
-    warning: "#A96F16"
-  radius:
-    control: "8px"
-    panel: "12px"
-  shadow:
-    floating: "0 14px 36px rgba(37, 36, 61, 0.10)"
-  typography:
-    family: "Inter, PingFang SC, system-ui, sans-serif"
-    numeric: "tabular-nums"
+name: Pollo Stripe Revenue Workbench
+description: Stripe 风格的紧凑收入分析工作台，紫色数据主线、白色 Bento 表面与可比较的密集明细。
+colors:
+  primary: "#533afd"
+  ink: "#0d253d"
+  muted: "#61718a"
+  canvas: "#f7f7fa"
+  surface: "#ffffff"
+  surface-soft: "#f6f9fc"
+  line: "#e3e8ee"
+  selection: "#f0f1f4"
+  segment-track: "#e9eef4"
+  comparison: "#b3a9e8"
+  cost: "#9b93cf"
+  prior-period: "#b9b5c8"
+  increase-fill: "#e4dfff"
+  increase-stripe: "#cec5ff"
+  decrease-fill: "#fbe2e9"
+  decrease-stripe: "#efbecd"
+  series-lavender: "#9884db"
+  series-blue: "#347f9c"
+  series-rose: "#ca809e"
+  series-ochre: "#b18745"
+  series-sage: "#729d94"
+  positive: "#217451"
+  positive-soft: "#edf8f2"
+  negative: "#af354c"
+  negative-soft: "#fdf1f3"
+typography:
+  headline:
+    fontFamily: "'Inter Variable', Inter, 'PingFang SC', sans-serif"
+    fontSize: "24px"
+    fontWeight: 450
+    lineHeight: 1.3
+    letterSpacing: "-0.025em"
+  metric:
+    fontFamily: "'Inter Variable', Inter, 'PingFang SC', sans-serif"
+    fontSize: "clamp(24px, 2.4vw, 32px)"
+    fontWeight: 450
+    lineHeight: 1.12
+    letterSpacing: "-0.03em"
+  title:
+    fontFamily: "'Inter Variable', Inter, 'PingFang SC', sans-serif"
+    fontSize: "13px"
+    fontWeight: 550
+    lineHeight: 1.4
+    letterSpacing: "0"
+  body:
+    fontFamily: "'Inter Variable', Inter, 'PingFang SC', sans-serif"
+    fontSize: "12px"
+    fontWeight: 400
+  label:
+    fontFamily: "'Inter Variable', Inter, 'PingFang SC', sans-serif"
+    fontSize: "11px"
+    fontWeight: 400
+  chart-label:
+    fontFamily: "'Inter Variable', Inter, 'PingFang SC', sans-serif"
+    fontSize: "10px"
+    fontWeight: 400
+rounded:
+  change: "4px"
+  control: "8px"
+  panel: "14px"
+  finance-panel: "16px"
+  summary: "12px"
+  pill: "999px"
+spacing:
+  micro: "4px"
+  tight: "8px"
+  compact: "12px"
+  grid: "16px"
+  panel: "20px"
+  outer: "24px"
+  wide: "28px"
+components:
+  button-primary:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.surface}"
+    rounded: "{rounded.control}"
+    padding: "8px 16px"
+  button-ghost:
+    backgroundColor: "transparent"
+    textColor: "{colors.muted}"
+    rounded: "{rounded.control}"
+    height: "32px"
+  income-select:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.pill}"
+    width: "202px"
+    height: "36px"
+  floating-menu:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.control}"
+  search:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.pill}"
+    height: "34px"
+    width: "224px"
+  attribution-tabs:
+    backgroundColor: "{colors.segment-track}"
+    rounded: "{rounded.pill}"
+    height: "38px"
+    padding: "3px"
+  navigation-item-active:
+    backgroundColor: "{colors.selection}"
+    textColor: "{colors.primary}"
+    rounded: "{rounded.control}"
+    width: "38px"
+    height: "39px"
+  metric-card:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.panel}"
+  change-positive:
+    backgroundColor: "{colors.positive-soft}"
+    textColor: "{colors.positive}"
+    rounded: "{rounded.change}"
+    padding: "3px 5px"
 ---
 
-# Overview
+# Design System: Pollo Stripe Revenue Workbench
 
-Pollo Decision Canvas is a quiet working interface for repeated revenue diagnosis. White surfaces and fine cool-gray dividers carry the layout. Deep ink establishes hierarchy, while purple marks the current selection and the primary data series. Color communicates state or comparison and never decorates empty space.
+## Overview
 
-# Colors
+**Creative North Star: "Stripe Revenue Workbench"**
 
-- Use `canvas` for the application background and `surface` for panels, cards, menus, and chart canvases.
-- Use `ink` for headings and primary figures; use `ink_muted` for labels, help text, axes, and metadata.
-- Use `primary` only for selected navigation, active controls, focus rings, primary actions, and the leading chart series.
-- Use `primary_soft` for selected row backgrounds and active menu surfaces.
-- Use `chart_secondary` for the second series in a direct comparison.
-- Reserve `positive`, `negative`, and `warning` for their semantic meanings. Do not use them to distinguish ordinary categories.
-- Do not use gradients, gray fills behind charts, or a different accent color for every card.
+Stripe 产品界面的克制与密度服务于重复收入诊断：深海军蓝建立阅读层级，紫色标记当前操作和主要数据，白色工作表面承载图形、金额与比较。导航、卡片、控件与菜单以表面和间距分区，不使用外边框。Bento 是有共同对齐关系的分析分组，卡片内的留白首先保障图形可读。
 
-# Typography
+布局和直接交互表达关系，只在数据口径、缺失或操作后果影响判断时增加说明。以付费类型的新实现为当前系统证据；全局导航和 GMV 趋势继承同一世界。未迁移页面及通用主题中残留的旧墨色、旧紫色不构成新页面的配色授权。
 
-- Use the system sans stack for all product UI.
-- Page titles are 26-28px at 650 weight. Section titles are 16-18px at 650 weight. Compact panel titles are 12-14px at 600 weight.
-- Primary metrics are 22-30px at 650 weight. Use tabular numerals for every amount, rate, count, and date.
-- Keep letter spacing at zero. Use color and weight for hierarchy.
+**Key Characteristics:**
+- 紫色主线与深海军蓝文字，白色图表表面。
+- 紧凑 Bento、表格对齐与足够的绘图区高度。
+- 默认窄图标导航，可按需展开。
+- 导航、指标卡、图卡、控件与菜单无外边框；浅线仅保留内部结构。
 
-# Layout
+## Colors
 
-- The sidebar is a stable navigation rail. Content uses a centered working canvas with 24-32px outer padding.
-- Prefer continuous page sections and divided panels. Use cards only for repeated metric items or a true framed tool.
-- Keep dense analytical content aligned to common columns. Put labels on the left and comparable values on the right.
-- The payment type overview uses a two-column composition: donut and summary on the left, two primary contribution rows on the right. The active-payment drill uses four equal items below.
-- Mobile layouts stack columns while preserving the same reading order.
+冷色中性色承托单一紫色强调；颜色用于选择、比较和业务状态。
 
-# Elevation & Depth
+### Primary
+- **Stripe 紫色**（`primary`）：主要收入序列、当前归因模式、选中导航和主操作；保留白色图表底面。
 
-- Structural panels rely on borders and spacing. They do not float.
-- Menus, tooltips, and temporary controls may use the `floating` shadow.
-- Do not add shadows to nested metric rows or table sections.
+### Secondary
+- **灰色同期线**（`prior-period`）：主 GMV 的上周同期虚线；**淡紫比较色**（`comparison`）保留实体抽屉中的基准期线。
+- **斜纹变化色**（`increase-fill`、`increase-stripe`、`decrease-fill`、`decrease-stripe`）：主 GMV 中，淡紫表示正变化、淡粉表示负变化，纹理不替代数值提示。
+- **多实体分类色**（`series-*`）：付费页趋势用紫、薰衣草、蓝、玫瑰、赭、鼠尾草色区分同时展示的实体；图例与提示框保持对应。
+- **成本薰衣草紫**（`cost`）：模型成本序列，和收入保持稳定映射。
+- **业务状态**（`positive`、`negative`）：变化率文本；对应浅底只用于紧凑变化标记，不用于类别装饰。
 
-# Shapes
+### Neutral
+- **海军墨色**（`ink`）：标题、金额和主要表格数值。
+- **冷蓝灰**（`muted`）：轴、图例、单位与必要的口径说明。
+- **画布与表面**（`canvas`、`surface`、`surface-soft`）：应用底面、白色卡片以及轻量工具条层级。
+- **冷灰细线**（`line`）：表格内部行分隔、图形网格与零线；不用于导航、卡片、控件或菜单的外边框。
+- **浅灰选中底**（`selection`）：导航、归因 Tab、颗粒度、长宽表切换及菜单选中项共用 `--selection-bg`，键盘焦点仍使用紫色；**分段轨道**（`segment-track`）承载白色激活项。
 
-- Controls and compact items use an 8px radius.
-- Major panels use a 12px radius.
-- Pills are reserved for segmented controls, filters, badges, and compact status labels.
-- Donut charts have a white center and no gray chart canvas.
+**The One Primary Rule.** 紫色用于主要数据、当前选择与关键操作；主 GMV 比较线使用灰色，模型成本使用薰衣草紫。多实体趋势可使用已定义的分类序列色区分曲线，不把分类颜色扩展成卡片主题。
 
-# Components
+## Typography
 
-- **Sidebar:** white surface, purple active rail and pale lavender active background.
-- **Segmented controls:** pale neutral container, white active segment, purple active text or fill.
-- **Metric menu:** two labeled groups. Automatic renewal reveals a plan-tier selector with All, Lite, Pro, and Ultra.
-- **Charts:** white canvas, pale grid lines, purple primary series, muted lavender comparison series.
-- **Tables:** white rows, subtle separators, pale lavender hover or selected state. Contribution bars share a zero baseline.
-- **Payment type:** exactly two first-level rows and four active-payment drill items. Keep the donut and its legend visually attached.
-- **Permissions:** manage members inside the dashboard. Authorization data must come from the platform AuthorizationSDK.
+**Display Font:** Inter Variable / Inter；中文回退 PingFang SC。无单独装饰展示字体。
+**Body Font:** 同一无衬线字体栈。
+**Character:** 低对比字重承担层级，大金额轻于常规粗体；主 GMV 图内摘要为 24px、500 字重，600px 以下收为 20px；金额、比例、日期启用 `tabular-nums`，分析表面启用 `ss01`。
 
-# Do's and Don'ts
+### Hierarchy
+- **Headline**：页面标题。前置令牌记录付费类型的新样式；通用页头仍有旧字重，属于迁移范围差异。
+- **Metric**：图卡金额。窄桌面收为 25px；GMV 趋势金额使用其已实现的 22–30px 流式范围。
+- **Title**：图卡与明细区标题，强调结构，不添加额外眉题。
+- **Body**：明细行和浮层内容。
+- **Label**：筛选、单位、次级数值；**Chart label**：图例、坐标轴和紧凑表头。
 
-- Do make selection, hierarchy, and comparison obvious before adding decoration.
-- Do keep chart and card colors tied to the same tokens.
-- Do use whitespace and alignment to separate analytical groups.
-- Do not use teal, cyan, orange, pink, and purple together as category decoration.
-- Do not place a tinted background behind the donut chart.
-- Do not nest decorative cards inside a larger decorative card.
-- Do not use oversized headings inside dense operational panels.
+**The Layout Explains Rule.** Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining itself.
 
-## 诊断报告 · 阅读界面
+## Layout
 
-模式：Read。参照用户提供的白底博客布局；保留全站导航和紫色操作按钮，报告正文使用白底、深灰文字与细分隔线，不使用彩色百分比徽章、彩色结论卡或嵌套卡片。
+桌面内容最大宽度 1680px，外间距为上 24px、左右 28px、下 36px，区块间隔 18px。默认左侧窄图标栏，桌面主内容让出 72px；可展开完整导航。窄栏含 38×39px 图标入口，不通过隐藏入口压缩导航。
 
-桌面用窄目录栏与连续文章栏，窄屏目录移至顶部。阅读顺序为核心结论、原因判断、行动建议、数据与论证；原因详细论证和数据明细按需展开。正文限制行宽，14–16px、1.95行高，只有论点标题加粗。历史报告不自动补写未经生成的建议。
+Bento 图卡采用共用基线和 16px 间隔。付费类型桌面图区约 1.6:1，1100px 以下收为 1.3:1，760px 以下单列；筛选换行、表格在自己的容器内横向滚动。付费多线趋势绘图区 224px；右侧分布／成本图可视区域 192px，实体抽屉走势图 230px；金额标题不占用绘图空间。具体页内顺序由 `.impeccable/surfaces/payment.md` 管理。
+
+GMV 趋势的指标卡最小高度 216px，内部小图区域 148px、柱图区域 126px；下方趋势图使用独立全宽表面，三项摘要整合在该表面内。不要将这些高度压缩成仅供装饰的 sparkline。
+
+1000px 以下内容外间距为 20px；700px 以下为上 16px、左右 12px、下 74px，区块间隔 14px，为移动导航保留空间。诊断报告仍采用连续正文、桌面窄目录与文章栏，移动端目录置顶；不将分析卡片机械复制到阅读正文。
+
+## Elevation & Depth
+
+分析卡片静止时无阴影、无外边框；用白色表面、浅色背景与间距分组，浅线仅用于内部结构，浮层以柔和阴影表达临时层级。
+
+### Shadow Vocabulary
+- **浮层菜单**（`0 8px 24px rgb(13 37 61 / 10%)`）：Select、Popover、Dropdown 和成本说明浮层；无外边框。
+- **选中分段**（`0 1px 3px #0d253d0d`）：白色激活项在浅色分段轨道中的轻微分离。
+- **日期工具浮层**（`0 16px 36px rgba(37, 36, 61, .1)`）：已有自定义日期菜单，保持轻柔的临时层级。
+
+**The Flat Work Surface Rule.** 分析卡片静止时无阴影、无外边框；用白色表面、浅色背景与间距分组，浅线仅用于内部结构，浮层以柔和阴影表达临时层级。
+
+## Shapes
+
+主分析卡采用柔和面板圆角，无外边框；紧凑按钮、提示和导航项采用控件圆角。归因分段、搜索、收入筛选使用胶囊形。图形保持白底，线下可使用紫色透明度渐变表达面积，这不是卡片背景装饰。
+
+导航、指标卡、图卡、控件与菜单统一无外边框。表格内部保留浅灰分隔；键盘焦点是状态提示，不是永久容器边框。
+
+## Components
+
+### Buttons
+紧凑、直接的动作入口。主按钮为紫底白字，常规最小高度 36px，水平内边距 16px；次级动作以 Ghost 呈现，紧凑高度 32px。主按钮沿用 shadcn 的轻微明暗反馈，禁用时降低透明度并禁用交互。可聚焦按钮使用紫色焦点提示。
+
+### Chips
+变化率使用小圆角、轻背景、文字状态色；正负色只解释变化方向，不对整张卡片染色。没有独立的装饰性结论徽章系统。
+
+### Cards / Containers
+白色、无外边框、静止无阴影；卡头上与左右内边距 20px，绘图区内容采用左右 12px、下 16px。表格卡复用同一外壳，不在每个单元格嵌套卡片。
+
+### Inputs / Fields
+搜索复用 Bencho 的原位展开交互：收起为 34px 图标入口，点击后同一表面展开至 224px 并聚焦输入；空值失焦收起，Escape 清空并收起。浅背景、无外边框，焦点使用浅紫光圈；减少动态效果时立即切换。下拉触发器常规高度 36px、分组筛选高度 32px；触发器和菜单的默认、悬停、展开状态均无外边框。付费类型的下拉聚焦以浅紫底提示，其余可交互元素使用 2px 紫色外轮廓、3px 偏移。
+
+展开菜单使用白色表面与浮层阴影，选项焦点为浅紫底、选中内容为紫字；不能因为 portal 在页面树外而恢复黑框。
+
+### Navigation
+桌面默认图标栏；激活、悬停、键盘聚焦项使用浅紫底与紫色图标。图标采用 SVG，不以文字字符代替。可展开完整导航；移动端保留访问完整导航的能力。导航标签按需出现，不占据常态分析宽度。
+
+### Segmented Controls
+归因切换为浅灰胶囊轨道与白色激活项，激活文字紫色。付费趋势日／周／月保留紧凑分段；主 GMV 趋势采用日历图标下拉选择日／周／月，旁边的更多菜单收纳全部范围、数据明细及 CSV 导出。控件、展开菜单均无外边框。
+
+### Analytical Charts & Tables
+
+图表提示值按单位统一格式：金额和人数显示整数，百分数固定一位小数，比率变化用绝对百分点。符号、颜色和数值共同表示变化方向，缺失值保留破折号。
+
+付费分析加载时用白色空白表面保留图卡和明细高度，不使用紫色 Skeleton。
+付费页按当前归因维度显示多实体折线，默认选中前四项，可搜索并选择其他实体，至少保留一个序列。日、周、月均为日均 GMV，周月按已有日期折算。曲线 2px、无常态点标记，缺失值不连接；Y 轴随实际范围留白，不低于零，不强制从零起画。图例和提示框直接显示实体与数值，不添加天数、来源口径或数据管道说明。
+
+趋势及右侧图使用 650ms 展开显现、180ms 延迟，曲线按 70ms 错峰；减少动态效果时禁用动画。主 GMV 的 SVG 绘线和柱形展开沿用用户来源组件的动画，不把 650ms 强加到所有图表。
+
+GMV 主趋势复用用户提供的 Global Finance Market Combo SVG 组件。日颗粒度纵轴从零起，同轴展示本期紫色实线和上周同期灰色虚线（线宽 2px）；正负变化柱从同一绘图区底部向上绘制，高度为变化绝对值，淡紫／淡粉斜纹表示方向。周／月颗粒度仅显示本期单折线，纵轴按数据范围留白，不显示同期线、变化柱或三项摘要。没有独立变化条、第二纵轴或预测序列。
+
+日颗粒度图内三项摘要依次为区间日均、较上周百分比、上周同期日均。第一项不重复显示底部变化值，第二项主数值前用 SVG 上／下箭头表示方向；不恢复最近一日右上读数。摘要采用浅背景、12px 圆角和 14px 内边距，不另加重复标题或说明。图表 SVG 设计坐标为 890×320，变化柱设计宽度 32px、顶部圆角 8px；斜纹是此组件的特征，不是全站卡片背景。指针查看数值，点击固定，方向键移动当前点。
+
+付费类型非模型模式右图采用用户收藏的 Mebius Income Overview 条目交互：42px 浅灰轨道、紫色渐变条、逐行渐入与扫光；条长为分析期 GMV 占比（0–100%），悬停或键盘聚焦显示整数金额和一位小数占比，其他条淡化，点击固定，再次点击或 Escape 取消。行尾箭头进入实体明细。视窗高度 224px，全部项目可纵向滚动，不以 Top 5／6 截断。卡头显示分析期日均 GMV。模型模式保留 GMV 与薰衣草紫成本对比。收入筛选中的“全部收入”包含主动付费、自动续订与 API。
+
+模型表在现有成本／成本占比单元格第二行显示变化，不新增列：成本为相对百分比，成本占比为绝对百分点（pp）；数字与变化右对齐，行内间隔 4px。
+
+表格明确标注“分析期 GMV”和“基准期 GMV”。普通主体行高 44px，表头 36px，合计行 40px；名称左对齐、数值右对齐。名称行是明细入口，点击打开实体侧抽屉。详情三项指标使用等宽三列，固定标签／数值／变化三行（20／32／16px，行间隔 7px），避免金额与比例错位。详情趋势下拉切换 GMV、模型成本或成本占比，一次只比较该指标的分析期与基准期两条线，不将币值与比率混画。抽屉最大宽度 570px；逐日明细抽屉最大宽度 840px，均不超过视口。日明细支持长表和宽表：宽表行是当前实体、列是日期，首列固定，日期区域横向滚动；模型模式的宽表可切换 GMV／成本，两种形状均可下载。导出与翻页位于明细区域内，不增加全页摘要卡。
+
+## Do's and Don'ts
+
+### Do:
+- Do 将金额、比较值与图形放进同一分析表面，让读者直接核对。
+- Do 使用制表数字、右对齐数值和浅灰表格分隔线。
+- Do 保证柱图和折线图有完整绘图区，移动端保留表格自身横向滚动。
+- Do 检查菜单展开与键盘焦点态，使用紫色焦点提示。
+- Do 仅对会影响判断的数据范围、缺失值和口径保留说明。
+
+### Don't:
+- Don't 给导航、指标卡、图卡、控件或菜单添加外边框，也不使用黑色默认框线。
+- Don't 在收入分析中恢复环形图、独立右侧 KPI 卡或重复数字的分析摘要带。
+- Don't 用装饰性副标题、眉题或第二层标签补充布局已经表达的关系。
+- Don't 将成本 / GMV 标为利润率，也不要用颜色掩盖无数据与真实零值的区别。
+- Don't 将旧主题残留、黑色默认焦点或旧环形图样式写成新系统规范。

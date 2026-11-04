@@ -1,0 +1,570 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-04T10:38:11.775718+00:00",
+  "title": "Design System: Pollo Stripe Revenue Workbench",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Primary",
+        "tonalRamp": [
+          "oklch(15.00% 0.26786 277.43)",
+          "oklch(26.43% 0.26786 277.43)",
+          "oklch(37.86% 0.26786 277.43)",
+          "oklch(49.29% 0.26786 277.43)",
+          "oklch(60.71% 0.26786 277.43)",
+          "oklch(72.14% 0.26786 277.43)",
+          "oklch(83.57% 0.26786 277.43)",
+          "oklch(95.00% 0.26786 277.43)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "tonalRamp": [
+          "oklch(15.00% 0.05438 250.72)",
+          "oklch(26.43% 0.05438 250.72)",
+          "oklch(37.86% 0.05438 250.72)",
+          "oklch(49.29% 0.05438 250.72)",
+          "oklch(60.71% 0.05438 250.72)",
+          "oklch(72.14% 0.05438 250.72)",
+          "oklch(83.57% 0.05438 250.72)",
+          "oklch(95.00% 0.05438 250.72)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted",
+        "tonalRamp": [
+          "oklch(15.00% 0.04371 259.24)",
+          "oklch(26.43% 0.04371 259.24)",
+          "oklch(37.86% 0.04371 259.24)",
+          "oklch(49.29% 0.04371 259.24)",
+          "oklch(60.71% 0.04371 259.24)",
+          "oklch(72.14% 0.04371 259.24)",
+          "oklch(83.57% 0.04371 259.24)",
+          "oklch(95.00% 0.04371 259.24)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Canvas",
+        "tonalRamp": [
+          "oklch(15.00% 0.00397 286.33)",
+          "oklch(26.43% 0.00397 286.33)",
+          "oklch(37.86% 0.00397 286.33)",
+          "oklch(49.29% 0.00397 286.33)",
+          "oklch(60.71% 0.00397 286.33)",
+          "oklch(72.14% 0.00397 286.33)",
+          "oklch(83.57% 0.00397 286.33)",
+          "oklch(95.00% 0.00397 286.33)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface",
+        "tonalRamp": [
+          "oklch(15.00% 0.00000 89.88)",
+          "oklch(26.43% 0.00000 89.88)",
+          "oklch(37.86% 0.00000 89.88)",
+          "oklch(49.29% 0.00000 89.88)",
+          "oklch(60.71% 0.00000 89.88)",
+          "oklch(72.14% 0.00000 89.88)",
+          "oklch(83.57% 0.00000 89.88)",
+          "oklch(95.00% 0.00000 89.88)"
+        ]
+      },
+      "surface-soft": {
+        "role": "neutral",
+        "displayName": "Surface Soft",
+        "tonalRamp": [
+          "oklch(15.00% 0.00512 247.88)",
+          "oklch(26.43% 0.00512 247.88)",
+          "oklch(37.86% 0.00512 247.88)",
+          "oklch(49.29% 0.00512 247.88)",
+          "oklch(60.71% 0.00512 247.88)",
+          "oklch(72.14% 0.00512 247.88)",
+          "oklch(83.57% 0.00512 247.88)",
+          "oklch(95.00% 0.00512 247.88)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Line",
+        "tonalRamp": [
+          "oklch(15.00% 0.00975 252.81)",
+          "oklch(26.43% 0.00975 252.81)",
+          "oklch(37.86% 0.00975 252.81)",
+          "oklch(49.29% 0.00975 252.81)",
+          "oklch(60.71% 0.00975 252.81)",
+          "oklch(72.14% 0.00975 252.81)",
+          "oklch(83.57% 0.00975 252.81)",
+          "oklch(95.00% 0.00975 252.81)"
+        ]
+      },
+      "selection": {
+        "role": "neutral",
+        "displayName": "Selection",
+        "tonalRamp": [
+          "oklch(15.00% 0.02692 292.77)",
+          "oklch(26.43% 0.02692 292.77)",
+          "oklch(37.86% 0.02692 292.77)",
+          "oklch(49.29% 0.02692 292.77)",
+          "oklch(60.71% 0.02692 292.77)",
+          "oklch(72.14% 0.02692 292.77)",
+          "oklch(83.57% 0.02692 292.77)",
+          "oklch(95.00% 0.02692 292.77)"
+        ]
+      },
+      "segment-track": {
+        "role": "neutral",
+        "displayName": "Segment Track",
+        "tonalRamp": [
+          "oklch(15.00% 0.00970 252.81)",
+          "oklch(26.43% 0.00970 252.81)",
+          "oklch(37.86% 0.00970 252.81)",
+          "oklch(49.29% 0.00970 252.81)",
+          "oklch(60.71% 0.00970 252.81)",
+          "oklch(72.14% 0.00970 252.81)",
+          "oklch(83.57% 0.00970 252.81)",
+          "oklch(95.00% 0.00970 252.81)"
+        ]
+      },
+      "comparison": {
+        "role": "secondary",
+        "displayName": "Comparison",
+        "tonalRamp": [
+          "oklch(15.00% 0.08970 291.41)",
+          "oklch(26.43% 0.08970 291.41)",
+          "oklch(37.86% 0.08970 291.41)",
+          "oklch(49.29% 0.08970 291.41)",
+          "oklch(60.71% 0.08970 291.41)",
+          "oklch(72.14% 0.08970 291.41)",
+          "oklch(83.57% 0.08970 291.41)",
+          "oklch(95.00% 0.08970 291.41)"
+        ]
+      },
+      "cost": {
+        "role": "secondary",
+        "displayName": "Cost Lavender",
+        "tonalRamp": [
+          "oklch(15.00% 0.08746 290.02)",
+          "oklch(26.43% 0.08746 290.02)",
+          "oklch(37.86% 0.08746 290.02)",
+          "oklch(49.29% 0.08746 290.02)",
+          "oklch(60.71% 0.08746 290.02)",
+          "oklch(72.14% 0.08746 290.02)",
+          "oklch(83.57% 0.08746 290.02)",
+          "oklch(95.00% 0.08746 290.02)"
+        ]
+      },
+      "positive": {
+        "role": "secondary",
+        "displayName": "Positive",
+        "tonalRamp": [
+          "oklch(15.00% 0.09696 161.12)",
+          "oklch(26.43% 0.09696 161.12)",
+          "oklch(37.86% 0.09696 161.12)",
+          "oklch(49.29% 0.09696 161.12)",
+          "oklch(60.71% 0.09696 161.12)",
+          "oklch(72.14% 0.09696 161.12)",
+          "oklch(83.57% 0.09696 161.12)",
+          "oklch(95.00% 0.09696 161.12)"
+        ]
+      },
+      "positive-soft": {
+        "role": "secondary",
+        "displayName": "Positive Soft",
+        "tonalRamp": [
+          "oklch(15.00% 0.01404 162.48)",
+          "oklch(26.43% 0.01404 162.48)",
+          "oklch(37.86% 0.01404 162.48)",
+          "oklch(49.29% 0.01404 162.48)",
+          "oklch(60.71% 0.01404 162.48)",
+          "oklch(72.14% 0.01404 162.48)",
+          "oklch(83.57% 0.01404 162.48)",
+          "oklch(95.00% 0.01404 162.48)"
+        ]
+      },
+      "negative": {
+        "role": "secondary",
+        "displayName": "Negative",
+        "tonalRamp": [
+          "oklch(15.00% 0.15752 13.71)",
+          "oklch(26.43% 0.15752 13.71)",
+          "oklch(37.86% 0.15752 13.71)",
+          "oklch(49.29% 0.15752 13.71)",
+          "oklch(60.71% 0.15752 13.71)",
+          "oklch(72.14% 0.15752 13.71)",
+          "oklch(83.57% 0.15752 13.71)",
+          "oklch(95.00% 0.15752 13.71)"
+        ]
+      },
+      "negative-soft": {
+        "role": "secondary",
+        "displayName": "Negative Soft",
+        "tonalRamp": [
+          "oklch(15.00% 0.01318 5.80)",
+          "oklch(26.43% 0.01318 5.80)",
+          "oklch(37.86% 0.01318 5.80)",
+          "oklch(49.29% 0.01318 5.80)",
+          "oklch(60.71% 0.01318 5.80)",
+          "oklch(72.14% 0.01318 5.80)",
+          "oklch(83.57% 0.01318 5.80)",
+          "oklch(95.00% 0.01318 5.80)"
+        ]
+      },
+      "prior-period": {
+        "role": "secondary",
+        "displayName": "Prior Period",
+        "tonalRamp": [
+          "oklch(15.00% 0.02700 295.42)",
+          "oklch(26.43% 0.02700 295.42)",
+          "oklch(37.86% 0.02700 295.42)",
+          "oklch(49.29% 0.02700 295.42)",
+          "oklch(60.71% 0.02700 295.42)",
+          "oklch(72.14% 0.02700 295.42)",
+          "oklch(83.57% 0.02700 295.42)",
+          "oklch(95.00% 0.02700 295.42)"
+        ]
+      },
+      "increase-fill": {
+        "role": "secondary",
+        "displayName": "Increase Fill",
+        "tonalRamp": [
+          "oklch(15.00% 0.04353 292.69)",
+          "oklch(26.43% 0.04353 292.69)",
+          "oklch(37.86% 0.04353 292.69)",
+          "oklch(49.29% 0.04353 292.69)",
+          "oklch(60.71% 0.04353 292.69)",
+          "oklch(72.14% 0.04353 292.69)",
+          "oklch(83.57% 0.04353 292.69)",
+          "oklch(95.00% 0.04353 292.69)"
+        ]
+      },
+      "increase-stripe": {
+        "role": "secondary",
+        "displayName": "Increase Stripe",
+        "tonalRamp": [
+          "oklch(15.00% 0.08051 291.70)",
+          "oklch(26.43% 0.08051 291.70)",
+          "oklch(37.86% 0.08051 291.70)",
+          "oklch(49.29% 0.08051 291.70)",
+          "oklch(60.71% 0.08051 291.70)",
+          "oklch(72.14% 0.08051 291.70)",
+          "oklch(83.57% 0.08051 291.70)",
+          "oklch(95.00% 0.08051 291.70)"
+        ]
+      },
+      "decrease-fill": {
+        "role": "secondary",
+        "displayName": "Decrease Fill",
+        "tonalRamp": [
+          "oklch(15.00% 0.02885 358.80)",
+          "oklch(26.43% 0.02885 358.80)",
+          "oklch(37.86% 0.02885 358.80)",
+          "oklch(49.29% 0.02885 358.80)",
+          "oklch(60.71% 0.02885 358.80)",
+          "oklch(72.14% 0.02885 358.80)",
+          "oklch(83.57% 0.02885 358.80)",
+          "oklch(95.00% 0.02885 358.80)"
+        ]
+      },
+      "decrease-stripe": {
+        "role": "secondary",
+        "displayName": "Decrease Stripe",
+        "tonalRamp": [
+          "oklch(15.00% 0.05923 358.21)",
+          "oklch(26.43% 0.05923 358.21)",
+          "oklch(37.86% 0.05923 358.21)",
+          "oklch(49.29% 0.05923 358.21)",
+          "oklch(60.71% 0.05923 358.21)",
+          "oklch(72.14% 0.05923 358.21)",
+          "oklch(83.57% 0.05923 358.21)",
+          "oklch(95.00% 0.05923 358.21)"
+        ]
+      },
+      "series-lavender": {
+        "role": "secondary",
+        "displayName": "Series Lavender",
+        "tonalRamp": [
+          "oklch(15.00% 0.12746 293.20)",
+          "oklch(26.43% 0.12746 293.20)",
+          "oklch(37.86% 0.12746 293.20)",
+          "oklch(49.29% 0.12746 293.20)",
+          "oklch(60.71% 0.12746 293.20)",
+          "oklch(72.14% 0.12746 293.20)",
+          "oklch(83.57% 0.12746 293.20)",
+          "oklch(95.00% 0.12746 293.20)"
+        ]
+      },
+      "series-blue": {
+        "role": "secondary",
+        "displayName": "Series Blue",
+        "tonalRamp": [
+          "oklch(15.00% 0.08562 226.92)",
+          "oklch(26.43% 0.08562 226.92)",
+          "oklch(37.86% 0.08562 226.92)",
+          "oklch(49.29% 0.08562 226.92)",
+          "oklch(60.71% 0.08562 226.92)",
+          "oklch(72.14% 0.08562 226.92)",
+          "oklch(83.57% 0.08562 226.92)",
+          "oklch(95.00% 0.08562 226.92)"
+        ]
+      },
+      "series-rose": {
+        "role": "secondary",
+        "displayName": "Series Rose",
+        "tonalRamp": [
+          "oklch(15.00% 0.09854 354.12)",
+          "oklch(26.43% 0.09854 354.12)",
+          "oklch(37.86% 0.09854 354.12)",
+          "oklch(49.29% 0.09854 354.12)",
+          "oklch(60.71% 0.09854 354.12)",
+          "oklch(72.14% 0.09854 354.12)",
+          "oklch(83.57% 0.09854 354.12)",
+          "oklch(95.00% 0.09854 354.12)"
+        ]
+      },
+      "series-ochre": {
+        "role": "secondary",
+        "displayName": "Series Ochre",
+        "tonalRamp": [
+          "oklch(15.00% 0.09822 76.84)",
+          "oklch(26.43% 0.09822 76.84)",
+          "oklch(37.86% 0.09822 76.84)",
+          "oklch(49.29% 0.09822 76.84)",
+          "oklch(60.71% 0.09822 76.84)",
+          "oklch(72.14% 0.09822 76.84)",
+          "oklch(83.57% 0.09822 76.84)",
+          "oklch(95.00% 0.09822 76.84)"
+        ]
+      },
+      "series-sage": {
+        "role": "secondary",
+        "displayName": "Series Sage",
+        "tonalRamp": [
+          "oklch(15.00% 0.04866 180.35)",
+          "oklch(26.43% 0.04866 180.35)",
+          "oklch(37.86% 0.04866 180.35)",
+          "oklch(49.29% 0.04866 180.35)",
+          "oklch(60.71% 0.04866 180.35)",
+          "oklch(72.14% 0.04866 180.35)",
+          "oklch(83.57% 0.04866 180.35)",
+          "oklch(95.00% 0.04866 180.35)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Page headline",
+        "purpose": "付费类型页面标题；旧页面字重不作为新规范。"
+      },
+      "metric": {
+        "displayName": "Metric",
+        "purpose": "金额与关键比例，使用制表数字。"
+      },
+      "title": {
+        "displayName": "Panel title",
+        "purpose": "分析分组标题。"
+      },
+      "body": {
+        "displayName": "Table body",
+        "purpose": "明细行和浮层内容。"
+      },
+      "label": {
+        "displayName": "UI label",
+        "purpose": "筛选、单位和次级数值。"
+      },
+      "chart-label": {
+        "displayName": "Chart label",
+        "purpose": "坐标轴、图例和紧凑表头。"
+      }
+    },
+    "shadows": [
+      {
+        "name": "floating-menu",
+        "value": "0 8px 24px rgb(13 37 61 / 10%)",
+        "purpose": "无外边框的白色菜单与成本说明浮层。"
+      },
+      {
+        "name": "active-segment",
+        "value": "0 1px 3px #0d253d0d",
+        "purpose": "白色激活项与浅灰轨道的轻微分离。"
+      },
+      {
+        "name": "date-popover",
+        "value": "0 16px 36px rgba(37, 36, 61, .1)",
+        "purpose": "已有自定义日期工具浮层。"
+      }
+    ],
+    "motion": [
+      {
+        "name": "select-chevron",
+        "value": "transform 200ms",
+        "purpose": "下拉箭头随展开旋转。"
+      },
+      {
+        "name": "payment-reveal",
+        "value": "650ms cubic-bezier(.22,1,.36,1) 180ms backwards",
+        "purpose": "付费趋势及右侧分布／成本图由左向右显现。"
+      },
+      {
+        "name": "entity-line",
+        "value": "650ms; delay: 180ms + index * 70ms",
+        "purpose": "多实体趋势折线依次绘制。"
+      },
+      {
+        "name": "finance-line-draw",
+        "value": "1500ms inOutSine; delay:450ms",
+        "purpose": "来源 SVG 组件的主线绘制。"
+      },
+      {
+        "name": "reduced-motion",
+        "value": "animation:none; transition:none",
+        "purpose": "关闭显现、曲线和原位搜索动画。"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "payment-compact",
+        "value": "1100px"
+      },
+      {
+        "name": "content-compact",
+        "value": "1000px"
+      },
+      {
+        "name": "payment-stack",
+        "value": "760px"
+      },
+      {
+        "name": "mobile-navigation",
+        "value": "700px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "紫色主操作。",
+      "html": "<button class=\"ds-primary\">应用筛选</button>",
+      "css": ".ds-primary{font-family:'Inter Variable',Inter,'PingFang SC',sans-serif;background:var(--primary,#533afd);color:white;border:0;border-radius:8px;padding:8px 16px;min-height:36px;font-size:14px;font-weight:500;cursor:pointer}.ds-primary:hover{filter:brightness(.97)}.ds-primary:active{filter:brightness(.92)}.ds-primary:focus-visible{outline:2px solid var(--primary,#533afd);outline-offset:3px;}.ds-primary:disabled{opacity:.5;pointer-events:none}"
+    },
+    {
+      "name": "Ghost action",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "表格或浮层内的紧凑动作。",
+      "html": "<button class=\"ds-ghost\">日明细</button>",
+      "css": ".ds-ghost{font-family:'Inter Variable',Inter,'PingFang SC',sans-serif;height:32px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:#61718a;font-size:12px;cursor:pointer}.ds-ghost:hover{background:rgb(0 0 0 / 3%)}.ds-ghost:active{background:rgb(0 0 0 / 8%)}.ds-ghost:focus-visible{outline:2px solid var(--primary,#533afd);outline-offset:3px;}"
+    },
+    {
+      "name": "Entity search",
+      "kind": "input",
+      "refersTo": "search",
+      "description": "Bencho 原位展开搜索：34px 收起，224px 展开；减少动态效果时立即切换。",
+      "html": "<label class=\"ds-expand-search\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 18 18\" fill=\"none\" stroke=\"currentColor\" aria-hidden=\"true\"><circle cx=\"7.6\" cy=\"7.6\" r=\"5.4\"/><path d=\"M11.6 11.6 15.4 15.4\"/></svg><input type=\"search\" aria-label=\"搜索模型\" placeholder=\"搜索模型\"></label>",
+      "css": ".ds-expand-search{display:inline-flex;align-items:center;gap:8px;width:34px;height:34px;border:0;border-radius:999px;background:#f6f9fc;color:#61718a;overflow:hidden;transition:width 200ms}.ds-expand-search svg{margin-left:9px;flex-shrink:0}.ds-expand-search input{font-family:'Inter Variable',Inter,'PingFang SC',sans-serif;min-width:0;width:170px;border:0;outline:0;background:transparent;color:#0d253d;opacity:0;font-size:12px}.ds-expand-search:focus-within{width:224px;box-shadow:0 0 0 2px #d8d1ff}.ds-expand-search:focus-within input{opacity:1}@media(prefers-reduced-motion:reduce){.ds-expand-search{transition:none}}"
+    },
+    {
+      "name": "Borderless select",
+      "kind": "custom",
+      "refersTo": "income-select",
+      "description": "全部收入包含主动付费、自动续订和 API；触发器与菜单无外边框。原生 details 仅预览展开状态。",
+      "html": "<details class=\"ds-select\"><summary>全部收入<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg></summary><div class=\"ds-options\"><button aria-pressed=\"true\">全部收入</button><button>主动付费</button><button>自动续订</button><button>API 收入</button></div></details>",
+      "css": ".ds-select{font-family:'Inter Variable',Inter,'PingFang SC',sans-serif;position:relative;width:202px;color:#0d253d;font-size:12px}.ds-select summary{display:flex;justify-content:space-between;align-items:center;min-height:36px;padding:0 12px;list-style:none;border:0;border-radius:999px;background:white;cursor:pointer}.ds-select summary::-webkit-details-marker{display:none}.ds-select summary:hover{background:#f6f9fc}.ds-select summary:focus-visible{outline:none;background:#eeebff}.ds-select[open] svg{transform:rotate(180deg)}.ds-select svg{transition:transform 200ms}.ds-options{position:relative;margin-top:4px;padding:4px;border:0;border-radius:8px;background:white;box-shadow:0 8px 24px rgb(13 37 61 / 10%)}.ds-options button{font-family:'Inter Variable',Inter,'PingFang SC',sans-serif;display:block;text-align:left;width:100%;padding:6px 8px;border:0;border-radius:6px;background:white;color:#0d253d;font-size:12px}.ds-options button[aria-pressed=true]{color:var(--primary,#533afd)}.ds-options button:hover,.ds-options button:focus-visible{outline:none;background:#eeebff;color:var(--primary,#533afd)}@media(prefers-reduced-motion:reduce){.ds-select svg{transition:none}}"
+    },
+    {
+      "name": "Attribution segments",
+      "kind": "custom",
+      "refersTo": "attribution-tabs",
+      "description": "浅色轨道、白色当前项。",
+      "html": "<div class=\"ds-tabs\" role=\"group\" aria-label=\"归因模式\"><button aria-pressed=\"true\">大盘汇总</button><button aria-pressed=\"false\">创作模式</button><button aria-pressed=\"false\">模型</button></div>",
+      "css": ".ds-tabs{display:inline-flex;height:38px;padding:3px;border-radius:999px;background:#e9eef4}.ds-tabs button{font-family:'Inter Variable',Inter,'PingFang SC',sans-serif;height:32px;padding:0 15px;border:0;border-radius:999px;background:transparent;color:#4c5d73;font-size:12px;cursor:pointer}.ds-tabs button[aria-pressed=true]{color:var(--primary,#533afd);background:white;box-shadow:0 1px 3px #0d253d0d}.ds-tabs button:hover{color:var(--primary,#533afd)}.ds-tabs button:focus-visible{outline:2px solid var(--primary,#533afd);outline-offset:3px;}"
+    },
+    {
+      "name": "Navigation rail",
+      "kind": "nav",
+      "refersTo": "navigation-item-active",
+      "description": "默认紧凑 SVG 图标入口，标签通过辅助名称保留。",
+      "html": "<nav class=\"ds-nav\" aria-label=\"看板导航\"><button aria-label=\"GMV 趋势\" aria-current=\"page\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" aria-hidden=\"true\"><path d=\"M3 3v18h18M7 14l4-4 4 3 5-7\"/></svg></button><button aria-label=\"付费类型\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" aria-hidden=\"true\"><rect x=\"3\" y=\"5\" width=\"18\" height=\"14\" rx=\"2\"/><path d=\"M3 10h18\"/></svg></button></nav>",
+      "css": ".ds-nav{display:inline-flex;flex-direction:column;gap:5px;padding:6px;border:0;border-radius:14px;background:white}.ds-nav button{display:grid;place-items:center;width:38px;height:39px;border:0;border-radius:8px;color:#61718a;background:transparent;cursor:pointer}.ds-nav button[aria-current=page],.ds-nav button:hover,.ds-nav button:focus-visible{background:#eeebff;color:var(--primary,#533afd)}.ds-nav button:focus-visible{outline:2px solid var(--primary,#533afd);outline-offset:3px;}"
+    },
+    {
+      "name": "Positive change",
+      "kind": "chip",
+      "refersTo": "change-positive",
+      "description": "仅用于实际变化方向。",
+      "html": "<span class=\"ds-change\">+12.4%</span>",
+      "css": ".ds-change{font-family:'Inter Variable',Inter,'PingFang SC',sans-serif;display:inline-flex;align-items:center;white-space:nowrap;padding:3px 5px;border-radius:4px;background:#edf8f2;color:#217451;font-size:11px;font-weight:450;font-variant-numeric:tabular-nums;line-height:1.3}"
+    },
+    {
+      "name": "Entity trend card",
+      "kind": "card",
+      "refersTo": "metric-card",
+      "description": "当前归因维度的多线日均趋势；静态样式示意，无业务数据。",
+      "html": "<article class=\"ds-card\"><header><h3>创作模型趋势</h3><span class=\"ds-range\">近 30 天 · 日均 GMV</span></header><div class=\"ds-legend\"><span>● 模型 A</span><span>● 模型 B</span></div><svg class=\"ds-plot\" viewBox=\"0 0 340 224\" role=\"img\" aria-label=\"多模型日均趋势示意\"><path d=\"M20 40H320M20 100H320M20 160H320\" stroke=\"#e8edf3\" stroke-dasharray=\"3 4\"/><path d=\"M20 150 65 125 110 135 155 90 200 102 245 55 290 45 320 27\" fill=\"none\" stroke=\"#533afd\" stroke-width=\"2\"/><path d=\"M20 175 65 155 110 165 155 125 200 140 245 115 290 105 320 90\" fill=\"none\" stroke=\"#9884db\" stroke-width=\"2\"/></svg></article>",
+      "css": ".ds-card{font-family:'Inter Variable',Inter,'PingFang SC',sans-serif;max-width:500px;background:white;color:#0d253d;border:0;border-radius:14px;overflow:hidden}.ds-card header{padding:20px 20px 0}.ds-card h3{margin:0;font-size:13px;font-weight:550;line-height:1.4}.ds-range{display:block;margin-top:8px;font-size:11px;color:#61718a}.ds-legend{display:flex;gap:12px;margin:10px 20px 4px;font-size:10px;color:#533afd}.ds-legend span+span{color:#9884db}.ds-plot{display:block;width:calc(100% - 24px);height:224px;margin:12px 12px 16px}"
+    },
+    {
+      "name": "Finance SVG comparison",
+      "kind": "custom",
+      "refersTo": "metric-card",
+      "description": "日视图零轴组合图与三摘要；周月改为动态纵轴的单折线并隐藏摘要。静态预览为日视图。",
+      "html": "<article class=\"ds-finance\"><div class=\"ds-finance-stats\"><div>区间日均<strong>$24,800</strong></div><div>较上周<strong class=\"ds-finance-direction\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#217451\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M12 19V5m-7 7 7-7 7 7\"/></svg>12.4%</strong></div><div>上周同期日均<strong>$22,064</strong></div></div><svg class=\"ds-finance-plot\" viewBox=\"0 0 360 224\" role=\"img\" aria-label=\"当前与上周同期收入及变化量示意\"><defs><pattern id=\"ds-finance-up\" width=\"6\" height=\"6\" patternUnits=\"userSpaceOnUse\" patternTransform=\"rotate(26)\"><rect width=\"6\" height=\"6\" fill=\"#e4dfff\"/><path d=\"M0 0V6\" stroke=\"#cec5ff\" stroke-width=\"4\"/></pattern><pattern id=\"ds-finance-down\" width=\"6\" height=\"6\" patternUnits=\"userSpaceOnUse\" patternTransform=\"rotate(26)\"><rect width=\"6\" height=\"6\" fill=\"#fbe2e9\"/><path d=\"M0 0V6\" stroke=\"#efbecd\" stroke-width=\"4\"/></pattern></defs><path d=\"M32 30H340M32 90H340M32 150H340M32 210H340\" stroke=\"#edf0f5\"/><text x=\"20\" y=\"213\" fill=\"#61718a\" font-size=\"10\">0</text><g fill=\"url(#ds-finance-up)\"><rect x=\"48\" y=\"178\" width=\"16\" height=\"30\" rx=\"4\"/><rect x=\"148\" y=\"165\" width=\"16\" height=\"43\" rx=\"4\"/><rect x=\"248\" y=\"175\" width=\"16\" height=\"33\" rx=\"4\"/></g><g fill=\"url(#ds-finance-down)\"><rect x=\"98\" y=\"188\" width=\"16\" height=\"20\" rx=\"4\"/><rect x=\"198\" y=\"181\" width=\"16\" height=\"27\" rx=\"4\"/></g><path d=\"M32 150 90 120 150 135 210 100 270 105 340 65\" fill=\"none\" stroke=\"#b9b5c8\" stroke-width=\"2\" stroke-dasharray=\"6 6\"/><path d=\"M32 130 90 135 150 100 210 120 270 75 340 40\" fill=\"none\" stroke=\"#533afd\" stroke-width=\"2\"/></svg></article>",
+      "css": ".ds-finance{font-family:'Inter Variable',Inter,'PingFang SC',sans-serif;max-width:650px;border:0;border-radius:16px;background:white;color:#0d253d}.ds-finance-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:8px 0 16px}.ds-finance-stats>div{display:grid;gap:9px;border:0;border-radius:12px;background:#f6f9fc;padding:14px;font-size:11px;color:#61718a}.ds-finance-stats strong{font-size:24px;font-weight:500;letter-spacing:-.025em;color:#0d253d;font-variant-numeric:tabular-nums}.ds-finance-plot{display:block;width:100%;height:224px}@media(max-width:600px){.ds-finance-stats>div{padding:10px}.ds-finance-stats strong{font-size:20px}}.ds-finance-direction{display:flex;align-items:center;gap:8px}.ds-finance-direction svg{flex-shrink:0}"
+    },
+    {
+      "name": "Detail metric alignment",
+      "kind": "custom",
+      "refersTo": "metric-card",
+      "description": "固定标签、数值、变化三行；成本用相对百分比，成本占比用绝对 pp。静态示意。",
+      "html": "<div class=\"ds-detail-metrics\"><div><span>GMV</span><strong>$24,800</strong><small><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M12 19V5m-7 7 7-7 7 7\"/></svg>12.4%</small></div><div><span>模型成本</span><strong>$8,420</strong><small><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M12 19V5m-7 7 7-7 7 7\"/></svg>8.1%</small></div><div><span>成本 / GMV</span><strong>34.0%</strong><small><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M12 19V5m-7 7 7-7 7 7\"/></svg>1.2 pp</small></div></div>",
+      "css": ".ds-detail-metrics{font-family:'Inter Variable',Inter,'PingFang SC',sans-serif;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;color:#0d253d;background:white;border:0;padding:22px 0}.ds-detail-metrics>div{display:grid;grid-template-rows:20px 32px 16px;align-items:center;gap:7px;min-width:0}.ds-detail-metrics span{display:flex;align-items:center;height:20px;color:#61718a;font-size:11px}.ds-detail-metrics strong{font-size:24px;line-height:32px;font-weight:450;letter-spacing:-.02em;white-space:nowrap;font-variant-numeric:tabular-nums}.ds-detail-metrics small{display:inline-flex;align-items:center;gap:2px;font-size:10px;color:#61718a;white-space:nowrap}@media(max-width:480px){.ds-detail-metrics{gap:8px}.ds-detail-metrics strong{font-size:19px}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Stripe Revenue Workbench",
+    "overview": "Stripe 产品界面的克制与密度服务于重复收入诊断：深海军蓝建立阅读层级，紫色标记当前操作和主要数据，白色工作表面承载图形、金额与比较。导航、卡片、控件与菜单以表面和间距分区，不使用外边框。Bento 是有共同对齐关系的分析分组，卡片内的留白首先保障图形可读。\n\n布局和直接交互表达关系，只在数据口径、缺失或操作后果影响判断时增加说明。以付费类型的新实现为当前系统证据；全局导航和 GMV 趋势继承同一世界。未迁移页面及通用主题中残留的旧墨色、旧紫色不构成新页面的配色授权。",
+    "keyCharacteristics": [
+      "紫色主线与深海军蓝文字，白色图表表面。",
+      "紧凑 Bento、表格对齐与足够的绘图区高度。",
+      "默认窄图标导航，可按需展开。",
+      "导航、指标卡、图卡、控件与菜单无外边框；浅线仅保留内部结构。"
+    ],
+    "rules": [
+      {
+        "name": "The One Primary Rule",
+        "body": "紫色用于主要数据、当前选择与关键操作；主 GMV 比较线使用灰色，模型成本使用薰衣草紫。多实体趋势可使用已定义的分类序列色区分曲线，不把分类颜色扩展成卡片主题。",
+        "section": "colors"
+      },
+      {
+        "name": "The Layout Explains Rule",
+        "body": "Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining itself.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Work Surface Rule",
+        "body": "分析卡片静止时无阴影、无外边框；用白色表面、浅色背景与间距分组，浅线仅用于内部结构，浮层以柔和阴影表达临时层级。",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do 将金额、比较值与图形放进同一分析表面，让读者直接核对。",
+      "Do 使用制表数字、右对齐数值和浅灰表格分隔线。",
+      "Do 保证柱图和折线图有完整绘图区，移动端保留表格自身横向滚动。",
+      "Do 检查菜单展开与键盘焦点态，使用紫色焦点提示。",
+      "Do 仅对会影响判断的数据范围、缺失值和口径保留说明。"
+    ],
+    "donts": [
+      "Don't 给导航、指标卡、图卡、控件或菜单添加外边框，也不使用黑色默认框线。",
+      "Don't 在收入分析中恢复环形图、独立右侧 KPI 卡或重复数字的分析摘要带。",
+      "Don't 用装饰性副标题、眉题或第二层标签补充布局已经表达的关系。",
+      "Don't 将成本 / GMV 标为利润率，也不要用颜色掩盖无数据与真实零值的区别。",
+      "Don't 将旧主题残留、黑色默认焦点或旧环形图样式写成新系统规范。"
+    ]
+  }
+}

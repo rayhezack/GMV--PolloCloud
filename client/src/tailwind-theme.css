@@ -16,13 +16,14 @@
   --card-foreground: #25243d;
   --popover: hsl(0 0% 100%);
   --popover-foreground: #25243d;
-  --primary: #5b3ff2;
+  --primary: #533afd;
   --primary-foreground: hsl(0 0% 100%);
   --secondary: #f4f4f8;
   --secondary-foreground: #25243d;
   --muted: #f7f7fa;
   --muted-foreground: #747487;
-  --accent: #efecff;
+  --selection-bg: #f0f1f4;
+  --accent: var(--selection-bg);
   --accent-foreground: #4930d9;
   --info: #5b3ff2;
   --info-foreground: hsl(0 0% 100%);
@@ -44,7 +45,7 @@
   --sidebar-foreground: #25243d;
   --sidebar-primary: #5b3ff2;
   --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: #efecff;
+  --sidebar-accent: var(--selection-bg);
   --sidebar-accent-foreground: #4930d9;
   --sidebar-border: #e7e7ef;
   --sidebar-ring: #5b3ff2;
@@ -56,7 +57,7 @@
   --accent-border: #dcd6ff;
   --muted-border: #e7e7ef;
   --font-sans:
-    'Inter', 'LarkHackSafariFont', 'LarkEmojiFont', 'LarkChineseQuote', '-apple-system',
+    'Inter Variable', 'Inter', 'LarkHackSafariFont', 'LarkEmojiFont', 'LarkChineseQuote', '-apple-system',
     'BlinkMacSystemFont', 'PingFang SC', 'Microsoft Yahei', 'Helvetica Neue', 'Tahoma',
     'Arial', 'Hiragino Sans GB', 'sans-serif', 'Apple Color Emoji', 'Segoe UI Emoji',
     'Segoe UI Symbol', 'Noto Color Emoji';

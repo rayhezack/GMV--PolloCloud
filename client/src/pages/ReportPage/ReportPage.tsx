@@ -58,7 +58,7 @@ export default function ReportPage() {
         setGeneration(job);
         setPollError('');
         if (job) trackReport(job);
-        if (job?.status === 'success' && job.report?.periodStart === periodStart && job.report.periodEnd === periodEnd) setReport(job.report);
+        if (job?.status === 'success' && job.report?.periodStart === periodStart) setReport(job.report);
       } catch {
         if (!cancelled) setPollError('暂时无法查询进度，正在重试。');
       } finally {
@@ -89,7 +89,7 @@ export default function ReportPage() {
       <div className="dashboard-heading">
         <div><h1>诊断报告</h1><p>从核心结论到证据，回溯业务周的变化。</p></div>
         <div className="report-heading-actions">
-          <ReportWeekSelect weeks={weeks} value={getReportPeriodKey(periodStart, periodEnd)} onValueChange={value => {
+          <ReportWeekSelect weeks={weeks} value={getReportPeriodKey(periodStart, weeks.find(week => week.periodStart === periodStart)?.periodEnd ?? periodEnd)} onValueChange={value => {
             const next = new URLSearchParams(searchParams); next.set('period', value); setSearchParams(next);
           }} />
           <CreateMenu

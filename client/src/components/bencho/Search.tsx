@@ -84,6 +84,7 @@ export function Search({ value, onChange, placeholder = '搜索', width = 240 }:
           placeholder={placeholder}
           aria-label={placeholder}
           tabIndex={open ? 0 : -1}
+          aria-hidden={!open}
           onChange={(event) => onChange(event.target.value)}
           onBlur={() => { if (!value.trim()) setOpen(false); }}
           onKeyDown={(event) => {

@@ -1,0 +1,6 @@
+# Local analytical exports and visual review artifacts are not application source.
+/archives/
+/.impeccable/review/
+/*.csv
+/*.xlsx
+/*.sql

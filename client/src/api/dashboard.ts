@@ -9,12 +9,20 @@ import type {
   DashboardGmvAnomalyResponse,
   DashboardOverviewResponse,
   Granularity,
+  GmvAttributionType,
+  PaymentAnalysisResponse,
+  PaymentTrendResponse,
   PaymentChainType,
   Platform,
   RenewalPlanTier,
   WorkbookPreviewResponse,
   WorkbookSheet,
 } from '@shared/api.interface';
+
+export async function getPaymentTrend(params: {platform:DashboardPlatform;deviceType?:AppDeviceType;analysisPeriod:string;attributionType:GmvAttributionType;granularity:'day'|'week'|'month';income:string;groupBy?:string}):Promise<PaymentTrendResponse> {
+  const response=await axiosForBackend.get(`/api/dashboard/payment-trend${buildQueryString(params)}`);
+  return response.data;
+}
 
 function buildQueryString(
   params: Record<string, string | number | undefined>,
@@ -26,6 +34,17 @@ function buildQueryString(
   }
   const query = searchParams.toString();
   return query ? `?${query}` : '';
+}
+
+export async function getPaymentAnalysis(params: {
+  platform: DashboardPlatform;
+  deviceType?: AppDeviceType;
+  baselinePeriod: string;
+  analysisPeriod: string;
+  attributionType: GmvAttributionType;
+}): Promise<PaymentAnalysisResponse> {
+  const response = await axiosForBackend({ url: `/api/dashboard/payment-analysis${buildQueryString(params)}`, method: 'GET' });
+  return response.data as PaymentAnalysisResponse;
 }
 
 export async function getGmvCoverage(): Promise<DashboardGmvCoverageResponse> {

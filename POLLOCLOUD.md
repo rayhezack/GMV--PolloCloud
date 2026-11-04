@@ -45,8 +45,12 @@ Set `VITE_DATA_MODE=demo` only for a local visual preview. Production uses the s
 
 `pollocloud.json` 已声明两个定时任务，时间使用北京时间：
 
-- 每天 09:30–09:45（每 5 分钟一个任务，分别调用 `/api/cron/daily-pay-type`、`/api/cron/daily-chain`、`/api/cron/daily-creative`、`/api/cron/daily-renewal`）：按数据类型分批拉取最新 T+1 日数据并写入 D1；目标日期已存在时幂等跳过。拆分任务是为了避免一次同步超过平台单次请求的 4 分钟上限。
+- 每天 09:00 起按数据集执行最新 T+1 日同步：09:00 付费类型、09:05 支付链路、09:10 自动续订、09:15 创作积极性。前三类任务通常较快，创作积极性放在最后以隔离其可能的长查询；目标日期已存在时幂等跳过。定时任务按数据集独立判断和重试。
 - 每周六 12:00（`0 12 * * 6` → `/api/cron/weekly-reports`）：选择上一完整周六至周五业务周，依次生成 Web 和 App 诊断报告。
+
+广告归因聚合保存在 `pollo_da_ads_daily`，粒度为注册日、广告渠道、国家和 Web/App 端，业务周为周六至周五。广告表同步只读取 `product_type='ALL'` 与 `is_first_purchase='汇总'`，避免叠加拆分行。09:05 支付链路任务完成后，会同时回刷广告最近 7 天及距今 14/30/60/90/180 天的 cohort 分区；该表会动态更新最近 181 天分区，但历史分区从 2026-01-01 起仍可读取。历史全量回刷在本地运行 `python3 scripts/backfill-ads.py --start 2026-01-01 --end 2026-11-03`，脚本通过 Tunnel 完整读取、校验后暂存并切换远程 D1。`POST /api/ads/sync` 可由已授权账号指定 `date` 补刷单日。
+
+`gmv_d14` 至 `gmv_d180` 对未成熟 cohort 也可能返回截至当前的部分累计值，不会自动置空。业务周比较这些指标时，仅使用整个业务周均已达到相应观察天数的 cohort；花费、曝光、点击、注册和 D0 可按已覆盖日期聚合。
 
 两个接口都会校验 `x-pollocloud-trigger: cron`，不会接受普通用户请求。发布后可用 `pollocloud cron list --name pollo-ai` 查看配置，并用 `pollocloud cron run --name pollo-ai <任务>` 做一次验证。
 

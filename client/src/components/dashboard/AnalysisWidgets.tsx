@@ -389,50 +389,105 @@ export function RevenueCards({
       })}
       <TrendDialog
         metric={expandedMetric}
-        rows={selectCardTrendRows(
-          dailyTrend.length ? dailyTrend : trend,
-          expandedMetric ? trendDays[expandedMetric] : 30,
-          expandedMetric ?? 'totalGmv',
-          granularity,
-        )}
-        definitions={definitions}
+        rows={headlineRows.map((row) => ({ ...row, activeGmv: valueOf(row, 'activeGmv') }))}
+        startDate={headlineStartDate}
+        endDate={headlineEndDate}
+        definitions={definitions.map((item) => ({
+          ...item,
+          key: item.metric === 'activeGmv' && activePayType !== '整体'
+            ? `${item.key} · ${activePayType}` : item.key,
+        }))}
         onClose={() => setExpandedMetric(null)}
       />
     </div>
   );
 }
 
+type DialogTrendGrain = 'day' | 'week' | 'month';
+
+function aggregateDialogTrend(rows: OverviewTrendPoint[], metric: RevenueMetric, grain: DialogTrendGrain) {
+  const grouped = new Map<string, OverviewTrendPoint[]>();
+  for (const row of rows) {
+    const period = grain === 'week' ? getBusinessWeekStart(row.period)
+      : grain === 'month' ? row.period.slice(0, 7) : row.period;
+    const bucket = grouped.get(period) ?? [];
+    bucket.push(row);
+    grouped.set(period, bucket);
+  }
+  return [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([period, bucket]) => {
+    const dates = [...new Set(bucket.map((row) => row.period))].sort();
+    return {
+      ...bucket[0],
+      period,
+      coverage: dates.length === 1 ? dates[0] : `${dates[0]} 至 ${dates.at(-1)}`,
+      days: dates.length,
+      [metric]: bucket.reduce((sum, row) => sum + Number(row[metric] ?? 0), 0) / dates.length,
+    };
+  });
+}
+
 function TrendDialog({
   metric,
   rows,
+  startDate,
+  endDate,
   definitions,
   onClose,
 }: {
   metric: RevenueMetric | null;
   rows: OverviewTrendPoint[];
+  startDate?: string;
+  endDate?: string;
   definitions: Array<{ key: string; metric: RevenueMetric; color: string }>;
   onClose: () => void;
 }) {
   const definition = definitions.find((item) => item.metric === metric);
   const title = definition?.key ?? '趋势';
   const money = (value: number) => '$' + Math.round(value).toLocaleString('en-US');
-  const yAxisDomain = resolveTrendDialogYAxisDomain(rows, metric);
+  const [grain, setGrain] = useState<DialogTrendGrain>('day');
+  const chartRows = useMemo(() => aggregateDialogTrend(rows, metric ?? 'totalGmv', grain), [rows, metric, grain]);
+  const yAxisDomain = resolveTrendDialogYAxisDomain(chartRows, metric);
   return (
     <Dialog open={metric !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-4xl border-[#e7e7ef] bg-white p-6">
-        <DialogHeader>
-          <DialogTitle>{title}趋势</DialogTitle>
-          <DialogDescription>按当前范围展示日趋势；近一个季度自动按业务周聚合。</DialogDescription>
+        <DialogHeader className="pr-8">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <DialogTitle>{title}趋势</DialogTitle>
+            <div className="payment-trend-mode revenue-dialog-grain" role="group" aria-label="放大趋势粒度">
+              {(['day', 'week', 'month'] as const).map((value) => (
+                <button key={value} type="button" aria-pressed={grain === value} onClick={() => setGrain(value)}>
+                  {{ day: '日', week: '周', month: '月' }[value]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <DialogDescription>
+            按{{ day: '日', week: '业务周', month: '自然月' }[grain]}展示日均 GMV{startDate && endDate ? `：${startDate} 至 ${endDate}` : '。'}
+          </DialogDescription>
         </DialogHeader>
         <div className="h-[360px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={rows} margin={{ top: 12, right: 20, left: 4, bottom: 4 }}>
+            <AreaChart data={chartRows} margin={{ top: 12, right: 20, left: 4, bottom: 4 }}>
               <CartesianGrid vertical={false} stroke="#ececf3" />
               <XAxis dataKey="period" tickLine={false} axisLine={false} tickFormatter={formatTrendDate} />
               <YAxis domain={yAxisDomain} tickLine={false} axisLine={false} tickFormatter={(value) => money(Number(value))} width={78} />
               <Tooltip
-                labelFormatter={(label) => formatTrendDate(String(label))}
-                formatter={(value) => [money(Number(value)), title]}
+                cursor={{ stroke: '#e7e7ef', strokeDasharray: '4 4' }}
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null;
+                  const point = payload[0].payload as typeof chartRows[number];
+                  return (
+                    <div className="trend-tooltip revenue-dialog-tooltip">
+                      <div className="trend-tooltip-date">{point.coverage}</div>
+                      <div className="revenue-dialog-tooltip-row">
+                        <i style={{ background: definition?.color ?? '#5B3FF2' }} />
+                        <span>{title}日均 GMV</span>
+                        <strong>{money(Number(point[metric ?? 'totalGmv']))}</strong>
+                      </div>
+                      {grain !== 'day' && <small>按 {point.days} 天计算日均</small>}
+                    </div>
+                  );
+                }}
               />
               <Area
                 type="monotone"

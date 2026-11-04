@@ -78,9 +78,9 @@ const Layout = () => {
   const [dockOpen, setDockOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
-      return window.localStorage.getItem('pollo-sidebar-collapsed') === 'true';
+      return window.localStorage.getItem('pollo-compact-nav-expanded') !== 'true';
     } catch {
-      return false;
+      return true;
     }
   });
   const [jobs, setJobs] = useState<ReportGenerationStatus[]>([]);
@@ -149,8 +149,8 @@ const Layout = () => {
   useEffect(() => {
     try {
       window.localStorage.setItem(
-        'pollo-sidebar-collapsed',
-        String(sidebarCollapsed),
+        'pollo-compact-nav-expanded',
+        String(!sidebarCollapsed),
       );
     } catch {
       // Local storage is optional; the layout remains usable without it.
@@ -255,6 +255,7 @@ const Layout = () => {
       />
       <aside
         className="dashboard-sidebar"
+        inert={sidebarCollapsed && !sidebarOpen ? true : undefined}
         data-open={sidebarOpen}
         aria-label="主导航"
       >
@@ -348,6 +349,7 @@ const Layout = () => {
       </aside>
       <nav
         className="dashboard-dock"
+        inert={!sidebarCollapsed ? true : undefined}
         data-expanded={dockOpen || undefined}
         aria-label="折叠导航"
         onPointerEnter={() => setDockOpen(true)}

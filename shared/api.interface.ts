@@ -9,7 +9,7 @@ export type DashboardPlatform = (typeof DASHBOARD_PLATFORMS)[number];
 export const APP_DEVICE_TYPES = ['ios', 'android'] as const;
 export type AppDeviceType = (typeof APP_DEVICE_TYPES)[number];
 
-export const GRANULARITIES = ['day', 'week'] as const;
+export const GRANULARITIES = ['day', 'week', 'month'] as const;
 export type Granularity = (typeof GRANULARITIES)[number];
 
 export const DATASET_KINDS = ['daily', 'weekly'] as const;
@@ -40,6 +40,39 @@ export const ATTRIBUTION_DIMENSIONS = [
   'creative',
 ] as const;
 export type AttributionDimension = (typeof ATTRIBUTION_DIMENSIONS)[number];
+
+export const GMV_ATTRIBUTION_TYPES = ['NONE', 'CREATION_MODE', 'MODEL', 'ACTUAL_MODEL'] as const;
+export type GmvAttributionType = (typeof GMV_ATTRIBUTION_TYPES)[number];
+
+export interface PaymentRevenuePoint {
+  period: string;
+  weekStart: string;
+  attributionName: string;
+  payCategory: 'ACTIVE_PAYMENT' | 'AUTO_RENEWAL' | 'API';
+  payType: string;
+  actualSupplier: string | null;
+  actualProvider: string | null;
+  gmvUsd: number;
+}
+
+export interface PaymentCostPoint {
+  period: string;
+  weekStart: string;
+  attributionName: string;
+  actualSupplier: string | null;
+  actualProvider: string | null;
+  modelCostUsd: number;
+}
+
+export interface PaymentAnalysisResponse {
+  attributionType: GmvAttributionType;
+  source: 'ads_v1' | 'legacy';
+  availableAttributionTypes: GmvAttributionType[];
+  comparison: AttributionComparisonWindow | null;
+  revenues: PaymentRevenuePoint[];
+  costs: PaymentCostPoint[];
+  costAvailable: boolean;
+}
 
 export const RENEWAL_PLAN_TIERS = ['LITE', 'PRO', 'ULTRA'] as const;
 export type RenewalPlanTier = (typeof RENEWAL_PLAN_TIERS)[number];
@@ -330,6 +363,15 @@ export interface ReportSummary {
   degraded: boolean;
   markdown: string;
   generatedAt: string;
+}
+
+export interface PaymentTrendResponse {
+  series: Array<{ key: string; label: string; points: Array<{period: string; gmvUsd: number | null}> }>;
+
+  granularity: 'day' | 'week' | 'month';
+  startDate: string;
+  endDate: string;
+  points: Array<{ period: string; gmvUsd: number | null; modelCostUsd: number | null; days: number; source: 'ads_v1' | 'legacy' | 'mixed' | null }>;
 }
 
 export type ReportHistoryItem = Omit<ReportSummary, 'markdown'>;

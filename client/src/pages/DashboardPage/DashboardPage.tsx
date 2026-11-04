@@ -1,3 +1,4 @@
+import { formatChartTooltipValue, formatChartTooltipChange } from "@/lib/chart-tooltip-format";
 import {
   startTransition,
   useCallback,
@@ -10,6 +11,8 @@ import {
   type ReactNode,
 } from 'react';
 import dayjs from 'dayjs';
+import PaymentAnalysis from '@/components/dashboard/PaymentAnalysis';
+import { GlobalFinanceMarketComboChart } from '@/components/finance-chart/GlobalFinanceMarketComboChart';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { AnimatePresence, motion, useInView, useReducedMotion } from 'framer-motion';
@@ -50,9 +53,12 @@ import {
 } from '@/components/dashboard/navigation';
 import {
   CartesianGrid,
+  Bar,
+  BarChart,
+  Cell,
+  ReferenceLine,
   Line,
   LineChart,
-  type TooltipProps,
   XAxis,
   YAxis,
 } from 'recharts';
@@ -178,18 +184,6 @@ type TrendChartPoint = {
   period: string;
   value: number;
   previousWeekValue?: number;
-};
-
-type TrendChartDataPoint = TrendChartPoint &
-  Record<string, string | number | undefined>;
-
-type TrendSeriesSpec = {
-  key: string;
-  label: string;
-  valueLabel: string;
-  color: string;
-  format: (value: number) => string;
-  sourceKey?: keyof OverviewTrendPoint;
 };
 
 type TrendRange = {
@@ -450,10 +444,8 @@ function resolveTrendSourceWindow(
   window: { startDate: string; endDate: string },
   granularity: Granularity,
 ): { startDate: string; endDate: string } {
-  if (granularity !== 'day') return window;
-
   const minStartDate = dayjs(TREND_DATA_START_DATE);
-  const paddedStartDate = dayjs(window.startDate).subtract(WEEK_DAYS, 'day');
+  const paddedStartDate = granularity === 'day' ? dayjs(window.startDate).subtract(WEEK_DAYS, 'day') : dayjs(window.startDate);
   return {
     startDate: (paddedStartDate.isBefore(minStartDate)
       ? minStartDate
@@ -602,122 +594,12 @@ function getCachedRequest<T>(
   return request;
 }
 
-function getTrendSeriesValue(
-  row: OverviewTrendPoint,
-  series: TrendSeriesSpec,
-): number {
-  if (!series.sourceKey) return 0;
-  const value = row[series.sourceKey];
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}
-
-function buildTrendSeries(
-  metric: TrendMetricSpec,
-): TrendSeriesSpec[] {
-  return [
-    {
-      key: 'series0',
-      label: metric.label,
-      valueLabel: metric.valueLabel,
-      color: metric.color,
-      format: metric.format,
-      sourceKey: metric.key as keyof OverviewTrendPoint,
-    },
-  ];
-}
-
 function getTrendMetricValue(
   row: OverviewTrendPoint,
   metric: TrendMetricSpec,
 ): number {
   const value = row[metric.key];
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}
-
-function TrendTooltipContent({
-  active,
-  label,
-  payload,
-  series,
-  showPreviousWeekComparison,
-  compact = false,
-}: TooltipProps<number, string> & {
-  series: TrendSeriesSpec[];
-  showPreviousWeekComparison: boolean;
-  compact?: boolean;
-}) {
-  if (!active || !payload?.length) return null;
-
-  const row = payload[0]?.payload as TrendChartDataPoint | undefined;
-
-  if (compact && series.length === 1) {
-    const item = series[0];
-    const currentValue = Number(row?.[item.key]);
-    const previousValue = Number(row?.[`${item.key}PreviousWeekValue`]);
-    const previousWeekChange =
-      Number.isFinite(currentValue) &&
-      Number.isFinite(previousValue) &&
-      previousValue !== 0
-        ? currentValue / previousValue - 1
-        : null;
-
-    return (
-      <div className="grid min-w-[8rem] gap-1 rounded-xl border border-gray-200 bg-white px-2.5 py-2 text-[11px] leading-none text-gray-600 shadow-none">
-        <div className="flex items-center justify-between gap-3">
-          <span className="font-medium text-gray-900">{String(label)}</span>
-          <span className="font-mono text-gray-900">
-            {item.format(Number.isFinite(currentValue) ? currentValue : 0)}
-          </span>
-        </div>
-        {showPreviousWeekComparison &&
-        Number.isFinite(previousWeekChange ?? NaN) ? (
-          <div className="flex items-center justify-between gap-3">
-            <span>较上周同日</span>
-            <span className="font-mono text-gray-900">
-              {formatSignedPercent(previousWeekChange)}
-            </span>
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
-  return (
-    <div className="trend-tooltip">
-      <div className="trend-tooltip-date">{String(label)}</div>
-      <div className="grid gap-1">
-        {series.map((item) => {
-          const currentValue = Number(row?.[item.key]);
-          const previousValue = Number(row?.[`${item.key}PreviousWeekValue`]);
-          const previousWeekChange =
-            Number.isFinite(currentValue) &&
-            Number.isFinite(previousValue) &&
-            previousValue !== 0
-              ? currentValue / previousValue - 1
-              : null;
-          return (
-            <div key={item.key} className="trend-tooltip-row">
-              <span className="inline-flex min-w-0 items-center gap-1.5">
-                <span
-                  className="size-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: item.color }}
-                />
-                <span className="truncate">{item.valueLabel}</span>
-              </span>
-              <span className="font-mono text-gray-900">
-                {item.format(Number.isFinite(currentValue) ? currentValue : 0)}
-              </span>
-              {showPreviousWeekComparison && series.length === 1 ? (
-                <span className="font-mono text-gray-500">
-                  {formatSignedPercent(previousWeekChange)}
-                </span>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 function formatPeriod(value: string, granularity: Granularity): string {
@@ -749,30 +631,6 @@ function resolveTrendRange(
     startIndex: normalizedStartIndex,
     endIndex: normalizedEndIndex,
   };
-}
-
-function resolveTrendYAxisDomain(
-  data: TrendChartDataPoint[],
-  keys: string[],
-): [number, number] {
-  const values = data
-    .flatMap((row) => keys.map((key) => row[key]))
-    .filter(
-      (value): value is number =>
-        typeof value === 'number' && Number.isFinite(value),
-    );
-  if (values.length === 0) return [0, 1];
-
-  const minValue = Math.min(...values);
-  const maxValue = Math.max(...values);
-  const span = maxValue - minValue;
-  const padding =
-    span > 0 ? span * 0.15 : Math.max(Math.abs(maxValue) * 0.08, 1);
-  const lower =
-    minValue >= 0 ? Math.max(0, minValue - padding) : minValue - padding;
-  const upper = maxValue + padding;
-
-  return lower === upper ? [lower - 1, upper + 1] : [lower, upper];
 }
 
 function clampIndex(value: number, min: number, max: number): number {
@@ -1114,7 +972,7 @@ function GmvCoverageExplanation({
           <h3>创作积极性与分层</h3>
           <dl className="dashboard-methodology-definitions">
             <div><dt>创作积极性</dt><dd>创作 UV、任务数按业务日均展示，渗透率为创作 UV ÷ 活跃 UV，不计算贡献度。</dd></div>
-            <div><dt>创作分层</dt><dd>按分析期开始前 30 日的创作次数划分；“分析期前 30 日无创作用户”仅表示该窗口内创作次数为 0，创作 UV、创作渗透率等指标统计的是这批用户在分析期内的行为。</dd></div>
+            <div><dt>创作分层</dt><dd>支付链路按统计日前 30 日的有效创作任务数逐日划分；创作积极性侧证仍按原业务周窗口划分。“分析期前 30 日无创作用户”仅表示该窗口内创作次数为 0，创作 UV、创作渗透率等指标统计的是这批用户在分析期内的行为。</dd></div>
           </dl>
         </section>
       </div>
@@ -1223,382 +1081,40 @@ function PageSection({
   );
 }
 
-function MetricTrendChart({
-  data,
-  metricControls,
-  granularity,
-  onGranularityChange,
-  metric,
-  rangeStartDate,
-  rangeEndDate,
-  onRangeChange,
-}: {
-  data: OverviewTrendPoint[];
-  metricControls: ReactNode;
-  granularity: Granularity;
-  onGranularityChange: (value: Granularity) => void;
-  metric: TrendMetricSpec;
-  rangeStartDate: string | null;
-  rangeEndDate: string | null;
-  onRangeChange: (range: { startDate: string; endDate: string }) => void;
+function MetricTrendChart({ data, metricControls, granularity, onGranularityChange, metric, rangeStartDate, rangeEndDate, onRangeChange }: {
+  data: OverviewTrendPoint[]; metricControls: ReactNode; granularity: Granularity;
+  onGranularityChange: (value: Granularity) => void; metric: TrendMetricSpec;
+  rangeStartDate: string | null; rangeEndDate: string | null;
+  onRangeChange: (range: {startDate: string; endDate: string}) => void;
 }) {
   const [showData, setShowData] = useState(false);
-  const reducedMotion = useReducedMotion();
-  const chartPanRef = useRef<HTMLDivElement | null>(null);
-  const chartPanStateRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startIndex: number;
-    endIndex: number;
-    pointWidth: number;
-  } | null>(null);
-  const [isChartPanning, setIsChartPanning] = useState(false);
-  const series = useMemo(() => buildTrendSeries(metric), [metric]);
-  const [hiddenSeriesKeys, setHiddenSeriesKeys] = useState<Set<string>>(
-    () => new Set(),
-  );
-  useEffect(() => {
-    setHiddenSeriesKeys(new Set());
-  }, [series]);
-  const visibleSeries = useMemo(
-    () => series.filter((item) => !hiddenSeriesKeys.has(item.key)),
-    [hiddenSeriesKeys, series],
-  );
-  const toggleSeriesVisibility = useCallback(
-    (key: string) => {
-      setHiddenSeriesKeys((current) => {
-        const next = new Set(current);
-        if (next.has(key)) {
-          next.delete(key);
-          return next;
-        }
-        const currentVisibleCount = series.filter(
-          (item) => !current.has(item.key),
-        ).length;
-        if (currentVisibleCount <= 1) return current;
-        next.add(key);
-        return next;
-      });
-    },
-    [series],
-  );
-  const chartData = useMemo(() => {
-    const valueBySeriesPeriod = series.map((item) => ({
-      series: item,
-      values: new Map(
-        data.map((row) => [row.period, getTrendSeriesValue(row, item)]),
-      ),
-    }));
-    const headlineValueByPeriod = new Map(
-      data.map((row) => [row.period, getTrendMetricValue(row, metric)]),
-    );
-    return data.map((row) => {
-      const previousWeekPeriod = dayjs(row.period)
-        .subtract(WEEK_DAYS, 'day')
-        .format('YYYY-MM-DD');
-      const point: TrendChartDataPoint = {
-        period: row.period,
-        value: getTrendMetricValue(row, metric),
-        valuePreviousWeekValue:
-          granularity === 'day'
-            ? headlineValueByPeriod.get(previousWeekPeriod)
-            : undefined,
-      };
-      for (const { series: item, values } of valueBySeriesPeriod) {
-        const currentValue = getTrendSeriesValue(row, item);
-        point[item.key] = currentValue;
-        point[`${item.key}PreviousWeekValue`] =
-          granularity === 'day' ? values.get(previousWeekPeriod) : undefined;
-      }
-      return point;
-    });
-  }, [data, granularity, metric, series]);
-  const trendRange = resolveTrendRange(chartData, rangeStartDate, rangeEndDate);
-  const visibleData = chartData.slice(
-    trendRange.startIndex,
-    trendRange.endIndex + 1,
-  );
-  const yAxisKeys = visibleSeries.map((item) => item.key);
-  const yAxisDomain = resolveTrendYAxisDomain(visibleData, yAxisKeys);
-  const canPanChart = chartData.length > visibleData.length;
-  const commitRangeByIndex = useCallback(
-    (startIndex: number, endIndex: number) => {
-      const start = chartData[startIndex];
-      const end = chartData[endIndex];
-      if (!start || !end) return;
-      onRangeChange({ startDate: start.period, endDate: end.period });
-    },
-    [chartData, onRangeChange],
-  );
-  const beginChartPan = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (!canPanChart || (event.pointerType === 'mouse' && event.button !== 0))
-        return;
-      const bounds = chartPanRef.current?.getBoundingClientRect();
-      if (!bounds) return;
-      const selectedPoints = Math.max(1, visibleData.length - 1);
-      chartPanStateRef.current = {
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startIndex: trendRange.startIndex,
-        endIndex: trendRange.endIndex,
-        pointWidth: bounds.width / selectedPoints,
-      };
-      event.currentTarget.setPointerCapture(event.pointerId);
-      setIsChartPanning(true);
-    },
-    [
-      canPanChart,
-      trendRange.endIndex,
-      trendRange.startIndex,
-      visibleData.length,
-    ],
-  );
-  const moveChartPan = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      const state = chartPanStateRef.current;
-      if (!state) return;
-      event.preventDefault();
-      const deltaIndex = Math.round(
-        (state.startX - event.clientX) / state.pointWidth,
-      );
-      if (deltaIndex === 0) return;
-      const lastIndex = chartData.length - 1;
-      const span = state.endIndex - state.startIndex;
-      const nextStartIndex = clampIndex(
-        state.startIndex + deltaIndex,
-        0,
-        lastIndex - span,
-      );
-      const nextEndIndex = nextStartIndex + span;
-      if (
-        nextStartIndex === trendRange.startIndex &&
-        nextEndIndex === trendRange.endIndex
-      )
-        return;
-      commitRangeByIndex(nextStartIndex, nextEndIndex);
-    },
-    [
-      chartData.length,
-      commitRangeByIndex,
-      trendRange.endIndex,
-      trendRange.startIndex,
-    ],
-  );
-  const endChartPan = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      const state = chartPanStateRef.current;
-      if (!state) return;
-      if (event.currentTarget.hasPointerCapture(state.pointerId)) {
-        event.currentTarget.releasePointerCapture(state.pointerId);
-      }
-      chartPanStateRef.current = null;
-      setIsChartPanning(false);
-    },
-    [],
-  );
-  const latest = visibleData.at(-1);
-  const previous = visibleData.at(-2);
-  const primarySeries = visibleSeries[0] ?? series[0];
-  const latestValue = Number(latest?.value);
-  const previousComparisonValue =
-    granularity === 'day'
-      ? Number(latest?.valuePreviousWeekValue)
-      : Number(previous?.value);
-  const comparisonValue =
-    Number.isFinite(previousComparisonValue) && previousComparisonValue > 0
-      ? previousComparisonValue
-      : null;
-  const change =
-    latest && comparisonValue && Number.isFinite(latestValue)
-      ? (latestValue - comparisonValue) / comparisonValue
-      : null;
-  const chartConfig = series.reduce<ChartConfig>((config, item) => {
-    config[item.key] = {
-      label: item.label,
-      color: item.color,
-    };
-    config[`${item.key}PreviousWeekValue`] = {
-      label: `上周同日${item.label}`,
-      color: '#94A3B8',
-    };
-    return config;
-  }, {});
-  const valueContext = granularity === 'week' ? '最近一周日均' : '最近一日';
-  const changeContext = 'WoW';
-
-  const controls = (
-    <div className="trend-control-row">
-      {metricControls}
-      <div className="chart-toolbar">
-        <CanvasToolbar
-          granularity={granularity}
-          onGranularityChange={onGranularityChange}
-          onResetRange={() => commitRangeByIndex(0, chartData.length - 1)}
-          showData={showData}
-          onToggleData={() => setShowData((value) => !value)}
-          onExport={() => downloadCsv(
-            `Pollo-${metric.label}-${visibleData[0]?.period}.csv`,
-            [
-              ['日期', ...visibleSeries.map((item) => item.label)],
-              ...visibleData.map((row) => [row.period, ...visibleSeries.map((item) => Number(row[item.key]))]),
-            ],
-          )}
-        />
-      </div>
-    </div>
-  );
-
-  if (data.length === 0) {
-    return <div className="grid min-w-0 gap-4">{controls}<EmptyBlock title="暂无趋势" description="当前窗口没有可展示的时间序列。" /></div>;
-  }
-
-  return (
-    <div className="grid min-w-0 gap-4">
-      {controls}
-      <div className="flex flex-wrap items-end justify-between gap-3 px-1 py-1">
-        <div className="min-w-[220px]">
-          <div className="sr-only">当前指标</div>
-          <div className="sr-only">{metric.label}</div>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-              {series.map((item) => {
-                const hidden = hiddenSeriesKeys.has(item.key);
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    aria-pressed={!hidden}
-                    aria-label={`${hidden ? '显示' : '隐藏'}${item.label}`}
-                    data-trend-series={item.key}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-full px-1.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600',
-                      hidden
-                        ? 'text-gray-400 hover:bg-gray-100'
-                        : 'text-gray-600 hover:bg-white',
-                    )}
-                    onClick={() => toggleSeriesVisibility(item.key)}
-                  >
-                    <span
-                      className={cn(
-                        'h-0.5 w-6 rounded-full transition-colors',
-                        hidden && 'bg-gray-300',
-                      )}
-                      style={{ backgroundColor: hidden ? undefined : item.color }}
-                    />
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
-        </div>
-        <div className="trend-summary-tools">
-          <div className="text-right">
-            <div className="text-xs text-muted-foreground">{valueContext}</div>
-            <div className="mt-1 text-base font-medium tabular-nums text-primary">
-              {latest && Number.isFinite(latestValue)
-                ? metric.format(latestValue)
-                : '-'}
-            </div>
-            <div className="mt-1 text-xs text-muted-foreground">
-              {changeContext} {formatSignedPercent(change)}
-            </div>
-          </div>
-        </div>
-      </div>
-      <div
-        ref={chartPanRef}
-        className={cn(
-          'min-w-0 touch-none rounded-2xl bg-white py-2',
-          canPanChart && (isChartPanning ? 'cursor-grabbing' : 'cursor-grab'),
-        )}
-        onPointerDown={beginChartPan}
-        onPointerMove={moveChartPan}
-        onPointerUp={endChartPan}
-        onPointerCancel={endChartPan}
-      >
-          <ChartContainer config={chartConfig} className="h-[320px] w-full">
-            <LineChart
-              data={visibleData}
-              margin={{ left: 4, right: 16, top: 12, bottom: 4 }}
-            >
-              <CartesianGrid
-                vertical={false}
-                stroke="#ECECF3"
-                strokeDasharray="0"
-              />
-              <XAxis
-                dataKey="period"
-                tickLine={false}
-                axisLine={false}
-                tickMargin={10}
-                minTickGap={26}
-                tick={{ fill: '#747487', fontSize: 12 }}
-                tickFormatter={(value: string) =>
-                  formatPeriod(value, granularity)
-                }
-              />
-              <YAxis
-                domain={yAxisDomain}
-                tickLine={false}
-                axisLine={false}
-                tickMargin={10}
-                tick={{ fill: '#747487', fontSize: 12 }}
-                tickFormatter={(value: number) => primarySeries.format(value)}
-                width={72}
-              />
-              <ChartTooltip
-                cursor={{ stroke: '#9B93CF', strokeDasharray: '3 3' }}
-                content={
-                  <TrendTooltipContent
-                    series={visibleSeries}
-                    showPreviousWeekComparison={false}
-                  />
-                }
-              />
-              {visibleSeries.map((item) => (
-                <Line
-                  key={`${metric.key}-${granularity}-${item.key}`}
-                  dataKey={item.key}
-                  type="monotone"
-                  stroke={item.color}
-                  strokeWidth={visibleSeries.length === 1 ? 3 : 2.5}
-                  dot={false}
-                  activeDot={{ r: 5 }}
-                  isAnimationActive={!reducedMotion}
-                  animationBegin={280}
-                  animationDuration={850}
-                />
-              ))}
-            </LineChart>
-          </ChartContainer>
-      </div>
-      {showData && (
-        <div className="chart-data dashboard-enter">
-          <table>
-            <caption className="sr-only">当前可视范围的趋势数据</caption>
-            <thead>
-              <tr>
-                <th>日期</th>
-                {visibleSeries.map((item) => (
-                  <th key={item.key}>{item.label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {visibleData.map((row) => (
-                <tr key={row.period}>
-                  <td>{row.period}</td>
-                  {visibleSeries.map((item) => (
-                    <td key={item.key}>{item.format(Number(row[item.key]))}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
+  const rows = useMemo(() => data.map(row => ({period: row.period, value: getTrendMetricValue(row, metric)})), [data, metric]);
+  const bucketStartDate = !rangeStartDate ? null : granularity === "month" ? dayjs(rangeStartDate).startOf("month").format("YYYY-MM-DD") : granularity === "week" ? getBusinessWeekStart(rangeStartDate) : rangeStartDate;
+  const range = resolveTrendRange(rows, bucketStartDate, rangeEndDate);
+  const visible = rows.slice(range.startIndex, range.endIndex + 1);
+  const byDate = new Map(rows.map(row => [row.period, row.value]));
+  // Forecast is the real value seven days earlier, aligned to the shown date.
+  const actual = visible.map(row => ({date: row.period, value: row.value}));
+  const forecast = visible.flatMap(row => {
+    const value = byDate.get(dayjs(row.period).subtract(7, 'day').format('YYYY-MM-DD'));
+    return value == null ? [] : [{date: row.period, value}];
+  });
+  const unit = metric.key.endsWith("Rate") ? "ratio" : ["dau", "expireUserCnt"].includes(metric.key) ? "count" : "currency";
+  const singleLine = granularity !== "day";
+  const flows = forecast.map((point) => ({date: point.date, value: byDate.get(point.date)! - point.value}));
+  const mean = (points: {value:number}[]) => points.length ? points.reduce((sum,p) => sum+p.value,0)/points.length : 0;
+  const current = mean(actual), previous = mean(forecast);
+  const change = previous ? (mean(forecast.map(p=>({value:byDate.get(p.date)!})))/previous-1)*100 : undefined;
+  const exportRows = () => downloadCsv(`Pollo-${metric.label}.csv`, [
+    ['日期', metric.label, '上周同期', '较上周变化'],
+    ...actual.map(p => { const prior = byDate.get(dayjs(p.date).subtract(7,'day').format('YYYY-MM-DD'));return [p.date,p.value,prior??'',prior==null?'':p.value-prior]; }),
+  ]);
+  const toolbar = <div className="trend-control-row">{metricControls}<CanvasToolbar granularity={granularity} onGranularityChange={onGranularityChange} onResetRange={() => { if(rows.length)onRangeChange({startDate:rows[0].period,endDate:rows.at(-1)!.period}); }} showData={showData} onToggleData={()=>setShowData(v=>!v)} onExport={exportRows}/></div>;
+  if (!visible.length) return <>{toolbar}<EmptyBlock title="暂无趋势" description=""/></>;
+  return <>
+    <GlobalFinanceMarketComboChart locale="zh-CN" title="" variant={singleLine ? "line" : "combo"} data={{actual,forecast:singleLine ? [] : forecast,flows:singleLine ? [] : flows,growth:change==null?undefined:{value:change},outlook:forecast.length?{year:0,value:previous}:undefined}} products={[]} categories={[]} periods={[]} period={granularity} toolbar={toolbar} actualLabel={metric.label} forecastLabel="上周同期" flowLabel="较上周变化" aumLabel="区间日均" growthLabel="较上周" outlookLabel="上周同期日均" formatValue={metric.format} formatTooltipValue={value => formatChartTooltipValue(value, unit)} formatChangeValue={value => formatChartTooltipChange(value, unit)} onExport={exportRows}/>
+    {showData && <div className="chart-data"><table><thead><tr><th>日期</th><th>{metric.label}</th><th>上周同期</th></tr></thead><tbody>{actual.map(p=><tr key={p.date}><td>{p.date}</td><td>{metric.format(p.value)}</td><td>{forecast.find(f=>f.date===p.date)?metric.format(forecast.find(f=>f.date===p.date)!.value):'—'}</td></tr>)}</tbody></table></div>}
+  </>;
 }
 
 function AnimatedPopoverContent({
@@ -2697,7 +2213,7 @@ function ContributionTable({
               <span>分析期日均 GMV</span>
               <div className="payment-donut-total">
                 <strong>{formatContributionValue(analysisTotal, section.valueLabel)}</strong>
-                <span>周环比 {formatSignedPercent(totalWowChange)}</span>
+                <span className={cn('payment-summary-wow', totalWowChange !== null && totalWowChange > 0 && 'is-positive', totalWowChange !== null && totalWowChange < 0 && 'is-negative')}>周环比 {formatSignedPercent(totalWowChange)}</span>
               </div>
               <small>基准期 {formatContributionValue(baselineTotal, section.valueLabel)}</small>
               <div className="payment-donut-legend">
@@ -2874,37 +2390,44 @@ function PaymentTrendPanel({
     return '其他';
   };
   const rows = useMemo(() => {
+    if (mode === 'week') {
+      if (!comparison) return [];
+      // Reuse the comparison's weekday-aligned daily averages. The raw daily
+      // breakdown includes the full baseline week even for a partial analysis week.
+      return [
+        {
+          period: comparison.baselinePeriod,
+          weekStart: comparison.baselinePeriod,
+          label: '基准周',
+          values: Object.fromEntries(section.items.map((item) => [item.key, item.baselineDailyAvg])),
+        },
+        {
+          period: comparison.analysisPeriod,
+          weekStart: comparison.analysisPeriod,
+          label: '分析周',
+          values: Object.fromEntries(section.items.map((item) => [item.key, item.analysisDailyAvg])),
+        },
+      ];
+    }
     const scoped = breakdown.filter((row) => (
       (type === 'active' ? row.payType !== '自动续订' : row.payType === '自动续订')
       && (row.weekStart === comparison?.baselinePeriod || row.weekStart === comparison?.analysisPeriod)
     ));
     const grouped = new Map<string, { period: string; weekStart: string; values: Record<string, number> }>();
     scoped.forEach((row) => {
-      const key = mode === 'week' ? row.weekStart : row.period;
+      const key = row.period;
       const current = grouped.get(key) ?? { period: key, weekStart: row.weekStart, values: {} };
       const category = categoryOf(row);
       current.values[category] = (current.values[category] ?? 0) + row.gmvUsd;
       grouped.set(key, current);
     });
-    const daysByWeek = new Map<string, number>([
-      [comparison?.baselinePeriod ?? '', comparison?.baselinePeriodDays || WEEK_DAYS],
-      [comparison?.analysisPeriod ?? '', comparison?.analysisPeriodDays || WEEK_DAYS],
-    ]);
     return [...grouped.values()]
       .sort((a, b) => a.period.localeCompare(b.period))
-      .map((row) => ({
-        ...row,
-        label: mode === 'week'
-          ? row.weekStart === comparison?.analysisPeriod ? '分析周' : '基准周'
-          : (() => {
-            const [month, day] = row.period.slice(5).split('-');
-            return `${Number(month)}/${Number(day)}`;
-          })(),
-        values: mode === 'week'
-          ? Object.fromEntries(Object.entries(row.values).map(([key, value]) => [key, value / (daysByWeek.get(row.weekStart) || WEEK_DAYS)]))
-          : row.values,
-      }));
-  }, [breakdown, comparison, mode, order, type]);
+      .map((row) => {
+        const [month, day] = row.period.slice(5).split('-');
+        return { ...row, label: `${Number(month)}/${Number(day)}` };
+      });
+  }, [breakdown, comparison, mode, order, type, section.items]);
   const categories = order.filter((key) => rows.some((row) => Number(row.values[key] ?? 0) > 0));
   const activeRows = rows.filter((row) => row.weekStart === comparison?.analysisPeriod);
   const money = (value: number) => formatContributionValue(value, 'GMV');
@@ -2914,7 +2437,7 @@ function PaymentTrendPanel({
       <div className="payment-trend-card-head">
         <div>
           <h4>{label}</h4>
-          <p>{mode === 'day' ? '分析周逐日 GMV' : '基准周 vs 分析周'}</p>
+          <p>{mode === 'day' ? '分析周逐日 GMV' : '基准周 vs 分析周日均 GMV'}</p>
         </div>
         <div className="payment-trend-mode" role="group" aria-label="趋势粒度">
           {(['day', 'week'] as PaymentTrendMode[]).map((value) => (
@@ -3837,11 +3360,13 @@ function SectionHeaderLine({
   description,
   count,
   hint,
+  action,
 }: {
   title: string;
   description?: string;
   count?: number;
   hint?: string;
+  action?: ReactNode;
 }) {
   return (
     <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
@@ -3860,6 +3385,7 @@ function SectionHeaderLine({
           </p>
         ) : null}
       </div>
+      {action}
       {typeof count === 'number' ? (
         <Badge variant="outline" className="rounded-full bg-gray-50">
           {count} 项
@@ -3873,7 +3399,7 @@ const DashboardPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const view = dashboardView('/', searchParams.toString());
   const activeTab = view.id;
-  const [overview, setOverview] = useState<DashboardOverviewResponse | null>(
+  const [overview, setOverview] = useState<(DashboardOverviewResponse & { granularity: Granularity }) | null>(
     null,
   );
   const [cardTrend, setCardTrend] = useState<OverviewTrendPoint[]>([]);
@@ -3980,7 +3506,7 @@ const DashboardPage = () => {
       : 'all';
   const effectiveDeviceType = deviceType === 'all' ? undefined : deviceType;
   const granularity = (
-    searchParams.get('granularity') === 'day' ? 'day' : 'week'
+    searchParams.get('granularity') === 'month' ? 'month' : searchParams.get('granularity') === 'week' ? 'week' : 'day'
   ) as Granularity;
   const trendMetricKey = normalizeTrendMetricKey(searchParams.get('metric'));
   const trendMetric =
@@ -4173,6 +3699,8 @@ const DashboardPage = () => {
     [],
   );
 
+  const onPaymentLoadingChange = useCallback((value: boolean) => setSectionLoading('payType', value), [setSectionLoading]);
+
   const setSectionError = useCallback(
     (key: DashboardLoadKey, value?: string) => {
       setLoadErrors((current) => ({ ...current, [key]: value }));
@@ -4220,7 +3748,7 @@ const DashboardPage = () => {
     )
       .then((response) => {
         if (!cancelled) {
-          setOverview(response);
+          setOverview({ ...response, granularity });
           if (granularity === 'day' && cardGranularity === 'day') {
             setCardTrend((response.payTypeTrend ?? response.cardTrend ?? response.trend).filter((row) =>
               row.period >= selectedTrendWindow.startDate && row.period <= selectedTrendWindow.endDate,
@@ -4337,68 +3865,6 @@ const DashboardPage = () => {
   }, [activeTab, refreshToken, setSectionError, setSectionLoading]);
 
   useEffect(() => {
-    if (activeTab !== 'payment') {
-      setSectionLoading('payType', false);
-      return;
-    }
-    let cancelled = false;
-    setSectionLoading('payType', true);
-    setSectionError('payType');
-    const cacheKey = [
-      'attribution',
-      platform,
-      effectiveDeviceType ?? 'all',
-      attributionWindow.startDate,
-      attributionWindow.endDate,
-      baselineWeek,
-      analysisWeek,
-      'pay_type',
-    ].join('|');
-
-    void getCachedRequest(requestCacheRef.current, cacheKey, () =>
-      dashboardApi.getDashboardAttributions({
-        platform,
-        deviceType: effectiveDeviceType,
-        granularity: 'week',
-        dimension: 'pay_type',
-        startDate: attributionWindow.startDate,
-        endDate: attributionWindow.endDate,
-        baselinePeriod: baselineWeek,
-        analysisPeriod: analysisWeek,
-      }),
-    )
-      .then((response) => {
-        if (!cancelled) {
-          setAttributions((current) => ({ ...current, payType: response }));
-        }
-      })
-      .catch((cause) => {
-        if (!cancelled) {
-          setAttributions((current) => ({ ...current, payType: null }));
-          setSectionError('payType', getErrorMessage(cause));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setSectionLoading('payType', false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    activeTab,
-    attributionWindow.endDate,
-    attributionWindow.startDate,
-    analysisWeek,
-    baselineWeek,
-    effectiveDeviceType,
-    platform,
-    refreshToken,
-    setSectionError,
-    setSectionLoading,
-  ]);
-
-  useEffect(() => {
     if (activeTab !== 'creative') {
       setSectionLoading('creative', false);
       return;
@@ -4409,6 +3875,7 @@ const DashboardPage = () => {
     const cacheKey = [
       'attribution',
       platform,
+      effectiveDeviceType ?? 'all',
       attributionWindow.startDate,
       attributionWindow.endDate,
       baselineWeek,
@@ -4419,6 +3886,7 @@ const DashboardPage = () => {
     void getCachedRequest(requestCacheRef.current, cacheKey, () =>
       dashboardApi.getDashboardAttributions({
         platform,
+        deviceType: effectiveDeviceType,
         granularity: 'week',
         dimension: 'creative',
         startDate: attributionWindow.startDate,
@@ -4451,6 +3919,7 @@ const DashboardPage = () => {
     attributionWindow.startDate,
     analysisWeek,
     baselineWeek,
+    effectiveDeviceType,
     platform,
     refreshToken,
     setSectionError,
@@ -4466,7 +3935,7 @@ const DashboardPage = () => {
     setSectionLoading('chain', true);
     setSectionError('chain');
     const chainUserTag =
-      creationTier && creationTier !== 'all' && chainUserTagParam !== 'all' ? chainUserTagParam : '';
+      chainUserTagParam !== 'all' ? chainUserTagParam : '';
     const cacheKey = [
       'attribution',
       platform,
@@ -4604,11 +4073,13 @@ const DashboardPage = () => {
   const isRenewalChain = chainType === 'renewal';
   const activeCreationTier =
     creationTier ?? attributions.chain?.drill?.creationTier ?? 'all';
-  const activeChainUserTag = activeCreationTier !== 'all' ? chainUserTagParam : 'all';
+  const activeChainUserTag = chainUserTagParam;
   const activeChainUserLabel =
     activeChainUserTag === 'all' || activeChainUserTag === '全部'
       ? '全部用户'
-      : activeChainUserTag;
+      : activeChainUserTag === '新用户' || activeChainUserTag === '老用户'
+        ? `注册${activeChainUserTag}`
+        : activeChainUserTag;
   const chainDrivers = attributions.chain?.drivers ?? [];
   const activeChainDriverDescription =
     isRenewalChain
@@ -4635,14 +4106,11 @@ const DashboardPage = () => {
   );
 
   return (
-    <div className="dashboard-content">
+    <div className="dashboard-content" data-tab={activeTab}>
       <div className="dashboard-heading">
         <div>
           <h1>{view.label}</h1>
-          <p>{view.description}</p>
-          {['payment', 'chain', 'creative'].includes(activeTab) ? (
-            <span className="dashboard-heading-meta">归因业务周（周六至周五）　{formatComparisonMode(activeComparison)}</span>
-          ) : null}
+
         </div>
         <div className="dashboard-action-bar">
           {activeTab === 'trend' ? (
@@ -4721,14 +4189,13 @@ const DashboardPage = () => {
         <div className="dashboard-enter" key="trend">
           <PageSection
             title="收入趋势"
-            description="查看收入及付费链路指标的变化。"
           >
             <div className="grid min-w-0 gap-4">
-              {loadingBySection.overview && !overview ? (
+              {loadingBySection.overview && (!overview || overview.granularity !== granularity) ? (
                 <LoadingBlock title="趋势加载中" />
               ) : (
                 <MetricTrendChart
-                  data={overview?.trend ?? []}
+                  data={overview?.granularity === granularity ? overview.trend : []}
                   metricControls={<DashboardFilters
                     metric={trendMetric.key}
                     onMetricChange={(value) => updateSearchParams(
@@ -4754,75 +4221,14 @@ const DashboardPage = () => {
       )}
 
       {activeTab === 'payment' && (
-        <div className="dashboard-enter" key="payment">
-          <PageSection>
-            {loadingBySection.payType ? (
-              <LoadingBlock title="付费类型加载中" />
-            ) : paySections.length > 0 ? (
-              <div className="grid min-w-0 gap-8 [&>*]:min-w-0">
-                {primaryPaySection ? (
-                  <ContributionTable
-                    section={primaryPaySection}
-                    comparison={attributions.payType?.comparison ?? null}
-                    onOpenChainAttribution={openChainAttribution}
-                    selectedPrimaryType={selectedPaymentType}
-                    onSelectPrimaryType={setSelectedPaymentType}
-                    itemLabel={(key) => key}
-                  />
-                ) : null}
-                <div className="payment-drill-switcher">
-                  <AnimatePresence mode="wait" initial={false}>
-                    {selectedPayDrillSections.map((section) => (
-                      <motion.div
-                        key={`${selectedPaymentType}-${section.title}`}
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -12 }}
-                        transition={{ duration: 0.2, ease: 'easeOut' }}
-                      >
-                        {selectedPaymentType === 'active' ? (
-                          <PaymentDrillExplorer
-                            section={section}
-                            comparison={attributions.payType?.comparison ?? null}
-                            breakdown={attributions.payType?.paymentBreakdown ?? []}
-                          />
-                        ) : (
-                          <div className="payment-explorer">
-                            <div className="payment-explorer-heading">
-                              <div>
-                                <h3>自动续订下钻</h3>
-                                <p>按订阅档位比较 GMV 变化</p>
-                              </div>
-                            </div>
-                            <div className="payment-renewal-layout">
-                              <PaymentTrendPanel
-                                type="renewal"
-                                section={section}
-                                comparison={attributions.payType?.comparison ?? null}
-                                breakdown={attributions.payType?.paymentBreakdown ?? []}
-                              />
-                              <ContributionTable
-                                section={section}
-                                comparison={attributions.payType?.comparison ?? null}
-                                itemLabel={formatPlanTierLabel}
-                                hideHeading
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                </div>
-              </div>
-            ) : (
-              <EmptyBlock
-                title="暂无付费类型数据"
-                description="当前比较窗口内没有一级付费类型汇总。"
-              />
-            )}
-          </PageSection>
-        </div>
+        <PaymentAnalysis
+          platform={platform}
+          deviceType={effectiveDeviceType}
+          baselinePeriod={baselineWeek}
+          analysisPeriod={analysisWeek}
+          refreshToken={refreshToken}
+          onLoadingChange={onPaymentLoadingChange}
+        />
       )}
 
       {activeTab === 'chain' && (
@@ -4928,7 +4334,18 @@ const DashboardPage = () => {
                   <SectionHeaderLine
                     title={isRenewalChain ? '自动续订因子拆解' : '支付链路指标拆解'}
                     description={activeChainDriverDescription}
-                    count={isRenewalChain || activeCreationTier !== 'all' ? chainDrivers.length : undefined}
+                    action={!isRenewalChain ? (
+                      <IconBar
+                        items={USER_TAG_OPTIONS.filter((option) => option.value !== '未知').map((option) => ({
+                          value: option.value,
+                          label: option.value === '新用户' || option.value === '老用户'
+                            ? `注册${option.label}` : option.label,
+                        }))}
+                        value={activeChainUserTag}
+                        label="支付链路注册用户类型"
+                        onChange={(value) => updateSearchParam('userTag', value === 'all' ? '' : value)}
+                      />
+                    ) : undefined}
                   />
                   <DriverTable
                     drivers={chainDrivers}

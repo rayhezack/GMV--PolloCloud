@@ -87,6 +87,9 @@ export function remoteD1DevProxy() {
     name: 'remote-d1-dev-proxy',
     configureServer(server) {
       let workerPromise;
+      server.watcher.on('change', (file) => {
+        if (file.includes('/worker/') || file.includes('/server/modules/maxcompute/')) workerPromise = undefined;
+      });
       const loadWorker = () => {
         workerPromise ??= server.ssrLoadModule(path.resolve('worker/index.ts'));
         return workerPromise;
