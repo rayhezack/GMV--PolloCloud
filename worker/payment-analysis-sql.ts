@@ -15,10 +15,12 @@ export function paymentAnalysisSql(
 ) {
   const filters = [
     "dataset='pay_type'",
-    `period IN (${scope.dates.map(() => "?").join(",")})`,
+    // Keep exact date membership (including gaps) without exceeding D1's
+    // 100 bound-parameter limit for year-long trend windows.
+    "period IN (SELECT value FROM json_each(?))",
     "platform=?",
   ];
-  const binds: unknown[] = [...scope.dates, scope.platform];
+  const binds: unknown[] = [JSON.stringify(scope.dates), scope.platform];
   if (scope.deviceType) {
     filters.push("device_type=?");
     binds.push(scope.deviceType);

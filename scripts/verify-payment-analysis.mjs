@@ -9,7 +9,8 @@ await Promise.all([
 const {default:worker}=await import('/tmp/pollo-payment-worker.mjs?'+Date.now());
 const {buildPaymentView,buildPaymentDailyRows,buildPaymentDailyPivot}=await import('/tmp/pollo-payment-data.mjs?'+Date.now());
 const database=new DatabaseSync('archives/middle-table-20261104/local-preview.sqlite',{readOnly:true});
-const DB={prepare(sql){let args=[];return {bind(...v){args=v;return this;},async all(){return {results:database.prepare(sql).all(...args)};},async first(){return database.prepare(sql).get(...args)||null;},async run(){throw new Error('Read-only test');}};}};
+// Match the production D1 parameter limit; native SQLite permits far more.
+const DB={prepare(sql){let args=[];return {bind(...v){assert(v.length<=100,`D1 bind limit exceeded: ${v.length}`);args=v;return this;},async all(){return {results:database.prepare(sql).all(...args)};},async first(){return database.prepare(sql).get(...args)||null;},async run(){throw new Error('Read-only test');}};}};
 const ctx={waitUntil(p){p.catch(()=>{});}};
 const near=(a,b,label)=>assert(Math.abs(a-b)<.00001,`${label}: ${a} != ${b}`);
 async function get(route,params){const response=await worker.fetch(new Request('https://local/api/dashboard/'+route+'?'+new URLSearchParams(params)),{DB},ctx);const data=await response.json();assert.equal(response.status,200,JSON.stringify(data));return data;}
@@ -38,15 +39,16 @@ for(const platform of ['web','app','all']) {
   console.log('PASS',platform,attributionType,'revenue / cost / daily export');
  }
 }
-for(const mode of ['NONE','MODEL','ACTUAL_MODEL'])for(const granularity of ['day','week','month']) {
+for(const mode of ['NONE','CREATION_MODE','MODEL','ACTUAL_MODEL'])for(const granularity of ['day','week','month']) {
+ const hasModels=['MODEL','ACTUAL_MODEL'].includes(mode);
  const data=await get('payment-trend',{platform:'web',attributionType:mode,granularity,analysisPeriod:weeks.analysisPeriod,income:'ALL'});
  assert.equal(data.points.length,granularity==='day'?30:12);
  for(const [i,p] of data.points.entries())near(data.series.reduce((n,s)=>n+(s.points[i].gmvUsd||0),0),p.gmvUsd||0,'series conservation');
  const expected=database.prepare("SELECT SUM(gmv_usd) total FROM pollo_da_fact_rows WHERE dataset='pay_type' AND platform='web' AND period BETWEEN ? AND ? AND attribution_type='NONE' AND pay_type<>'汇总' AND pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL','API')").get(mode==='NONE'?data.startDate:data.startDate<'2026-10-01'?'2026-10-01':data.startDate,data.endDate).total;
  const adsOnly=data.points.filter(p=>p.source==='ads_v1');
  // Full ADS windows are independently conserved; legacy coverage is checked below.
- if(mode!=='NONE'||data.startDate>='2026-10-01')near(data.points.reduce((n,r)=>n+(r.gmvUsd||0),0),expected,'trend '+mode+'/'+granularity);
- if(mode!=='NONE')assert(data.points.filter(p=>!p.days).every(p=>p.gmvUsd===null&&p.modelCostUsd===null));
+ if(hasModels||data.startDate>='2026-10-01')near(data.points.reduce((n,r)=>n+(r.gmvUsd||0),0),expected,'trend '+mode+'/'+granularity);
+ if(hasModels)assert(data.points.filter(p=>!p.days).every(p=>p.gmvUsd===null&&p.modelCostUsd===null));
  console.log('PASS trend',mode,granularity,'buckets',data.points.length,'ADS buckets',adsOnly.length);
 }
 for(const attributionType of ['CREATION_MODE','MODEL','ACTUAL_MODEL'])for(const groupBy of attributionType==='ACTUAL_MODEL'?['payType','attributionName','actualSupplier','actualProvider']:['payType','attributionName']) {
