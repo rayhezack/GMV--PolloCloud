@@ -111,6 +111,9 @@ export default function PaymentTrend({
     retry,
   ]);
   const shown = (data?.series || []).filter((s) => selected.includes(s.key));
+  // The API keeps the full calendar window so daily averages retain their
+  // observed-day denominator. The chart should only plot observed buckets;
+  // null buckets create misleading blank stretches on the x-axis.
   const points = (data?.points || []).map((p, i) => ({
     period: p.period,
     ...Object.fromEntries(
@@ -121,7 +124,7 @@ export default function PaymentTrend({
           : s.points[i].gmvUsd! / p.days,
       ]),
     ),
-  })).filter((_, i) => granularity !== "month" || data!.points[i].days > 0);
+  })).filter((_, i) => data!.points[i].days > 0);
   const config = Object.fromEntries(
     shown.map((s, i) => [
       `s${i}`,
