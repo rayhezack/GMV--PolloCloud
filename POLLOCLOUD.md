@@ -51,16 +51,20 @@ The GMV cards and active-payment trend use canonical payment-result facts (`data
 | 迁移 | 远程状态 |
 | --- | --- |
 | 0014 | 已为整体、功能创作的 daily / stage 四张表添加 `valid_creation_task_cnt`；重复执行 ALTER 会报错，先查 `PRAGMA table_info`。 |
-| 0015 | registration 正式表及索引已存在；本轮不盲目覆盖旧支付父表。 |
+| 0015 | registration 正式表及索引已存在，17,829 行已通过父子对账并激活。 |
 | 0016 | 已创建 chain funnel / breakdown 两张同步 stage。 |
 | 0017 | payment fact / registration 两张同步 stage 已存在，列顺序与各自主表一致。 |
 | 0018 | fact / payment fact stage 均已有 `product_type`、`product_type_lv2`，本轮没有重复 ALTER。有列不等于历史数据已完成 SKU 回填。 |
 
 创作请求数已从源表只读聚合导出并按键补齐：2026-09-27 至 2026-11-05 的整体 161 行、功能 47,509 行全部有值，两表请求数合计均为 18,981,296。补值前逐行验证原 `creation_task_cnt` 与源表相同；仅填充新增列的 NULL，保留远程较新的采纳、留存、GMV 等其他字段。两表 GMV 仍各为 9,683,201.48438977。源表额外组合未扩写到正式功能表。
 
-**发布阻塞：registration 尚未激活。** 本地 17,829 行（2026-10-06 至 2026-11-04）已完整导入独立的 `pollo_da_registration_release_20261107`，主键无 NULL、无重复，GMV 为 4,003,401.1535354424。它与当前 ADS/SKU 新快照的 597 个日期×设备×支付类型分组全部一致，最大浮点误差约 1.46e-11；但远程支付父表仍有 74 组旧“首订／重新订阅”分类，与之不一致。正式 registration 仍为 0 行，不能宣称注册国家／生命周期下钻已可发布。不要按比例调整明细、改分类规则或补零来掩盖这项差异。
+**本次发布阻塞已消除：registration 已激活。** 2026-10-06 至 2026-11-04 的 17,829 行已写入正式表，主键无 NULL、无重复，GMV 为 4,003,401.1535354424。全部 597 个日期×设备×支付类型父子分组已对账，差异为零（金额校验阈值 1e-6）。
 
-先由支付 SKU 回填负责方完成本次对应日期的 canonical 父表替换，再运行下列带对账门禁的激活命令。它仅在全部父子分组误差不超过 1e-6 时写入正式表并清 D1 响应缓存；不一致时退出码为 2，正式表不变。不会删除或更新 `renewal` 数据。
+远程原有 74 组“首订／重新订阅”分类与本次 ADS/SKU 新快照不一致。此次仅替换对应 37 个日期／设备分区中的这两种支付类型，复用现有 SKU backfill 的身份键与字段契约，保留 NONE、CREATION_MODE、MODEL、ACTUAL_MODEL 四种模式，共写入 73,648 行。切换前验证 296 个日期×端×归因模式组的两类收入合计守恒；先完整备份旧行到 `pollo_da_payment_groups_backup_20261107`，再逐分区切换，其他日期、支付类型与旧续订不变。没有按比例调整注册明细，也没有修改支付分类 SQL。注册正式表激活后已清理 D1 响应缓存。
+
+切换后的全范围核验：4,776 个日期×端×设备×支付类型×归因模式分组与 ADS/SKU 新快照全部一致，最大浮点误差约 3.28e-11；73,648 行支付与 17,829 行注册数据均通过暂存／正式表逐行关键字段核验，零缺失、零差异。旧支付受影响行备份共 28,258 行。2026-11-04 Web 原始精度验证：总 GMV 106,753.2009660036 = 主动 73,707.7024284233 + 自动续订 26,565.4985375803 + API 6,480，注册明细汇总同为 106,753.2009660036。最终机器结果见 `remote-data/summary.json`，`readyForDeployment=true` 仅表示本次有界数据与 schema 门禁通过，不代表全年 SKU 历史回填完成。
+
+以下命令可复核并幂等重导 registration。激活命令仅在全部父子分组误差不超过 1e-6 时写入正式表；不一致时退出码为 2，正式表不变。不要在已修复后再次执行 `repair-payment-groups`：它使用首次差异清单作有界切换；全年 SKU 历史回填仍应由独立 backfill 负责，本次未扩范围。
 
 ```bash
 python3 .impeccable/review/2026-11-07-release/remote-data/import-stages.py activate-registration

@@ -17,7 +17,8 @@ SELECT stat_date AS period, ${week} AS week_start, DATE_ADD(${week}, 6) AS week_
  -- Keep those rows for cost analysis; revenue queries must exclude summaries.
  CASE WHEN attribution_type IN ('MODEL','ACTUAL_MODEL')
    AND pay_category = '汇总' AND pay_sub_category = '汇总'
-   THEN model_cost_usd ELSE CAST(0 AS DECIMAL(38,18)) END AS model_cost_usd
+   THEN model_cost_usd ELSE CAST(0 AS DECIMAL(38,18)) END AS model_cost_usd,
+ COUNT(*) OVER() AS source_row_count
 FROM mc_prd.ads_pollo_transaction_gmv_attribution_daily_dip
 WHERE p_date BETWEEN '${startKey}' AND '${endKey}'
  AND stat_date BETWEEN CAST(TO_DATE('${startKey}', 'yyyymmdd') AS DATE) AND CAST(TO_DATE('${endKey}', 'yyyymmdd') AS DATE)
