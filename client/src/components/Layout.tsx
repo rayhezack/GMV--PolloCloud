@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { EyeTracker } from './bencho/EyeTracker';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
@@ -12,6 +13,7 @@ import {
   dashboardView,
 } from './dashboard/navigation';
 import './dashboard/dashboard.css';
+import './dashboard/v23-atmosphere.css';
 import { ShieldCheck } from 'lucide-react';
 import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
 import { canManagePollocloudApp } from '@/lib/pollocloud';
@@ -41,38 +43,17 @@ function shanghaiTime(value: string): string {
   }).format(new Date(value));
 }
 
-function LogoWatcher() {
-  const ref = useRef<HTMLSpanElement | null>(null);
-  useEffect(() => {
-    const mark = ref.current;
-    if (!mark) return;
-    const follow = (event: PointerEvent) => {
-      const box = mark.getBoundingClientRect();
-      const x = Math.max(-1, Math.min(1, (event.clientX - (box.left + box.width / 2)) / 90));
-      const y = Math.max(-1, Math.min(1, (event.clientY - (box.top + box.height / 2)) / 90));
-      mark.style.setProperty('--watch-x', `${x * 4}px`);
-      mark.style.setProperty('--watch-y', `${y * 4}px`);
-    };
-    const reset = () => {
-      mark.style.setProperty('--watch-x', '0px');
-      mark.style.setProperty('--watch-y', '0px');
-    };
-    window.addEventListener('pointermove', follow, { passive: true });
-    document.documentElement.addEventListener('pointerleave', reset);
-    return () => {
-      window.removeEventListener('pointermove', follow);
-      document.documentElement.removeEventListener('pointerleave', reset);
-    };
-  }, []);
-  return (
-    <span ref={ref} className="dashboard-brand-mark logo-watcher" aria-hidden="true">
-      <i />
-      <i />
-    </span>
-  );
-}
-
 const Layout = () => {
+  const location = useLocation();
+  useEffect(() => {
+    const header = document.querySelector('.dashboard-content > .dashboard-heading');
+    if (!header) return;
+    const observer = new ResizeObserver(([entry]) => {
+      document.documentElement.style.setProperty('--dashboard-sticky-height', `${entry.target.getBoundingClientRect().height}px`);
+    });
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, [location.pathname, location.search]);
   const { user: userInfo, loading: accessLoading } = usePollocloudUser();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dockOpen, setDockOpen] = useState(false);
@@ -136,7 +117,6 @@ const Layout = () => {
       void getLatestSyncRun().then(latest => { if (latest) setSyncJob(latest); }).catch(() => undefined);
     });
   }, [syncJob, userInfo]);
-  const location = useLocation();
   const currentView = dashboardView(location.pathname, location.search);
   const reducedMotion = useReducedMotion();
   useEffect(() => {
@@ -265,7 +245,7 @@ const Layout = () => {
             className="dashboard-brand"
             aria-label="Pollo AI 分析首页"
           >
-            <LogoWatcher />
+            <EyeTracker size={36} eyeScale={1.65} eyeHeight={1.2} within=".dashboard-shell" interactive={false} />
             <span>
               Pollo AI<small>GMV ANALYTICS</small>
             </span>
@@ -292,7 +272,7 @@ const Layout = () => {
           <div className="sidebar-group-label">分析看板</div>
           {DASHBOARD_VIEWS.map((view, i) => (
             <div key={view.id}>
-              {i === 4 && (
+              {view.id === 'report' && (
                 <div className="sidebar-group-label mt-8">诊断与管理</div>
               )}
               <Link
@@ -394,7 +374,9 @@ const Layout = () => {
           </button>
         </div>
         <main id="main-content">
-          <Outlet context={{ trackReport, trackSync }} />
+          <Suspense fallback={<div className="px-8 py-12 text-sm text-muted-foreground" role="status">正在打开页面…</div>}>
+            <Outlet context={{ trackReport, trackSync }} />
+          </Suspense>
         </main>
       </div>
       {isAdmin && <ReportTask jobs={jobs} syncJob={syncJob} onTrackReport={trackReport} onTrackSync={trackSync} />}

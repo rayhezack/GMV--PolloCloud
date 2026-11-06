@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-04T10:38:11.775718+00:00",
+  "generatedAt": "2026-11-06T12:04:27.330769+00:00",
   "title": "Design System: Pollo Stripe Revenue Workbench",
   "extensions": {
     "colorMeta": {
@@ -396,6 +396,16 @@
         "name": "date-popover",
         "value": "0 16px 36px rgba(37, 36, 61, .1)",
         "purpose": "已有自定义日期工具浮层。"
+      },
+      {
+        "name": "aspect-thumb",
+        "value": "0 1px 2px rgb(13 37 61 / 10%)",
+        "purpose": "工作台 Aspect 单一移动底板与浅灰轨道的轻微分离，仅用于控件。"
+      },
+      {
+        "name": "glass-panel",
+        "value": "inset 0 1px 0 rgb(255 255 255 / 95%), 0 12px 28px rgb(13 37 61 / 8%)",
+        "purpose": "浅白半透明表面的内侧高光和柔和分层；数据保持清晰。"
       }
     ],
     "motion": [
@@ -423,6 +433,31 @@
         "name": "reduced-motion",
         "value": "animation:none; transition:none",
         "purpose": "关闭显现、曲线和原位搜索动画。"
+      },
+      {
+        "name": "picker-unfold",
+        "value": "y:-10→0; scaleX:.86→1; scaleY:.72→1; spring:460/23/.9; exit:160ms",
+        "purpose": "Bencho Picker 从向下末端锚点展开；减少动态效果时立即切换。"
+      },
+      {
+        "name": "picker-row",
+        "value": "spring:620/34/.7; delay:30ms + min(index,5) × 40ms",
+        "purpose": "保留来源逐行展开节奏，长列表不无限累计延迟。"
+      },
+      {
+        "name": "aspect-thumb",
+        "value": "transform 286ms cubic-bezier(.22,1,.36,1)",
+        "purpose": "单一白色底板移动至当前文字选项；减少动态效果时取消过渡和按压缩放。"
+      },
+      {
+        "name": "operational-finance-line",
+        "value": "1500ms inOutSine; delay:400ms",
+        "purpose": "实际 FinanceOverviewAreaChart 的主线绘制；不覆盖既有 GMV 图节奏。"
+      },
+      {
+        "name": "operational-balance-line",
+        "value": "1400ms inOutSine; delay:350ms",
+        "purpose": "实际 BalanceChart 的主线绘制；减少动态效果由共享 chart-motion 跳过。"
       }
     ],
     "breakpoints": [
@@ -441,6 +476,14 @@
       {
         "name": "mobile-navigation",
         "value": "700px"
+      },
+      {
+        "name": "workbench-stack",
+        "value": "600px"
+      },
+      {
+        "name": "operational-compact",
+        "value": "1100px"
       }
     ]
   },
@@ -524,11 +567,27 @@
       "description": "固定标签、数值、变化三行；成本用相对百分比，成本占比用绝对 pp。静态示意。",
       "html": "<div class=\"ds-detail-metrics\"><div><span>GMV</span><strong>$24,800</strong><small><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M12 19V5m-7 7 7-7 7 7\"/></svg>12.4%</small></div><div><span>模型成本</span><strong>$8,420</strong><small><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M12 19V5m-7 7 7-7 7 7\"/></svg>8.1%</small></div><div><span>成本 / GMV</span><strong>34.0%</strong><small><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M12 19V5m-7 7 7-7 7 7\"/></svg>1.2 pp</small></div></div>",
       "css": ".ds-detail-metrics{font-family:'Inter Variable',Inter,'PingFang SC',sans-serif;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;color:#0d253d;background:white;border:0;padding:22px 0}.ds-detail-metrics>div{display:grid;grid-template-rows:20px 32px 16px;align-items:center;gap:7px;min-width:0}.ds-detail-metrics span{display:flex;align-items:center;height:20px;color:#61718a;font-size:11px}.ds-detail-metrics strong{font-size:24px;line-height:32px;font-weight:450;letter-spacing:-.02em;white-space:nowrap;font-variant-numeric:tabular-nums}.ds-detail-metrics small{display:inline-flex;align-items:center;gap:2px;font-size:10px;color:#61718a;white-space:nowrap}@media(max-width:480px){.ds-detail-metrics{gap:8px}.ds-detail-metrics strong{font-size:19px}}"
+    },
+    {
+      "name": "Workbench Picker",
+      "kind": "input",
+      "refersTo": "workbench-picker",
+      "description": "HeroUI 单选复用 Bencho Picker；向下末端 portal，可搜索、键盘选择、外部点击／Escape 关闭并归还焦点。预览显示展开态。",
+      "html": "<div class=\"ds-picker\"><button class=\"ds-picker-trigger\" aria-label=\"指标\" aria-expanded=\"true\">创作用户</button><div class=\"ds-picker-menu\" role=\"listbox\" aria-label=\"指标\"><button class=\"ds-picker-option\" role=\"option\" aria-selected=\"true\">创作用户</button><button class=\"ds-picker-option\" role=\"option\" aria-selected=\"false\">创作任务</button></div></div>",
+      "css": ".ds-picker{display:grid;justify-items:end;gap:6px;font:12px Inter,\"PingFang SC\",sans-serif;color:#0d253d}.ds-picker-trigger{height:32px;padding:0 12px;background:#f6f9fc;color:#0d253d;border:0;border-radius:8px;font:inherit;font-weight:500;cursor:pointer}.ds-picker-trigger:hover,.ds-picker-trigger[aria-expanded=true]{background:#f0edff;color:#533afd}.ds-picker-trigger:active{transform:scale(.97)}.ds-picker-trigger:focus-visible,.ds-picker-option:focus-visible{outline:2px solid #533afd;outline-offset:2px}.ds-picker-menu{width:184px;max-width:calc(100vw - 24px);padding:6px;border-radius:14px;background:#fff;box-shadow:0 8px 24px rgb(13 37 61 / 10%);display:grid;gap:2px}.ds-picker-option{min-height:36px;padding:8px 10px;background:transparent;color:#0d253d;border:0;border-radius:8px;text-align:left;font:inherit;cursor:pointer}.ds-picker-option:hover{background:#f6f4ff}.ds-picker-option[aria-selected=true]{background:#f0edff;color:#533afd}@media(prefers-reduced-motion:reduce){.ds-picker-trigger:active{transform:none}}"
+    },
+    {
+      "name": "Workbench Aspect segments",
+      "kind": "nav",
+      "refersTo": "workbench-segments",
+      "description": "Bencho Aspect 文字版，单一移动底板；具名 group、aria-pressed、单一 Tab 停靠点及方向键／Home／End。折叠时复用 Picker。",
+      "html": "<div class=\"ds-aspect\" role=\"group\" aria-label=\"功能表现粒度\"><span class=\"ds-aspect-thumb\" aria-hidden=\"true\"></span><button aria-pressed=\"false\" tabindex=\"-1\">日</button><button aria-pressed=\"true\" tabindex=\"0\">周对比</button></div>",
+      "css": ".ds-aspect{position:relative;display:inline-grid;grid-template-columns:repeat(2,minmax(0,1fr));min-width:148px;padding:2px;border-radius:999px;background:#e9eef4;font:12px Inter,\"PingFang SC\",sans-serif}.ds-aspect-thumb{position:absolute;left:2px;top:2px;width:calc((100% - 4px)/2);height:calc(100% - 4px);transform:translateX(100%);border-radius:999px;background:#fff;box-shadow:0 1px 2px rgb(13 37 61 / 10%);transition:transform 286ms cubic-bezier(.22,1,.36,1)}.ds-aspect button{position:relative;z-index:1;height:32px;min-width:0;padding:0 12px;background:transparent;border:0;border-radius:999px;color:#61718a;font:inherit;font-weight:500;cursor:pointer;transition:color 160ms ease,scale 130ms cubic-bezier(.3,.9,.4,1)}.ds-aspect button:hover{color:#0d253d}.ds-aspect button[aria-pressed=true]{color:#533afd}.ds-aspect button:focus-visible{outline:2px solid #533afd;outline-offset:-2px}.ds-aspect button:active{scale:.92}@media(prefers-reduced-motion:reduce){.ds-aspect-thumb,.ds-aspect button{transition:none}.ds-aspect button:active{scale:1}}"
     }
   ],
   "narrative": {
     "northStar": "Stripe Revenue Workbench",
-    "overview": "Stripe 产品界面的克制与密度服务于重复收入诊断：深海军蓝建立阅读层级，紫色标记当前操作和主要数据，白色工作表面承载图形、金额与比较。导航、卡片、控件与菜单以表面和间距分区，不使用外边框。Bento 是有共同对齐关系的分析分组，卡片内的留白首先保障图形可读。\n\n布局和直接交互表达关系，只在数据口径、缺失或操作后果影响判断时增加说明。以付费类型的新实现为当前系统证据；全局导航和 GMV 趋势继承同一世界。未迁移页面及通用主题中残留的旧墨色、旧紫色不构成新页面的配色授权。",
+    "overview": "Stripe 产品界面的克制与密度服务于重复收入诊断：深海军蓝建立阅读层级，紫色标记当前操作和主要数据，白色工作表面承载图形、金额与比较。导航、卡片、控件与菜单以表面和间距分区，不使用外边框。Bento 是有共同对齐关系的分析分组，卡片内的留白首先保障图形可读。\n\n布局和直接交互表达关系，只在数据口径、缺失或操作后果影响判断时增加说明。付费类型、支付链路、创作与广告工作台延续同一世界；全局导航和 GMV 趋势保留各自已确认的表达。未迁移页面及通用主题中残留的旧墨色、旧紫色不构成新页面的配色授权。\n\nV2.3: quiet light glass surfaces, restrained ambient color, sticky shared filters, immediate chart figures, collapsed diagnosis cards, and conclusion-first ratio decomposition. Full revenue and cost amounts use whole dollars while raw precision is retained.\n\nV2.3 revision: brighter white glass with inset highlights; all table headers blue-gray #eef3f9. Native Mebius Combo hover only moves the cursor; click selects its first stat. Shared Cash Flow drawer preserves a 260px plot, bounds the tooltip and compresses the supporting table. Cost ranges are independently week/month/quarter with available coverage shown.",
     "keyCharacteristics": [
       "紫色主线与深海军蓝文字，白色图表表面。",
       "紧凑 Bento、表格对齐与足够的绘图区高度。",
@@ -548,8 +607,13 @@
       },
       {
         "name": "The Flat Work Surface Rule",
-        "body": "分析卡片静止时无阴影、无外边框；用白色表面、浅色背景与间距分组，浅线仅用于内部结构，浮层以柔和阴影表达临时层级。",
+        "body": "分析卡片保持浅白半透明表面、微弱阴影和无外边框；浅线仅用于内部结构，浮层以柔和阴影表达临时层级。背景保持低对比，数据与操作优先。",
         "section": "elevation"
+      },
+      {
+        "name": "The Unit Follows Metric Rule",
+        "body": "图卡切换指标时，主值、变化、坐标与 tooltip 同步切换单位；计数不带货币符号，百分比绝对变化用 pp，ROAS 用 x，cohort LTV 用美元／注册用户并保留两位小数。缺失和未成熟状态不能伪装成真实零值。",
+        "section": "components"
       }
     ],
     "dos": [
@@ -561,7 +625,7 @@
     ],
     "donts": [
       "Don't 给导航、指标卡、图卡、控件或菜单添加外边框，也不使用黑色默认框线。",
-      "Don't 在收入分析中恢复环形图、独立右侧 KPI 卡或重复数字的分析摘要带。",
+      "Don't 在收入概览主表面恢复旧环形图、独立右侧 KPI 卡或重复数字的分析摘要带；已落地的收入构成弹窗使用 Mebius ExpensesChart，不把这一局部构成图扩展为概览布局。",
       "Don't 用装饰性副标题、眉题或第二层标签补充布局已经表达的关系。",
       "Don't 将成本 / GMV 标为利润率，也不要用颜色掩盖无数据与真实零值的区别。",
       "Don't 将旧主题残留、黑色默认焦点或旧环形图样式写成新系统规范。"

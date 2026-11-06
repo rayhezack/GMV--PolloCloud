@@ -1,82 +1,98 @@
-import { useLayoutEffect, useRef, useState } from 'react';
-import { useReducedMotion } from 'framer-motion';
+import { Button, Popover } from '@heroui/react';
+import { useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
+import { ChevronDown, CreditCard, RefreshCw } from 'lucide-react';
+import { motion, useReducedMotion } from 'framer-motion';
+import './icon-bar.css';
 
-type Indicator = { x: number; width: number };
-
-/* Adapted from Bencho's Icon bar, with text labels for dashboard filters.
-   Same two phase indicator as the segmented pill: the leading edge runs
-   ahead, the pill dilates across both slots, then the trailing edge catches
-   up and overshoots on landing. Selection itself is controlled by the caller. */
-export function IconBar<T extends string>({ items, value, onChange, label }: {
+export function IconBar<T extends string>({ items, value, onChange, label, collapsible = false }: {
   items: readonly { value: T; label: string }[];
   value: T;
   onChange: (value: T) => void;
   label: string;
+  collapsible?: boolean;
 }) {
-  const track = useRef<HTMLDivElement>(null);
-  const pill = useRef<HTMLSpanElement>(null);
-  const previous = useRef<T | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const [indicator, setIndicator] = useState<Indicator | null>(null);
-  const [phase, setPhase] = useState<'idle' | 'stretch' | 'settle'>('idle');
+  const buttons = useRef<(HTMLButtonElement | null)[]>([]);
+  const [open, setOpen] = useState(false);
   const reducedMotion = useReducedMotion();
+  const selectedIndex = items.findIndex(item => item.value === value);
+  const itemIcon = (itemValue: string) => itemValue === 'renewal' ? <RefreshCw size={14}/> : <CreditCard size={14}/>;
 
-  useLayoutEffect(() => {
-    const group = track.current;
-    if (!group) return;
-    const selected = group.querySelector<HTMLButtonElement>('[aria-pressed="true"]');
-    if (!selected) return;
-    const measure = () => ({ x: selected.offsetLeft, width: selected.offsetWidth });
-    const to = measure();
-    clearTimeout(timer.current);
-    if (previous.current === null || previous.current === value || reducedMotion || !pill.current) {
-      setPhase('idle');
-      setIndicator(to);
-    } else {
-      // Measure the painted pill, so rapid reversals continue from its current
-      // position instead of restarting from an obsolete selected slot.
-      const bounds = group.getBoundingClientRect();
-      const painted = pill.current.getBoundingClientRect();
-      const start = Math.min(painted.left - bounds.left, to.x);
-      const end = Math.max(painted.right - bounds.left, to.x + to.width);
-      setPhase('stretch');
-      setIndicator({ x: start, width: end - start });
-      // The handoff shares the original clock: 190ms stretch, handoff at
-      // 150ms, then 420ms settle with separate move/size overshoot curves.
-      timer.current = setTimeout(() => {
-        setPhase('settle');
-        setIndicator(measure());
-      }, 150);
-    }
-    previous.current = value;
-    let width = group.getBoundingClientRect().width;
-    const resize = () => {
-      const nextWidth = group.getBoundingClientRect().width;
-      if (nextWidth === width) return;
-      width = nextWidth;
-      clearTimeout(timer.current);
-      setPhase('idle');
-      setIndicator(measure());
-    };
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
-    observer?.observe(group);
-    window.addEventListener('resize', resize);
-    return () => {
-      clearTimeout(timer.current);
-      observer?.disconnect();
-      window.removeEventListener('resize', resize);
-    };
-  }, [value, reducedMotion]);
+  // Bencho Aspect (MIT, bencho.dev/licence): one moving thumb, with
+  // only the selected option in the tab order. Text replaces its icons.
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!items.length || event.altKey || event.ctrlKey || event.metaKey || event.nativeEvent.isComposing) return;
+    const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1
+      : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
+    if (!direction && event.key !== 'Home' && event.key !== 'End') return;
+    const focused = event.target instanceof HTMLElement
+      ? event.target.closest<HTMLButtonElement>('.chain-icon-bar-button') : null;
+    const from = focused ? buttons.current.indexOf(focused) : Math.max(0, selectedIndex);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+      : (Math.max(0, from) + direction + items.length) % items.length;
+    event.preventDefault();
+    event.stopPropagation();
+    buttons.current[next]?.focus();
+    if (items[next].value !== value) onChange(items[next].value);
+  };
+
+  if (collapsible) {
+    return (
+      <div className="chain-icon-bar is-collapsible chain-fold-picker">
+        <Popover isOpen={open} onOpenChange={setOpen}>
+          <Button className="chain-fold-trigger" variant="tertiary" aria-label={label} isDisabled={!items.length}>
+            {itemIcon(value)}<span>{items[selectedIndex]?.label ?? label}</span>
+            <ChevronDown size={14} className={open ? 'is-open' : undefined}/>
+          </Button>
+          <Popover.Content placement="bottom end" offset={10} shouldFlip={false} className="chain-fold-popover" shouldSkipAnimation>
+            <motion.div className="chain-fold-surface" initial={reducedMotion ? false : {opacity:0,y:-8,scale:.94}} animate={{opacity:1,y:0,scale:1}} transition={{type:'spring',stiffness:520,damping:32,mass:.7}}>
+              <Popover.Dialog aria-label={label}>
+                <div role="group" aria-label={`${label}选项`} className="chain-fold-options" onKeyDownCapture={onKeyDown}>
+                  {items.map((item,index) => <Button key={item.value} ref={node=>{buttons.current[index]=node;}} className="chain-icon-bar-button chain-fold-option" variant="tertiary" aria-pressed={item.value===value} onPress={()=>{if(item.value!==value)onChange(item.value);setOpen(false);}}>{itemIcon(item.value)}<span>{item.label}</span></Button>)}
+                </div>
+              </Popover.Dialog>
+            </motion.div>
+          </Popover.Content>
+        </Popover>
+      </div>
+    );
+  }
 
   return (
-    <div ref={track} className="chain-icon-bar" role="group" aria-label={label}>
-      <span ref={pill} className="chain-icon-bar-indicator" data-phase={phase} aria-hidden="true"
-        style={indicator ? { transform: `translate3d(${indicator.x}px, 0, 0)`, width: indicator.width } : { opacity: 0 }} />
-      {items.map((item) => (
-        <button key={item.value} type="button" aria-pressed={value === item.value}
-          onClick={() => { if (value !== item.value) onChange(item.value); }}>
+    <div
+      className="chain-icon-bar"
+      role="group"
+      aria-label={label}
+      onKeyDownCapture={onKeyDown}
+      style={{ gridTemplateColumns: `repeat(${Math.max(1, items.length)}, minmax(0, 1fr))` }}
+    >
+      {selectedIndex >= 0 && (
+        <motion.span
+          className="chain-icon-bar-thumb"
+          aria-hidden="true"
+          initial={false}
+          animate={{ x: `${selectedIndex * 100}%` }}
+          transition={reducedMotion ? {duration:0} : {type:'spring',stiffness:420,damping:32,mass:.8}}
+          style={{
+            width: `calc((100% - 4px) / ${items.length})`,
+            transition: 'none',
+          }}
+        />
+      )}
+      {items.map((item, index) => (
+        <Button
+          key={item.value}
+          ref={element => { buttons.current[index] = element; }}
+          type="button"
+          size="sm"
+          variant="tertiary"
+          aria-pressed={value === item.value}
+          excludeFromTabOrder={index !== Math.max(0, selectedIndex)}
+          className="chain-icon-bar-button"
+          onPress={() => { if (value !== item.value) onChange(item.value); }}
+        >
           {item.label}
-        </button>
+        </Button>
       ))}
     </div>
   );

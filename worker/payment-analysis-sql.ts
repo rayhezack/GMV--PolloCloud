@@ -29,7 +29,6 @@ export function paymentAnalysisSql(
     // Cost belongs to the whole creation population. Select it exactly once at
     // the double-summary grain, never join it to individual payment subtypes.
     filters.push(
-      "metric_version='ads_v1'",
       "attribution_type=?",
       "pay_category='汇总'",
       "pay_type='汇总'",
@@ -42,7 +41,6 @@ export function paymentAnalysisSql(
     );
   } else {
     filters.push(
-      "metric_version='ads_v1'",
       "attribution_type=?",
       "pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL','API')",
       "pay_type<>'汇总'",

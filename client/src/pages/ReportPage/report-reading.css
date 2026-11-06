@@ -1,6 +1,8 @@
 /* Report is a reading surface: paper, ink, rules, and restrained purple emphasis. */
 .report-reading-page .dashboard-heading h1 { color: #222; }
-.report-reading { display: grid; grid-template-columns: 144px minmax(0, 1fr); gap: 44px; padding: 40px; background: #fff; border-radius: 16px; color: #292929; }
+.report-loading { min-height: 194px; }
+.report-loading .dashboard-wave-loader { color: var(--ui-muted); }
+.report-reading { display: grid; grid-template-columns: 144px minmax(0, 1fr); gap: 32px; padding: 36px; background: #fff; border-radius: 16px; color: #292929; }
 .report-reading-rail { align-self: start; position: sticky; top: 36px; font-size: 12px; line-height: 1.7; color: #737373; }
 .report-reading-platform-select { width: 100%; justify-content: flex-start; padding: 0; border-radius: 4px; background: transparent; color: #737373; font-size: 12px; font-weight: 500; white-space: nowrap; }
 .report-reading-platform-select > span:first-child { min-width: 0; white-space: nowrap; }
@@ -14,7 +16,7 @@
 .report-reading-rail nav a { color: #555; text-decoration: none; text-underline-offset: 5px; }
 .report-reading-rail nav a:hover { color: #171717; text-decoration: underline; }
 .report-update { color: #737373; font-size: 11px; }
-.report-reading-body { min-width: 0; max-width: 800px; }
+.report-reading-body { min-width: 0; width: 100%; max-width: none; }
 .report-reading-body section { scroll-margin-top: 36px; }
 .report-reading h2 { margin: 0 0 22px; font-size: 21px; font-weight: 600; letter-spacing: -.02em; color: #222; }
 .report-conclusion { padding-left: 18px; border-left: 3px solid var(--ui-purple); }

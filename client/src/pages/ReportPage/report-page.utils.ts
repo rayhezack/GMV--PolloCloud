@@ -1,4 +1,5 @@
 import type { Platform, ReportGenerationRequest } from '@shared/api.interface';
+import { LOCAL_DATA_WINDOW } from '@/lib/local-data-window';
 import {
   getBusinessWeekStart,
   getLatestCompleteFriday,
@@ -7,6 +8,10 @@ import {
 } from '@shared/business-week';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const latestAvailableDate = () => LOCAL_DATA_WINDOW?.endDate ?? toDateString(new Date(Date.now() - DAY_MS));
+const latestCompleteFriday = () => getLatestCompleteFriday(
+  LOCAL_DATA_WINDOW ? new Date(parseDateString(LOCAL_DATA_WINDOW.endDate).getTime() + DAY_MS) : new Date(),
+);
 const BEIJING_TIME_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
   timeZone: 'Asia/Shanghai',
   year: 'numeric',
@@ -20,8 +25,8 @@ const BEIJING_TIME_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
 export function buildDefaultRequest(
   platform: Platform,
 ): ReportGenerationRequest {
-  const latestCompleteEnd = getLatestCompleteFriday();
-  const latestAvailableEnd = toDateString(new Date(Date.now() - DAY_MS));
+  const latestCompleteEnd = latestCompleteFriday();
+  const latestAvailableEnd = latestAvailableDate();
   const latestAvailableWeekStart = getBusinessWeekStart(latestAvailableEnd);
   const latestCompleteWeekStart = getBusinessWeekStart(latestCompleteEnd);
   const isIncomplete = latestAvailableWeekStart > latestCompleteWeekStart;
@@ -66,8 +71,8 @@ export function parseReportPeriodKey(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(periodStart ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(periodEnd ?? '')) return null;
   const end = parseDateString(periodEnd);
   if (Number.isNaN(end.getTime())) return null;
-  const latestAvailableDate = parseDateString(toDateString(new Date(Date.now() - DAY_MS)));
-  if (end > latestAvailableDate) return null;
+  const latestDate = parseDateString(latestAvailableDate());
+  if (end > latestDate) return null;
   const analysisWeekStart = getBusinessWeekStart(periodEnd);
   const expectedStart = toDateString(new Date(parseDateString(analysisWeekStart).getTime() - 7 * DAY_MS));
   if (periodStart !== expectedStart) return null;
@@ -75,8 +80,8 @@ export function parseReportPeriodKey(
 }
 
 export function reportWeekOptions(history: Array<{ periodStart: string; periodEnd: string }>) {
-  const latestComplete = parseDateString(getLatestCompleteFriday());
-  const latestAvailable = parseDateString(toDateString(new Date(Date.now() - DAY_MS)));
+  const latestComplete = parseDateString(latestCompleteFriday());
+  const latestAvailable = parseDateString(latestAvailableDate());
   const weeks = new Map<string, { periodStart: string; periodEnd: string }>();
   for (const item of history) {
     const previous = weeks.get(item.periodStart);
@@ -94,7 +99,9 @@ export function reportWeekOptions(history: Array<{ periodStart: string; periodEn
     if (periodStart < `${latestComplete.getFullYear()}-01-01`) continue;
     weeks.set(periodStart, { periodStart, periodEnd });
   }
-  return [...weeks.values()].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
+  return [...weeks.values()]
+    .filter((week) => !LOCAL_DATA_WINDOW || (week.periodEnd >= LOCAL_DATA_WINDOW.startDate && week.periodEnd <= LOCAL_DATA_WINDOW.endDate))
+    .sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
 }
 
 export function formatAnalysisWeekLabel(

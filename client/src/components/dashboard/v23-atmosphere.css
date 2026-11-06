@@ -1,0 +1,229 @@
+/* V2.3: static frosted glass. Light belongs to the material, never the data. */
+.dashboard-shell {
+  --ui-canvas: #f4f6fa;
+  --ui-ink: #0d253d;
+  --ui-muted: #61718a;
+  --ui-line: #e3e8ee;
+  --ui-table-header: #eef3f9;
+  --ui-surface: rgba(255, 255, 255, .56);
+  --v23-glass:
+    radial-gradient(ellipse 210px 65px at 0 0, rgba(221,231,255,.44), transparent),
+    radial-gradient(ellipse 210px 70px at 100% 100%, rgba(232,220,244,.28), transparent),
+    linear-gradient(135deg, rgba(255,255,255,.94), rgba(255,255,255,.64) 45%, rgba(255,255,255,.84));
+  --v23-shadow:
+    inset 0 1px 0 rgba(255,255,255,.98),
+    inset 1px 0 0 rgba(255,255,255,.66),
+    inset 0 -1px 0 rgba(255,255,255,.56),
+    0 3px 5px rgba(48,61,85,.025),
+    0 14px 35px -16px rgba(48,61,85,.22);
+  background: transparent;
+  isolation: isolate;
+  font-feature-settings: 'ss01', 'tnum';
+}
+.dashboard-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 75vw 70vh at 12% 0%, rgba(222,228,247,.48), transparent),
+    radial-gradient(ellipse 70vw 60vh at 100% 100%, rgba(235,227,245,.4), transparent),
+    #f4f6fa;
+}
+.dashboard-shell .dashboard-content { gap: 24px; padding-top: 28px; }
+.dashboard-shell .dashboard-content > .dashboard-heading {
+  min-height: 88px;
+  margin-top: -28px;
+  padding-top: 20px;
+  padding-bottom: 18px;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  border-radius: 22px;
+  margin-inline: 0;
+  width: 100%;
+  padding-inline: 24px;
+  /* Neutral frosted cover: no purple strip and no competing data behind controls. */
+  background: rgba(244,246,250,.94);
+  border: 0;
+  backdrop-filter: blur(20px) saturate(.9);
+  -webkit-backdrop-filter: blur(20px) saturate(.9);
+  box-shadow: 0 10px 18px -18px rgba(48,61,85,.3);
+}
+.dashboard-shell .chain-icon-bar.is-collapsible { min-width: 0; width: auto; }
+.dashboard-shell .chain-icon-bar.is-collapsible .bencho-picker-trigger {
+  width: auto;
+  min-width: 0;
+  justify-content: center;
+  padding-inline: 14px;
+  border-radius: 999px;
+}
+.dashboard-shell .dashboard-heading h1 {
+  color: #0d253d;
+  font-size: 26px;
+  font-weight: 550;
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+.dashboard-shell .dashboard-heading p { color: #61718a; }
+.dashboard-shell .dashboard-action-bar {
+  background: var(--v23-glass);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--v23-shadow);
+  padding: 6px;
+  border: 0;
+}
+html { scroll-padding-top: calc(var(--dashboard-sticky-height, 100px) + 16px); }
+.dashboard-shell section[id], .dashboard-shell [role='region'][id] {
+  scroll-margin-top: calc(var(--dashboard-sticky-height, 100px) + 16px);
+}
+.dashboard-shell .dashboard-sidebar,
+.dashboard-shell .dashboard-dock {
+  background: var(--v23-glass);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--v23-shadow);
+}
+.dashboard-shell .sidebar-link { color: #61718a; }
+.dashboard-shell .sidebar-link[aria-current='page'] { color: #533afd; }
+.dashboard-shell .sidebar-group-label { color: #61718a; letter-spacing: 0; }
+.dashboard-shell .dashboard-panel:not(.cw-shell):not(.op-shell),
+.dashboard-shell .payment-viz-card,
+.dashboard-shell .payment-financial-trends[data-charts],
+.dashboard-shell .revenue-card,
+.dashboard-shell .cw-workbench > section,
+.dashboard-shell .op-panel,
+.dashboard-shell .op-finance-card,
+.dashboard-shell .report-reading,
+.dashboard-shell .dashboard-methodology,
+.dashboard-shell .dashboard-content > section.rounded-3xl.bg-white {
+  background: var(--v23-glass);
+  background-clip: padding-box;
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  border: 0;
+  border-radius: 22px;
+  box-shadow: var(--v23-shadow);
+}
+.dashboard-shell .cw-workbench,
+.dashboard-shell .op-dashboard,
+.dashboard-shell .payment-bento-content { gap: 22px; }
+.dashboard-shell .cw-workbench > section { padding: 24px; }
+.dashboard-shell .cw-heading h2,
+.dashboard-shell .op-heading h2,
+.dashboard-shell .payment-viz-card [data-slot='card-title'] {
+  color: #0d253d;
+  font-size: 15px;
+  font-weight: 550;
+  letter-spacing: 0;
+}
+.dashboard-shell .cw-heading > span,
+.dashboard-shell .op-period,
+.dashboard-shell .payment-baseline { color: #61718a; }
+.dashboard-shell .cw-table tbody tr { background: transparent; }
+.dashboard-shell :is(.cw-table, .op-table, .op-matrix, .dashboard-data-table, .payment-daily-table) thead th,
+.dashboard-shell .payment-table-content th {
+  background: var(--ui-table-header);
+  color: #61718a;
+  font-size: 11px;
+  font-weight: 500;
+  height: 40px;
+  padding: 10px 14px;
+}
+.dashboard-shell .cw-table th,
+.dashboard-shell .cw-table td { border-bottom-color: #e3e8ee; }
+.dashboard-shell .cw-table tbody .cw-selected,
+.dashboard-shell .cw-table tbody tr:hover { background: #f0f1f4; }
+.dashboard-shell .cw-scroll { border-radius: 10px; }
+.dashboard-shell .cw-table tbody > tr:first-child > td:nth-child(3) { font-weight: 550; }
+.dashboard-shell .cw-diagnostics .cw-diagnostic { padding-top: 20px; }
+.dashboard-shell .cw-diagnostic > strong,
+.dashboard-shell .op-ads-metric-value,
+.dashboard-shell .op-creative-metric-value,
+.dashboard-shell .payment-viz-reading > strong { font-size: 28px; letter-spacing: 0; color: #0d253d; }
+.dashboard-shell .op-finance,
+.dashboard-shell .op-balance,
+.dashboard-shell .op-growth,
+.dashboard-shell .payment-viz-content [data-charts],
+.dashboard-shell .payment-viz-content [data-slot='chart-card'] { background: transparent; }
+.dashboard-shell :is(.op-country-scroll, .op-cohort-scroll, .op-daily-scroll) thead { background: var(--ui-table-header); }
+.dashboard-shell .op-daily-scroll .op-table tbody th:first-child { background: #fbfcfe; }
+.dashboard-shell .op-daily-scroll .op-table thead th:first-child { background: var(--ui-table-header); z-index: 2; }
+.dashboard-shell .op-stats { gap: 16px; }
+.dashboard-shell .op-finance-card { padding: 20px; }
+.dashboard-shell .revenue-number { letter-spacing: 0; }
+.dashboard-shell .revenue-label { color: #61718a; font-size: 13px; }
+.dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card { min-height: 216px; padding: 20px; }
+.dashboard-shell .dashboard-content[data-tab='trend'] .revenue-number { font-size: 28px; letter-spacing: 0; }
+.dashboard-shell .dashboard-content[data-tab='trend'] .dashboard-panel { padding: 24px; }
+.dashboard-shell .report-reading-body { background: transparent; padding: 0; }
+.dashboard-shell ::selection { background: #dfd6f5; color: #0d253d; }
+.dashboard-shell * { scrollbar-color: #bcb2cf transparent; caret-color: #533afd; }
+.dashboard-shell :focus-visible { outline: 2px solid #533afd; outline-offset: 3px; }
+@media (max-width: 1000px) {
+  .dashboard-shell .dashboard-content { padding-top: 20px; }
+  .dashboard-shell .dashboard-content > .dashboard-heading { margin-top: -20px; }
+}
+@media (max-width: 700px) {
+  .dashboard-shell .dashboard-content { gap: 18px; padding-top: 16px; }
+  .dashboard-shell .dashboard-content > .dashboard-heading { margin-top: -16px; min-height: 78px; padding-top: 14px; padding-bottom: 14px; }
+  .dashboard-shell .dashboard-heading h1 { font-size: 22px; }
+  .dashboard-shell .cw-workbench > section,
+  .dashboard-shell .op-panel,
+  .dashboard-shell .op-finance-card { padding: 18px; border-radius: 14px; }
+  .dashboard-shell .cw-workbench,
+  .dashboard-shell .op-dashboard { gap: 18px; }
+  .dashboard-shell .op-stats { gap: 12px; }
+  .dashboard-shell .op-ads-metric-value,
+  .dashboard-shell .op-creative-metric-value,
+  .dashboard-shell .payment-viz-reading > strong { font-size: 24px; }
+  .dashboard-shell .report-reading-body { padding: 0; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .dashboard-shell { --v23-glass: #fcfbfe; }
+  .dashboard-shell .dashboard-sidebar,
+  .dashboard-shell .dashboard-dock,
+  .dashboard-shell .dashboard-content > .dashboard-heading { background: #f4f2f8; backdrop-filter: none; }
+}
+
+/* Respond to the space each KPI actually receives, including an open sidebar. */
+.dashboard-shell .revenue-card { container: revenue-card / inline-size; }
+@container revenue-card (max-width: 280px) {
+  .dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-face {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .dashboard-shell .dashboard-content[data-tab='trend'] .revenue-mini-chart {
+    height: 80px;
+    padding-top: 0;
+  }
+  .dashboard-shell .dashboard-content[data-tab='trend'] .revenue-mini-bars { height: 100%; }
+  .dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-face .revenue-number { margin-bottom: 12px; }
+}
+
+/* Remove nested white sheets so the card's own optical surface stays visible. */
+.dashboard-shell .finance-combo,
+.dashboard-shell .payment-financial-trends [data-slot='financial-trends-chart-panel'] {
+  background: transparent;
+  box-shadow: none;
+}
+.dashboard-shell .cw-diagnostic,
+.dashboard-shell .cw-effect-summary article,
+.dashboard-shell .cw-traffic-summary article {
+  background: linear-gradient(135deg, rgba(255,255,255,.65), rgba(245,248,252,.38));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 4px 12px -9px rgba(48,61,85,.2);
+}
+.dashboard-shell .cw-diagnostic[aria-expanded=true] {
+  background: rgba(226,230,239,.72);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.9);
+}
+.dashboard-shell .cw-total { background: rgba(235,239,246,.6); font-weight:550; }
+@supports not (backdrop-filter: blur(1px)) {
+  .dashboard-shell { --v23-glass: #f8fafc; }
+}
+
+@media(max-width:480px) {
+  .dashboard-shell .action-node-tooltip { left:auto; right:0; transform:translateY(-3px); }
+  .dashboard-shell .action-node-action:hover .action-node-tooltip,
+  .dashboard-shell .action-node-action:focus-visible .action-node-tooltip { transform:translateY(0); }
+}

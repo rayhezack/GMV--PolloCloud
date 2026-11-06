@@ -21,6 +21,7 @@ lerna-debug.log*
 /logs/
 
 # Runtime data
+.local-data/
 pids
 *.pid
 *.seed

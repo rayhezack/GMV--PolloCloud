@@ -6,7 +6,6 @@ import {
   useCallback,
   type RefObject,
 } from "react";
-import { createTimeline } from "animejs";
 export { useReducedMotion } from "framer-motion";
 export const useIsomorphicLayoutEffect =
   typeof window === "undefined" ? useEffect : useLayoutEffect;
@@ -64,44 +63,4 @@ export function useControllableState<T>({
   );
   return [current, update];
 }
-export function useCountUp<T extends HTMLElement>(
-  ref: RefObject<T | null>,
-  value: number,
-  format: (v: number) => string,
-  options: { enabled: boolean; duration: number },
-) {
-  useEffect(() => {
-    if (ref.current)
-      ref.current.textContent = options.enabled ? format(value) : "—";
-  }, [value, format, options.enabled, ref]);
-}
-export function useChartEntrance<T extends HTMLElement>(
-  root: RefObject<T | null>,
-  build: (timeline: ReturnType<typeof createTimeline>) => (() => void) | void,
-) {
-  const buildRef = useRef(build);
-  buildRef.current = build;
-  useEffect(() => {
-    const el = root.current;
-    if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches)
-      return;
-    let cleanup: (() => void) | void;
-    let timeline: ReturnType<typeof createTimeline> | undefined;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry.isIntersecting) return;
-        observer.disconnect();
-        timeline = createTimeline({ autoplay: false });
-        cleanup = buildRef.current(timeline);
-        timeline.play();
-      },
-      { threshold: 0.1 },
-    );
-    observer.observe(el);
-    return () => {
-      observer.disconnect();
-      timeline?.cancel();
-      if (typeof cleanup === "function") cleanup();
-    };
-  }, [root]);
-}
+export { useCountUp, useChartEntrance } from "@/hooks/use-chart-motion";

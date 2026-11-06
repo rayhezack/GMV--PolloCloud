@@ -1,6 +1,10 @@
 # Local analytical exports and visual review artifacts are not application source.
 /archives/
+/.local-data/
 /.impeccable/review/
 /*.csv
 /*.xlsx
 /*.sql
+/gmv-creation-mode-feishu-doc.md
+/middle-table-exploration-20261020.md
+/scripts/backfill-chain-enriched.py

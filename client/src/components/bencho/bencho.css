@@ -8,7 +8,7 @@
 .tst {
   position: fixed;
   right: 24px;
-  bottom: 24px;
+  bottom: 86px;
   z-index: 80;
   font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
   color: var(--ui-ink, #25243d);
@@ -45,5 +45,5 @@
 .tst-detail p { margin: 10px 0 14px; color: var(--tst-mute); font-size: 13px; line-height: 19px; white-space: pre-line; }
 .tst-detail a { display: inline-flex; align-items: center; gap: 5px; color: var(--signal); font-size: 12px; font-weight: 650; text-decoration: none; }
 .tst-detail a:hover { text-decoration: underline; }
-@media (max-width: 560px) { .tst { right: 16px; bottom: 16px; width: min(300px, calc(100vw - 32px)) !important; } }
+@media (max-width: 560px) { .tst { right: 16px; bottom: 72px; width: min(300px, calc(100vw - 32px)) !important; } }
 @media (prefers-reduced-motion: reduce) { .tst-toast, .tst-toast > * { transition: none; } }

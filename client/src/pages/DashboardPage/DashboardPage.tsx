@@ -1,8 +1,11 @@
+import { WeekComparisonPicker } from '@/components/dashboard/WeekComparisonPicker';
+import DateRangePicker from '@/components/dashboard/DashboardDateRangePicker';
 import { formatChartTooltipValue, formatChartTooltipChange } from "@/lib/chart-tooltip-format";
 import {
   startTransition,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,8 +14,12 @@ import {
   type ReactNode,
 } from 'react';
 import dayjs from 'dayjs';
+import { Slide } from 'loading-dev';
+import { LOCAL_DATA_WINDOW } from '@/lib/local-data-window';
 import PaymentAnalysis from '@/components/dashboard/PaymentAnalysis';
-import { GlobalFinanceMarketComboChart } from '@/components/finance-chart/GlobalFinanceMarketComboChart';
+import { AdsDashboard, CreativeDashboard } from '@/components/dashboard/OperationalDashboards';
+import { ChainWorkbench } from '@/components/dashboard/ChainWorkbench';
+import { GlobalFinanceMarketComboChart } from '@/components/global-finance-market-combo-chart';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { AnimatePresence, motion, useInView, useReducedMotion } from 'framer-motion';
@@ -27,7 +34,6 @@ import {
   ChevronUp,
   Info,
   LayoutDashboard,
-  Loader2,
   Minus,
   Monitor,
   RefreshCw,
@@ -46,6 +52,7 @@ import {
   RevenueCards,
   ContributionBars,
   downloadCsv,
+  type RevenueHeadlineSummary,
 } from '@/components/dashboard/AnalysisWidgets';
 import {
   dashboardView,
@@ -110,6 +117,7 @@ import {
 } from '@shared/business-week';
 import type {
   AppDeviceType,
+  AdsOverviewResponse,
   AttributionDriverItem,
   AttributionItem,
   AttributionSection,
@@ -119,6 +127,9 @@ import type {
   DashboardGmvCoverageResponse,
   DashboardPlatform,
   DashboardOverviewResponse,
+  CreativeOverviewResponse,
+  ChainFunnelGroup,
+  ChainFunnelResponse,
   Granularity,
   OverviewTrendPoint,
   PaymentChainType,
@@ -127,6 +138,7 @@ import type {
   SyncRunStatus,
 } from '@shared/api.interface';
 import SyncControlBar from './SyncControlBar';
+import LoadingWave from '@/components/dashboard/LoadingWave';
 
 gsap.registerPlugin(useGSAP);
 
@@ -276,15 +288,6 @@ function isRenewalTrendMetric(value: TrendMetricKey): boolean {
   return RENEWAL_TREND_METRICS.some((metric) => metric.key === value);
 }
 
-const CREATIVE_METRICS = [
-  'activeUv',
-  'creationUv',
-  'creationTaskCnt',
-  'creationPenetrationRate',
-  'avgCreationTaskCntPerCreator',
-] as const;
-type CreativeMetricKey = (typeof CREATIVE_METRICS)[number];
-
 const CREATIVE_TIER_LABELS: Record<string, string> = {
   create_cnt_30d_0: '近30日未创作',
   'create_cnt_30d_[1,11)': '近30日 1-10 次',
@@ -314,6 +317,7 @@ type DashboardLoadKey =
   | 'payType'
   | 'chain'
   | 'creative'
+  | 'ads'
   | 'sync';
 
 const INITIAL_LOADING_STATE: Record<DashboardLoadKey, boolean> = {
@@ -322,6 +326,7 @@ const INITIAL_LOADING_STATE: Record<DashboardLoadKey, boolean> = {
   payType: false,
   chain: false,
   creative: false,
+  ads: false,
   sync: false,
 };
 
@@ -331,6 +336,7 @@ const LOAD_ERROR_LABELS: Record<DashboardLoadKey, string> = {
   payType: '付费类型',
   chain: '支付链路',
   creative: '创作积极性',
+  ads: '广告侧',
   sync: '同步状态',
 };
 
@@ -360,6 +366,7 @@ function buildViewWindow(): {
   startDate: string;
   endDate: string;
 } {
+  if (LOCAL_DATA_WINDOW) return LOCAL_DATA_WINDOW;
   const endDate = dayjs().subtract(1, 'day').format('YYYY-MM-DD');
   const startDate = dayjs(endDate).subtract(29, 'day').format('YYYY-MM-DD');
   return { startDate, endDate };
@@ -419,6 +426,7 @@ function resolveTrendWindow(
   endDate: string;
 } {
   const defaultWindow = buildViewWindow();
+  if (LOCAL_DATA_WINDOW) return defaultWindow;
   if (!year) return defaultWindow;
 
   const latestDate = dayjs(defaultWindow.endDate);
@@ -444,8 +452,13 @@ function resolveTrendSourceWindow(
   window: { startDate: string; endDate: string },
   granularity: Granularity,
 ): { startDate: string; endDate: string } {
-  const minStartDate = dayjs(TREND_DATA_START_DATE);
-  const paddedStartDate = granularity === 'day' ? dayjs(window.startDate).subtract(WEEK_DAYS, 'day') : dayjs(window.startDate);
+
+  const minStartDate = dayjs(LOCAL_DATA_WINDOW?.startDate ?? TREND_DATA_START_DATE);
+  const zoomStartDate = dayjs(window.endDate).subtract(89, 'day');
+  const selectedStartDate = dayjs(window.startDate).subtract(WEEK_DAYS, 'day');
+  const paddedStartDate = granularity === 'day'
+    ? (selectedStartDate.isBefore(zoomStartDate) ? selectedStartDate : zoomStartDate)
+    : dayjs(window.startDate);
   return {
     startDate: (paddedStartDate.isBefore(minStartDate)
       ? minStartDate
@@ -460,7 +473,7 @@ function getDefaultWeekSelection(): {
   analysisWeek: string;
 } {
   const analysisWeek = getBusinessWeekStart(
-    dayjs().subtract(1, 'day').format('YYYY-MM-DD'),
+    buildViewWindow().endDate,
   );
   return {
     baselineWeek: dayjs(analysisWeek)
@@ -480,13 +493,14 @@ function isValidDateParam(value: string | null): value is string {
 
 function isSelectableWeekParam(value: string | null): value is string {
   const currentWeek = getBusinessWeekStart(
-    dayjs().subtract(1, 'day').format('YYYY-MM-DD'),
+    buildViewWindow().endDate,
   );
   return Boolean(
     isValidDateParam(value) &&
     value === getBusinessWeekStart(value) &&
     value >= getBusinessWeekStart(TREND_DATA_START_DATE) &&
-    value <= currentWeek,
+    value <= currentWeek &&
+    (!LOCAL_DATA_WINDOW || value >= LOCAL_DATA_WINDOW.startDate),
   );
 }
 
@@ -586,9 +600,8 @@ function getCachedRequest<T>(
   const cached = cache.get(key) as Promise<T> | undefined;
   if (cached) return cached;
 
-  const request = fetcher().catch((error) => {
-    cache.delete(key);
-    throw error;
+  const request = fetcher().finally(() => {
+    if (cache.get(key) === request) cache.delete(key);
   });
   cache.set(key, request as Promise<unknown>);
   return request;
@@ -756,43 +769,6 @@ function formatPlanTierLabel(key: string): string {
     : key;
 }
 
-function getCreativeMetricValue(
-  item: AttributionItem,
-  metricKey: CreativeMetricKey,
-  source: 'current' | 'previous',
-): number {
-  const metrics = source === 'current' ? item.metrics : item.previousMetrics;
-  return metrics[metricKey] ?? 0;
-}
-
-function aggregateCreativeMetrics(
-  items: AttributionItem[],
-  source: 'current' | 'previous',
-): Record<CreativeMetricKey, number> {
-  const totals = items.reduce(
-    (acc, item) => ({
-      activeUv: acc.activeUv + getCreativeMetricValue(item, 'activeUv', source),
-      creationUv:
-        acc.creationUv + getCreativeMetricValue(item, 'creationUv', source),
-      creationTaskCnt:
-        acc.creationTaskCnt +
-        getCreativeMetricValue(item, 'creationTaskCnt', source),
-    }),
-    {
-      activeUv: 0,
-      creationUv: 0,
-      creationTaskCnt: 0,
-    },
-  );
-  return {
-    ...totals,
-    creationPenetrationRate:
-      totals.activeUv > 0 ? totals.creationUv / totals.activeUv : 0,
-    avgCreationTaskCntPerCreator:
-      totals.activeUv > 0 ? totals.creationTaskCnt / totals.activeUv : 0,
-  };
-}
-
 function EmptyBlock({
   title,
   description,
@@ -803,9 +779,6 @@ function EmptyBlock({
   return (
     <Empty className="min-h-[220px] rounded-2xl bg-gray-50">
       <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <BarChart3 className="size-5 text-primary" />
-        </EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>
@@ -815,15 +788,10 @@ function EmptyBlock({
 
 function LoadingBlock({ title }: { title: string }) {
   return (
-    <Empty className="min-h-[220px] rounded-2xl bg-gray-50">
-      <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <Loader2 className="size-5 animate-spin text-primary" />
-        </EmptyMedia>
-        <EmptyTitle>{title}</EmptyTitle>
-        <EmptyDescription>正在读取业务数据库数据。</EmptyDescription>
-      </EmptyHeader>
-    </Empty>
+    <div className="dashboard-loading-block" role="status">
+      <LoadingWave label={title} />
+      <span>正在读取业务数据库数据。</span>
+    </div>
   );
 }
 
@@ -972,7 +940,7 @@ function GmvCoverageExplanation({
           <h3>创作积极性与分层</h3>
           <dl className="dashboard-methodology-definitions">
             <div><dt>创作积极性</dt><dd>创作 UV、任务数按业务日均展示，渗透率为创作 UV ÷ 活跃 UV，不计算贡献度。</dd></div>
-            <div><dt>创作分层</dt><dd>支付链路按统计日前 30 日的有效创作任务数逐日划分；创作积极性侧证仍按原业务周窗口划分。“分析期前 30 日无创作用户”仅表示该窗口内创作次数为 0，创作 UV、创作渗透率等指标统计的是这批用户在分析期内的行为。</dd></div>
+            <div><dt>创作分层</dt><dd>支付链路按统计日前 30 日的有效创作任务数逐日划分；创作积极性侧证仍按原业务周窗口划分。“近30日无创作用户”仅表示对应历史窗口内创作次数为 0，基准期与分析期分别按各自窗口划分；创作 UV、创作渗透率等指标统计的是这批用户在对应比较期内的行为。</dd></div>
           </dl>
         </section>
       </div>
@@ -1081,11 +1049,10 @@ function PageSection({
   );
 }
 
-function MetricTrendChart({ data, metricControls, granularity, onGranularityChange, metric, rangeStartDate, rangeEndDate, onRangeChange }: {
+function MetricTrendChart({ data, metricControls, granularity, onGranularityChange, metric, rangeStartDate, rangeEndDate }: {
   data: OverviewTrendPoint[]; metricControls: ReactNode; granularity: Granularity;
   onGranularityChange: (value: Granularity) => void; metric: TrendMetricSpec;
   rangeStartDate: string | null; rangeEndDate: string | null;
-  onRangeChange: (range: {startDate: string; endDate: string}) => void;
 }) {
   const [showData, setShowData] = useState(false);
   const rows = useMemo(() => data.map(row => ({period: row.period, value: getTrendMetricValue(row, metric)})), [data, metric]);
@@ -1106,14 +1073,14 @@ function MetricTrendChart({ data, metricControls, granularity, onGranularityChan
   const current = mean(actual), previous = mean(forecast);
   const change = previous ? (mean(forecast.map(p=>({value:byDate.get(p.date)!})))/previous-1)*100 : undefined;
   const exportRows = () => downloadCsv(`Pollo-${metric.label}.csv`, [
-    ['日期', metric.label, '上周同期', '较上周变化'],
-    ...actual.map(p => { const prior = byDate.get(dayjs(p.date).subtract(7,'day').format('YYYY-MM-DD'));return [p.date,p.value,prior??'',prior==null?'':p.value-prior]; }),
+    ['日期', metric.label],
+    ...actual.map(p => [p.date, p.value]),
   ]);
-  const toolbar = <div className="trend-control-row">{metricControls}<CanvasToolbar granularity={granularity} onGranularityChange={onGranularityChange} onResetRange={() => { if(rows.length)onRangeChange({startDate:rows[0].period,endDate:rows.at(-1)!.period}); }} showData={showData} onToggleData={()=>setShowData(v=>!v)} onExport={exportRows}/></div>;
+  const toolbar = <div className="trend-control-row">{metricControls}<CanvasToolbar granularity={granularity} onGranularityChange={onGranularityChange} showData={showData} onToggleData={()=>setShowData(v=>!v)} onExport={exportRows}/></div>;
   if (!visible.length) return <>{toolbar}<EmptyBlock title="暂无趋势" description=""/></>;
   return <>
-    <GlobalFinanceMarketComboChart locale="zh-CN" title="" variant={singleLine ? "line" : "combo"} data={{actual,forecast:singleLine ? [] : forecast,flows:singleLine ? [] : flows,growth:change==null?undefined:{value:change},outlook:forecast.length?{year:0,value:previous}:undefined}} products={[]} categories={[]} periods={[]} period={granularity} toolbar={toolbar} actualLabel={metric.label} forecastLabel="上周同期" flowLabel="较上周变化" aumLabel="区间日均" growthLabel="较上周" outlookLabel="上周同期日均" formatValue={metric.format} formatTooltipValue={value => formatChartTooltipValue(value, unit)} formatChangeValue={value => formatChartTooltipChange(value, unit)} onExport={exportRows}/>
-    {showData && <div className="chart-data"><table><thead><tr><th>日期</th><th>{metric.label}</th><th>上周同期</th></tr></thead><tbody>{actual.map(p=><tr key={p.date}><td>{p.date}</td><td>{metric.format(p.value)}</td><td>{forecast.find(f=>f.date===p.date)?metric.format(forecast.find(f=>f.date===p.date)!.value):'—'}</td></tr>)}</tbody></table></div>}
+    <GlobalFinanceMarketComboChart key={`${metric.key}:${granularity}:${rangeStartDate}:${rangeEndDate}`} locale="zh-CN" title="" variant={singleLine ? "line" : "combo"} data={{actual,forecast:singleLine ? [] : forecast,flows:singleLine ? [] : flows,growth:change==null?undefined:{value:change},outlook:forecast.length?{year:0,value:previous}:undefined}} products={[]} categories={[]} periods={[]} period={granularity} toolbar={toolbar} actualLabel={metric.label} forecastLabel="上周同期" flowLabel="较上周变化" aumLabel="当日 GMV" growthLabel="可比日期较上周" outlookLabel="上周同期日均" formatValue={metric.format} formatTooltipValue={value => formatChartTooltipValue(value, unit)} formatChangeValue={value => formatChartTooltipChange(value, unit)} onExport={exportRows}/>
+    {showData && <div className="chart-data"><table><thead><tr><th>日期</th><th>{metric.label}</th></tr></thead><tbody>{actual.map(p=><tr key={p.date}><td>{p.date}</td><td>{metric.format(p.value)}</td></tr>)}</tbody></table></div>}
   </>;
 }
 
@@ -1158,6 +1125,8 @@ function MetricTabs({
   onChange,
   trendUserTag,
   onTrendUserTagChange,
+  trendCountryTier,
+  onTrendCountryTierChange,
   planTier,
   onPlanTierChange,
 }: {
@@ -1165,12 +1134,14 @@ function MetricTabs({
   onChange: (value: TrendMetricKey) => void;
   trendUserTag?: '新用户' | '老用户' | '未知';
   onTrendUserTagChange: (value: string) => void;
+  trendCountryTier?: string;
+  onTrendCountryTierChange: (value: string) => void;
   planTier: PlanTierFilter;
   onPlanTierChange: (value: PlanTierFilter) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [openSection, setOpenSection] = useState<
-    'activePayment' | 'renewal' | 'user' | 'planTier'
+    'activePayment' | 'renewal' | 'user' | 'country' | 'planTier'
   >('activePayment');
   const menuRef = useRef<HTMLDivElement | null>(null);
   const activeMetric =
@@ -1207,7 +1178,7 @@ function MetricTabs({
         onClick={() => setExpanded((current) => !current)}
       >
         <SlidersHorizontal size={16} aria-hidden="true" />
-        <span>{activeMetric.label}{trendUserTag && supportsTrendUserTag(value) ? ` · ${trendUserTag}` : ''}</span>
+        <span>{activeMetric.label}{trendUserTag && supportsTrendUserTag(value) ? ` · ${trendUserTag}` : ''}{trendCountryTier && supportsTrendUserTag(value) ? ` · ${trendCountryTier}` : ''}</span>
         {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
       </button>
       <AnimatePresence>
@@ -1268,8 +1239,16 @@ function MetricTabs({
             )}
             {supportsTrendUserTag(value) && (
               <>
+                <button type="button" className="metric-menu-heading" aria-expanded={openSection === 'country'} onClick={() => setOpenSection('country')}>
+                  <BarChart3 size={14} />国家分层<ChevronDown size={13} />
+                </button>
+                {openSection === 'country' && <div className="metric-menu-list" role="group" aria-label="国家分层">
+                  {[['all', '全部国家'], ['T1', 'T1'], ['T2', 'T2'], ['T3', 'T3'], ['未知', '未知']].map(([key, label]) => (
+                    <button key={key} type="button" className="metric-menu-option" aria-pressed={(trendCountryTier ?? 'all') === key} onClick={() => { onTrendCountryTierChange(key); setExpanded(false); }}>{label}</button>
+                  ))}
+                </div>}
                 <button type="button" className="metric-menu-heading" aria-expanded={openSection === 'user'} onClick={() => setOpenSection('user')}>
-                  <UsersRound size={14} />用户维度<ChevronDown size={13} />
+                  <UsersRound size={14} />注册新老<ChevronDown size={13} />
                 </button>
                 <AnimatePresence initial={false}>
                   {openSection === 'user' && (
@@ -1287,266 +1266,6 @@ function MetricTabs({
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
-  );
-}
-
-function DateRangePicker({
-  selectedRange,
-  onRangeChange,
-}: {
-  selectedRange: { startDate: string; endDate: string };
-  onRangeChange: (range: { startDate: string; endDate: string }) => void;
-}) {
-  const latestDate = dayjs().subtract(1, 'day').startOf('day');
-  const minimumDate = dayjs(TREND_DATA_START_DATE).startOf('day');
-  const [calendarMonth, setCalendarMonth] = useState(() =>
-    dayjs(selectedRange.startDate).startOf('month'),
-  );
-  const [draftStart, setDraftStart] = useState(selectedRange.startDate);
-  const [draftEnd, setDraftEnd] = useState(selectedRange.endDate);
-  const [selecting, setSelecting] = useState<'start' | 'end'>('start');
-  const [open, setOpen] = useState(false);
-  const dragOriginRef = useRef<string | null>(null);
-  const dragPendingRef = useRef(false);
-  const dragActiveRef = useRef(false);
-  const suppressClickRef = useRef(false);
-
-  useEffect(() => {
-    setDraftStart(selectedRange.startDate);
-    setDraftEnd(selectedRange.endDate);
-    setCalendarMonth(dayjs(selectedRange.startDate).startOf('month'));
-    setSelecting('start');
-  }, [selectedRange.endDate, selectedRange.startDate]);
-
-  useEffect(() => {
-    const finishOutsideCalendar = () => {
-      dragPendingRef.current = false;
-      dragActiveRef.current = false;
-      dragOriginRef.current = null;
-    };
-    document.addEventListener('pointerup', finishOutsideCalendar);
-    return () => document.removeEventListener('pointerup', finishOutsideCalendar);
-  }, []);
-
-  const calendarDays = useMemo(() => {
-    const first = calendarMonth.startOf('month');
-    const calendarStart = first.subtract(first.day(), 'day');
-    return Array.from({ length: 42 }, (_, index) =>
-      calendarStart.add(index, 'day'),
-    );
-  }, [calendarMonth]);
-
-  const commitRange = (startDate: string, endDate: string) => {
-    setDraftStart(startDate);
-    setDraftEnd(endDate);
-    onRangeChange({ startDate, endDate });
-    setOpen(false);
-  };
-
-  const chooseDate = (date: dayjs.Dayjs) => {
-    if (date.isBefore(minimumDate) || date.isAfter(latestDate)) return;
-    const value = date.format('YYYY-MM-DD');
-    if (selecting === 'start') {
-      setDraftStart(value);
-      setDraftEnd('');
-      setSelecting('end');
-      return;
-    }
-    commitRange(
-      value < draftStart ? value : draftStart,
-      value < draftStart ? draftStart : value,
-    );
-    setSelecting('start');
-  };
-
-  const beginDateDrag = (date: dayjs.Dayjs) => {
-    if (date.isBefore(minimumDate) || date.isAfter(latestDate)) return;
-    const value = date.format('YYYY-MM-DD');
-    dragOriginRef.current = selecting === 'end' ? draftStart : value;
-    dragPendingRef.current = true;
-    dragActiveRef.current = false;
-    suppressClickRef.current = false;
-  };
-
-  const previewDateDrag = (date: dayjs.Dayjs) => {
-    if (!dragPendingRef.current || !dragOriginRef.current) return;
-    if (date.isBefore(minimumDate) || date.isAfter(latestDate)) return;
-    const value = date.format('YYYY-MM-DD');
-    if (value === dragOriginRef.current) return;
-    dragActiveRef.current = true;
-    suppressClickRef.current = true;
-    if (selecting === 'start') {
-      setDraftStart(dragOriginRef.current);
-    }
-    setDraftEnd(value);
-  };
-
-  const finishDateDrag = (date: dayjs.Dayjs) => {
-    if (!dragPendingRef.current || !dragActiveRef.current || !dragOriginRef.current) return;
-    const origin = dragOriginRef.current;
-    const value = date.format('YYYY-MM-DD');
-    dragPendingRef.current = false;
-    dragActiveRef.current = false;
-    dragOriginRef.current = null;
-    if (!suppressClickRef.current || value === origin) return;
-    const [startDate, endDate] = value < origin ? [value, origin] : [origin, value];
-    commitRange(startDate, endDate);
-    setSelecting('start');
-  };
-
-  const chooseQuickRange = (days: number) => {
-    const end = latestDate;
-    const start = end.subtract(days - 1, 'day').isBefore(minimumDate)
-      ? minimumDate
-      : end.subtract(days - 1, 'day');
-    commitRange(start.format('YYYY-MM-DD'), end.format('YYYY-MM-DD'));
-    setSelecting('start');
-    setCalendarMonth(start.startOf('month'));
-  };
-
-  const rangeDays = Math.max(1, dayjs(draftEnd || draftStart).diff(draftStart, 'day') + 1);
-  const selectedRangeDays = Math.max(
-    1,
-    dayjs(selectedRange.endDate).diff(selectedRange.startDate, 'day') + 1,
-  );
-  const formatRangeBadge = (days: number) =>
-    days === 90 ? '近一个季度' : days === 30 ? '近一个月' : days === 7 ? '近一周' : `${days}日`;
-  const rangeBadge =
-    selecting === 'end' ? '选择结束日期' : formatRangeBadge(rangeDays);
-
-  return (
-    <div className="date-range-controls flex flex-wrap items-end justify-end gap-2">
-        <Popover
-          open={open}
-          onOpenChange={(nextOpen) => {
-            setOpen(nextOpen);
-            if (!nextOpen) return;
-            setDraftStart(selectedRange.startDate);
-            setDraftEnd(selectedRange.endDate);
-            setCalendarMonth(dayjs(selectedRange.startDate).startOf('month'));
-            setSelecting('start');
-          }}
-        >
-          <PopoverTrigger asChild>
-            <button type="button" className="date-range-trigger">
-              <span>
-                <small>趋势日期</small>
-                {formatDateRangeLabel(selectedRange)}
-              </span>
-              <span className="date-range-trigger-badge">
-                {formatRangeBadge(selectedRangeDays)}
-              </span>
-            </button>
-          </PopoverTrigger>
-          <AnimatedPopoverContent className="date-range-popover" align="end">
-            <div className="date-range-sheet">
-              <div className="date-range-sheet-header">
-                <strong>趋势日期</strong>
-                <span>{rangeBadge}</span>
-              </div>
-              <div className="date-range-summary">
-                <div data-active={selecting === 'start'}>
-                  <small>开始</small>
-                  <strong>{dayjs(draftStart).format('MM月DD日')}</strong>
-                </div>
-                <div data-active={selecting === 'end'}>
-                  <small>结束</small>
-                  <strong>{draftEnd ? dayjs(draftEnd).format('MM月DD日') : '请选择'}</strong>
-                </div>
-              </div>
-              <div className="date-range-calendar-header">
-                <button
-                  type="button"
-                  aria-label="上一个月"
-                  disabled={!calendarMonth.isAfter(minimumDate, 'month')}
-                  onClick={() => setCalendarMonth((current) => current.subtract(1, 'month'))}
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <strong>{calendarMonth.format('YYYY年 M月')}</strong>
-                <button
-                  type="button"
-                  aria-label="下一个月"
-                  disabled={!calendarMonth.isBefore(latestDate, 'month')}
-                  onClick={() => setCalendarMonth((current) => current.add(1, 'month'))}
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-              <div className="date-range-weekdays">
-                {['日', '一', '二', '三', '四', '五', '六'].map((day) => (
-                  <span key={day}>{day}</span>
-                ))}
-              </div>
-              <div className="date-range-days">
-                {calendarDays.map((date) => {
-                  const value = date.format('YYYY-MM-DD');
-                  const disabled = date.isBefore(minimumDate) || date.isAfter(latestDate);
-                  const boundary = value === draftStart || (Boolean(draftEnd) && value === draftEnd);
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      disabled={disabled}
-                      aria-label={date.format('YYYY年M月D日')}
-                      aria-pressed={boundary}
-                      className={cn(
-                        'date-range-day',
-                        date.month() !== calendarMonth.month() && 'is-outside',
-                        boundary && 'is-boundary',
-                        draftStart && draftEnd && value >= draftStart && value <= draftEnd && 'is-in-range',
-                      )}
-                      onPointerDown={() => beginDateDrag(date)}
-                      onPointerEnter={() => previewDateDrag(date)}
-                      onPointerUp={() => finishDateDrag(date)}
-                      onClick={() => {
-                        if (suppressClickRef.current) {
-                          suppressClickRef.current = false;
-                          return;
-                        }
-                        chooseDate(date);
-                      }}
-                    >
-                      {date.date()}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="date-range-quick-actions" aria-label="快捷范围">
-                {[
-                  { days: 7, label: '近一周' },
-                  { days: 30, label: '近一个月' },
-                  { days: 90, label: '近一个季度' },
-                ].map((option) => (
-                  <button
-                    key={option.days}
-                    type="button"
-                    className={cn(
-                      rangeDays === option.days && 'is-active',
-                    )}
-                    onClick={() => chooseQuickRange(option.days)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className="date-range-clear"
-                  onClick={() => {
-                    const startDate = minimumDate.format('YYYY-MM-DD');
-                    const endDate = latestDate.format('YYYY-MM-DD');
-                    commitRange(startDate, endDate);
-                    setSelecting('start');
-                    setCalendarMonth(latestDate.startOf('month'));
-                  }}
-                >
-                  清除
-                </button>
-              </div>
-            </div>
-          </AnimatedPopoverContent>
-        </Popover>
     </div>
   );
 }
@@ -1577,99 +1296,23 @@ function GlobalDashboardControls({
   onWeekChange: (updates: { baselineWeek?: string; analysisWeek?: string }) => void;
 }) {
   const [platformOpen, setPlatformOpen] = useState(false);
-  const [weekOpen, setWeekOpen] = useState(false);
-  const [weekPickerMode, setWeekPickerMode] = useState<'baseline' | 'analysis' | null>(null);
-  const [weekMenuFocused, setWeekMenuFocused] = useState<string | null>(null);
   const [pendingPlatform, setPendingPlatform] = useState<DashboardPlatform>(platform);
-  const reducedMotion = useReducedMotion();
   const controlsRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => setPendingPlatform(platform), [platform]);
   useEffect(() => {
-    if (!platformOpen && !weekOpen) return;
+    if (!platformOpen) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
       if (!controlsRef.current?.contains(event.target as Node)) {
         setPlatformOpen(false);
-        setWeekOpen(false);
-        setWeekPickerMode(null);
-        setWeekMenuFocused(null);
       }
     };
     document.addEventListener('pointerdown', closeOnOutsidePointer);
     return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
-  }, [platformOpen, weekOpen]);
+  }, [platformOpen]);
 
   return (
     <div ref={controlsRef} className="icon-control-bar" aria-label="看板工具">
-      {showWeekControls ? (
-        <div className="icon-control-wrap">
-          <button type="button" className="icon-control week-control-trigger" aria-expanded={weekOpen} aria-label={`业务周筛选：基准周 ${formatShortWeekRange(baselineWeek)}，分析周 ${formatShortWeekRange(analysisWeek)}`} title="业务周" onClick={() => setWeekOpen((open) => !open)}>
-            <CalendarRange size={17} />
-            <span className="week-control-summary" aria-hidden="true">
-              <span><em>基准</em>{formatShortWeekRange(baselineWeek)}</span>
-              <span><em>分析</em>{formatShortWeekRange(analysisWeek)}</span>
-            </span>
-          </button>
-          {weekOpen ? (
-            <div className="icon-control-popover week-control-popover" aria-label="业务周筛选">
-              {weekPickerMode ? (
-                <>
-                  <div className="week-menu-heading">
-                    <button type="button" className="week-menu-back" aria-label="返回业务周选择" onClick={() => { setWeekPickerMode(null); setWeekMenuFocused(null); }}>
-                      <ChevronLeft size={15} />
-                    </button>
-                    <span>{weekPickerMode === 'baseline' ? '选择基准周' : '选择分析周'}</span>
-                  </div>
-                  <div className="week-menu-options" role="listbox" aria-label={weekPickerMode === 'baseline' ? '基准周选项' : '分析周选项'}>
-                    {availableWeeks.slice().reverse().map((week) => {
-                      const selected = week === (weekPickerMode === 'baseline' ? baselineWeek : analysisWeek);
-                      const disabled = week === (weekPickerMode === 'baseline' ? analysisWeek : baselineWeek);
-                      const distance = weekMenuFocused ? Math.min(Math.abs(availableWeeks.indexOf(week) - availableWeeks.indexOf(weekMenuFocused)), 3) : 0;
-                      return (
-                        <button
-                          key={week}
-                          type="button"
-                          role="option"
-                          aria-selected={selected}
-                          disabled={disabled}
-                          className={cn('week-menu-option', selected && 'is-selected')}
-                          style={{ opacity: 1 - distance * 0.08, transform: `scale(${1 - distance * 0.012})` }}
-                          onMouseEnter={() => setWeekMenuFocused(week)}
-                          onClick={() => {
-                            onWeekChange(weekPickerMode === 'baseline' ? { baselineWeek: week } : { analysisWeek: week });
-                            setWeekOpen(false);
-                            setWeekPickerMode(null);
-                            setWeekMenuFocused(null);
-                          }}
-                        >
-                          {weekMenuFocused === week ? <motion.span className="week-menu-highlight" layoutId="week-menu-highlight" transition={reducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 480, damping: 38 }} /> : null}
-                          <span>{formatWeekRange(week)}</span>
-                          {selected ? <Check size={16} /> : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="icon-control-popover-title">业务周</div>
-                  <div className="week-menu-fields">
-                    <button type="button" className="week-menu-field" onClick={() => { setWeekPickerMode('baseline'); setWeekMenuFocused(baselineWeek); }}>
-                      <span>基准周</span>
-                      <strong>{formatShortWeekRange(baselineWeek)}</strong>
-                      <ChevronRight size={15} />
-                    </button>
-                    <button type="button" className="week-menu-field" onClick={() => { setWeekPickerMode('analysis'); setWeekMenuFocused(analysisWeek); }}>
-                      <span>分析周</span>
-                      <strong>{formatShortWeekRange(analysisWeek)}</strong>
-                      <ChevronRight size={15} />
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      {showWeekControls && <WeekComparisonPicker baselineWeek={baselineWeek} analysisWeek={analysisWeek} availableWeeks={availableWeeks} onWeekChange={onWeekChange}/>}
       <div className="icon-control-wrap">
         <button
           type="button"
@@ -1732,8 +1375,9 @@ function GlobalDashboardControls({
         title="刷新数据"
         onClick={onRefresh}
         disabled={loading}
+        aria-busy={loading}
       >
-        <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
+        {loading ? <Slide size={16} color="currentColor" aria-hidden="true" /> : <RefreshCw className="size-4" />}
         <span className="icon-control-tooltip">刷新数据</span>
       </button>
     </div>
@@ -1745,6 +1389,8 @@ function DashboardFilters({
   onMetricChange,
   trendUserTag,
   onTrendUserTagChange,
+  trendCountryTier,
+  onTrendCountryTierChange,
   planTier,
   onPlanTierChange,
 }: {
@@ -1752,12 +1398,15 @@ function DashboardFilters({
   onMetricChange: (value: TrendMetricKey) => void;
   trendUserTag?: '新用户' | '老用户' | '未知';
   onTrendUserTagChange: (value: string) => void;
+  trendCountryTier?: string;
+  onTrendCountryTierChange: (value: string) => void;
   planTier: PlanTierFilter;
   onPlanTierChange: (value: PlanTierFilter) => void;
 }) {
   return (
     <div className="min-w-0">
-      <MetricTabs value={metric} onChange={onMetricChange} trendUserTag={trendUserTag} onTrendUserTagChange={onTrendUserTagChange} planTier={planTier} onPlanTierChange={onPlanTierChange} />
+      <MetricTabs value={metric} onChange={onMetricChange} trendUserTag={trendUserTag} onTrendUserTagChange={onTrendUserTagChange} trendCountryTier={trendCountryTier} onTrendCountryTierChange={onTrendCountryTierChange} planTier={planTier} onPlanTierChange={onPlanTierChange} />
+      {supportsTrendUserTag(metric) && (trendUserTag || trendCountryTier) && <span className="text-xs text-muted-foreground">支付链路口径 · 新老按所在业务周划分</span>}
     </div>
   );
 }
@@ -3048,9 +2697,6 @@ function DriverTable({
   comparison: DashboardAttributionsResponse['comparison'];
   outcomeType: PaymentChainType;
 }) {
-  const [showDetails, setShowDetails] = useState(false);
-  const channelRef = useRef<HTMLDivElement | null>(null);
-  const channelsVisible = useInView(channelRef, { once: true, amount: 0.2 });
   if (drivers.length === 0) {
     return (
       <EmptyBlock
@@ -3060,299 +2706,130 @@ function DriverTable({
     );
   }
 
-  const changeLabel = getChangeColumnLabel(comparison);
-  const maxAbsoluteContribution = Math.max(...drivers.map((driver) => Math.abs(driver.contribution ?? 0)), 0.01);
-  const outcomeDefinition = outcomeType === 'renewal'
-    ? { label: '自动续订 GMV', keys: ['expireUserCnt', 'renewalRate', 'renewalAov'] }
-    : { label: '主动付费 GMV', keys: ['activeUv', 'subExposeRate', 'subSubmitRate', 'chainPaySuccessRate', 'chainArppu'] };
-  const outcomeFactors = outcomeDefinition.keys.map((key) => drivers.find((driver) => driver.metricKey === key));
-  const outcome = outcomeFactors.every((factor) => factor !== undefined)
-    ? {
-        value: outcomeFactors.reduce((product, factor) => product * factor!.value, 1),
-        previousValue: outcomeFactors.reduce((product, factor) => product * factor!.previousValue, 1),
-      }
-    : null;
-  const outcomeChange = outcome ? outcome.value - outcome.previousValue : 0;
-  const outcomeWow = outcome && outcome.previousValue > 0
-    ? outcomeChange / outcome.previousValue
-    : null;
-
+  const periodLabel = outcomeType === 'renewal' ? '自动续订过程因子' : '主动付费过程因子';
   return (
-    <div className="driver-panel">
-      <div className="driver-panel-header">
-        <strong>归因贡献度</strong>
-        <button type="button" onClick={() => setShowDetails((current) => !current)} aria-label={showDetails ? '返回归因条形图' : '查看链路明细'}>
-          {showDetails ? '返回图表' : '查看明细'}
-          <ChevronRight size={15} aria-hidden="true" />
-        </button>
+    <div className="chain-driver-table-wrap">
+      <div className="chain-driver-table-heading">
+        <strong>{periodLabel}</strong>
+        <span>分析周 {comparison?.analysisPeriod ?? '-'} · 基准周 {comparison?.baselinePeriod ?? '-'}</span>
       </div>
-      <AnimatePresence mode="wait" initial={false}>
-      {!showDetails ? (
-      <motion.div key="bars" initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 14 }} transition={{ duration: 0.24 }}>
-      <div ref={channelRef} className={cn('driver-channels', channelsVisible && 'is-revealed')} role="table" aria-label="链路指标归因贡献度">
-        <div className="driver-channel-head" role="row">
-          <span role="columnheader">指标</span>
-          <span role="columnheader">分析期日均值</span>
-          <span role="columnheader">周环比</span>
-          <span role="columnheader">贡献度</span>
-          <span role="columnheader">贡献度对比</span>
-        </div>
-        {outcome && (
-          <div className="driver-channel driver-channel-outcome" role="row">
-            <strong className="driver-channel-label" role="cell">{outcomeDefinition.label}</strong>
-            <strong className="driver-channel-value" role="cell">{formatCurrency(outcome.value)}</strong>
-            <strong className={cn('driver-channel-wow', outcomeChange < 0 ? 'is-negative' : 'is-positive')} role="cell">{formatSignedPercent(outcomeWow)}</strong>
-            <span className="driver-channel-outcome-tag" role="cell">结果指标</span>
-            <span className="driver-channel-baseline" role="cell">基准期日均 {formatCurrency(outcome.previousValue)}</span>
-          </div>
-        )}
-        {drivers.map((driver, index) => {
-          const contribution = driver.contribution ?? 0;
-          const width = Math.abs(contribution) / maxAbsoluteContribution * 50;
-          return (
-            <div
-              key={`${driver.tier}-${driver.userTag}-${driver.metricKey}`}
-              className="driver-channel"
-              role="row"
-              style={{
-                '--channel-index': index,
-                '--channel-color': contribution < 0 ? 'var(--ui-negative)' : 'var(--ui-purple)',
-              } as React.CSSProperties}
-            >
-              <span className="driver-channel-label" role="cell">{driver.metric}</span>
-              <strong className="driver-channel-value" role="cell">{formatMetricByKey(driver.metricKey, driver.value)}</strong>
-              <span className="driver-channel-wow" role="cell">{formatSignedPercent(driver.wowChange)}</span>
-              <strong className={cn('driver-channel-contribution', contribution < 0 ? 'is-negative' : 'is-positive')} role="cell">{formatSignedPercent(driver.contribution)}</strong>
-              <span className="driver-channel-track" role="cell" tabIndex={0} aria-describedby={`driver-tip-${index}`}>
-                <span className={cn('driver-channel-fill', contribution < 0 && 'is-negative')} style={{ width: `${width}%` }} />
-                <span className="driver-channel-tooltip" id={`driver-tip-${index}`} role="tooltip">
-                  <span>贡献度 {formatSignedPercent(driver.contribution)}</span>
-                </span>
-              </span>
-            </div>
-          );
-        })}
+      <div className="chain-driver-table-scroll">
+        <table className="chain-driver-table">
+          <thead>
+            <tr>
+              <th scope="col">支付链路指标</th>
+              <th scope="col">分析周</th>
+              <th scope="col">基准周</th>
+              <th scope="col">绝对变化</th>
+              <th scope="col">周环比</th>
+              <th scope="col">贡献度</th>
+            </tr>
+          </thead>
+          <tbody>
+            {drivers.map((driver) => {
+              const positive = driver.change >= 0;
+              return (
+                <tr key={`${driver.tier}-${driver.userTag}-${driver.metricKey}`}>
+                  <th scope="row">{driver.metric}</th>
+                  <td>{formatMetricByKey(driver.metricKey, driver.value)}</td>
+                  <td>{formatMetricByKey(driver.metricKey, driver.previousValue)}</td>
+                  <td className={positive ? 'is-positive' : 'is-negative'}>{formatSignedMetricByKey(driver.metricKey, driver.change)}</td>
+                  <td className={(driver.wowChange ?? 0) >= 0 ? 'is-positive' : 'is-negative'}>{formatSignedPercent(driver.wowChange)}</td>
+                  <td className={(driver.contribution ?? 0) >= 0 ? 'is-positive' : 'is-negative'}>{formatSignedPercent(driver.contribution)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
-      </motion.div>
-      ) : (
-      <motion.div key="details" initial={{ opacity: 0, x: 14 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -14 }} transition={{ duration: 0.24 }}>
-      <div className="driver-detail-list">
-        <div className="driver-detail-caption">
-          <span>链路指标明细</span>
-          <span>{comparison?.baselinePeriod ?? '-'} → {comparison?.analysisPeriod ?? '-'}</span>
-        </div>
-        {outcome && (
-          <div className="driver-detail-row driver-detail-outcome">
-            <div className="driver-detail-main"><strong>{outcomeDefinition.label}</strong><span>基准期 {formatCurrency(outcome.previousValue)}</span></div>
-            <div className="driver-detail-result"><strong>{formatCurrency(outcome.value)}</strong><span>增量 {outcomeChange >= 0 ? '+' : ''}{formatCurrency(outcomeChange)} · {changeLabel} {formatSignedPercent(outcomeWow)}</span></div>
-            <div className="driver-detail-outcome-tag">结果指标</div>
-          </div>
-        )}
-        {drivers.map((driver) => (
-          <div
-            key={`${driver.tier}-${driver.userTag}-${driver.metricKey}`}
-            className="driver-detail-row"
-          >
-            <div className="driver-detail-main">
-              <strong>{driver.metric}</strong>
-              <span>基准期 {formatMetricByKey(driver.metricKey, driver.previousValue)}</span>
-            </div>
-            <div className="driver-detail-result">
-              <strong>{formatMetricByKey(driver.metricKey, driver.value)}</strong>
-              <span>增量 {formatSignedMetricByKey(driver.metricKey, driver.change)} · {changeLabel} {formatSignedPercent(driver.wowChange)}</span>
-            </div>
-            <div className={cn('driver-detail-contribution', (driver.contribution ?? 0) < 0 ? 'is-negative' : 'is-positive')}>
-              <span>贡献度</span><strong>{formatSignedPercent(driver.contribution)}</strong>
-            </div>
-          </div>
-        ))}
-      </div>
-      </motion.div>
-      )}
-      </AnimatePresence>
     </div>
   );
 }
 
-function CreativeMetricsTable({
-  data,
-}: {
-  data: DashboardAttributionsResponse;
-}) {
-  const [selectedMetric, setSelectedMetric] = useState<CreativeMetricKey>('activeUv');
-  const [showDetails, setShowDetails] = useState(false);
-  if (data.items.length === 0) {
-    return (
-      <EmptyBlock
-        title="暂无创作数据"
-        description="当前比较窗口内没有创作分层的原子指标。"
-      />
-    );
-  }
-
-  const currentTotals = aggregateCreativeMetrics(data.items, 'current');
-  const previousTotals = aggregateCreativeMetrics(data.items, 'previous');
-  const changeLabel = getChangeColumnLabel(data.comparison);
-  const selectedMetricLabel = data.metricLabels[selectedMetric] ?? selectedMetric;
-  const maxValue = Math.max(
-    ...data.items.flatMap((item) => [
-      getCreativeMetricValue(item, selectedMetric, 'current'),
-      getCreativeMetricValue(item, selectedMetric, 'previous'),
-    ]),
-    1,
-  );
-  return (
-    <div className="creative-layer-block">
-        <div className="creative-block-heading creative-layer-heading">
-          <div>
-            <h3>创作分层</h3>
-            <p>实色条为分析周，斜纹条为基准周；条形图右侧展示绝对值与周环比。</p>
-          </div>
-          <div className="creative-layer-actions">
-            <Select value={selectedMetric} onValueChange={(value) => setSelectedMetric(value as CreativeMetricKey)}>
-              <SelectTrigger className="creative-metric-select" aria-label="创作分层指标">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="creative-metric-menu">
-                {CREATIVE_METRICS.map((metricKey) => (
-                  <SelectItem key={metricKey} value={metricKey} className="creative-metric-item">
-                    {data.metricLabels[metricKey] ?? metricKey}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <button type="button" className="creative-details-trigger" onClick={() => setShowDetails((current) => !current)}>
-              {showDetails ? '收起明细表' : '查看明细表'}
-              <ChevronRight size={14} aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-        <div className="creative-bar-table" role="table" aria-label={`${selectedMetricLabel}创作分层对比`}>
-          <div className="creative-bar-head" role="row">
-            <span>创作分层</span>
-            <span>{selectedMetricLabel} · 基准周 / 分析周</span>
-            <span>绝对值</span>
-            <span>{changeLabel}</span>
-          </div>
-          {data.items.map((item) => {
-            const previousValue = getCreativeMetricValue(item, selectedMetric, 'previous');
-            const value = getCreativeMetricValue(item, selectedMetric, 'current');
-            const wowChange = previousValue > 0 ? (value - previousValue) / previousValue : null;
-            return (
-              <div className="creative-bar-row" key={`${selectedMetric}-${item.key}`} role="row">
-                <div className="creative-bar-label" role="cell">
-                  <strong>{formatTierLabel(item.key)}</strong>
-                </div>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div
-                      className="creative-bar-stack"
-                      role="cell"
-                      aria-label={`${formatTierLabel(item.key)} 基准周 ${formatMetricByKey(selectedMetric, previousValue)}，分析周 ${formatMetricByKey(selectedMetric, value)}`}
-                    >
-                      <span className="creative-bar-baseline" style={{ width: `${Math.max(2, previousValue / maxValue * 100)}%` }} />
-                      <span className="creative-bar-current" style={{ width: `${Math.max(2, value / maxValue * 100)}%` }} />
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" sideOffset={6}>
-                    <div className="creative-bar-tooltip-content">
-                      <strong>{formatTierLabel(item.key)}</strong>
-                      <span>基准周 {formatMetricByKey(selectedMetric, previousValue)}</span>
-                      <span>分析周 {formatMetricByKey(selectedMetric, value)}</span>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-                <span className="creative-bar-values" role="cell">
-                  {formatMetricByKey(selectedMetric, previousValue)} → {formatMetricByKey(selectedMetric, value)}
-                </span>
-                <strong className={cn('creative-bar-wow', wowChange !== null && wowChange < 0 && 'is-negative')} role="cell">
-                  {formatSignedPercent(wowChange)}
-                </strong>
-              </div>
-            );
-          })}
-          <div className="creative-total-row" role="row">
-            <strong role="cell">{selectedMetricLabel}</strong>
-            <span role="cell" className="creative-total-values">
-              {formatMetricByKey(selectedMetric, previousTotals[selectedMetric])} → {formatMetricByKey(selectedMetric, currentTotals[selectedMetric])}
-            </span>
-            <strong
-              role="cell"
-              className={cn(
-                'creative-total-change',
-                currentTotals[selectedMetric] < previousTotals[selectedMetric] && 'is-negative',
-              )}
-            >
-              {formatSignedMetricByKey(
-                selectedMetric,
-                currentTotals[selectedMetric] - previousTotals[selectedMetric],
-              )} · {formatSignedPercent(
-                previousTotals[selectedMetric] > 0
-                  ? (currentTotals[selectedMetric] - previousTotals[selectedMetric]) /
-                    previousTotals[selectedMetric]
-                  : null,
-              )}
-            </strong>
-          </div>
-        </div>
-        {showDetails ? (
-          <div className="creative-detail-table">
-            <div className="creative-detail-caption">
-              明细表 · 基准周 {data.comparison?.baselinePeriod ?? '-'} / 分析周 {data.comparison?.analysisPeriod ?? '-'}
-            </div>
-            <div className="creative-table-scroll">
-              <Table className="dashboard-data-table min-w-[1020px]">
-                <TableHeader className="[&_tr]:border-gray-100">
-                  <TableRow className="bg-gray-50 hover:bg-gray-50">
-                    <TableHead rowSpan={2} className="creative-detail-tier-head">创作分层</TableHead>
-                    {CREATIVE_METRICS.map((metricKey) => (
-                      <TableHead key={metricKey} colSpan={3} className="creative-detail-metric-head text-center">
-                        {data.metricLabels[metricKey] ?? metricKey}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                  <TableRow className="bg-gray-50 hover:bg-gray-50">
-                    {CREATIVE_METRICS.flatMap((metricKey) => [
-                      <TableHead key={`${metricKey}-previous`} className="text-right">基准周</TableHead>,
-                      <TableHead key={`${metricKey}-current`} className="text-right">分析周</TableHead>,
-                      <TableHead key={`${metricKey}-change`} className="text-right">周环比</TableHead>,
-                    ])}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow className="creative-detail-overall-row border-gray-100 hover:bg-gray-50">
-                    <TableCell className="font-semibold text-foreground">总体</TableCell>
-                    {CREATIVE_METRICS.flatMap((metricKey) => {
-                      const previousValue = previousTotals[metricKey];
-                      const value = currentTotals[metricKey];
-                      return [
-                        <TableCell key={`${metricKey}-previous`} className="creative-detail-value text-right">{formatMetricByKey(metricKey, previousValue)}</TableCell>,
-                        <TableCell key={`${metricKey}-current`} className="creative-detail-value creative-detail-current-value text-right">{formatMetricByKey(metricKey, value)}</TableCell>,
-                        <TableCell key={`${metricKey}-change`} className={cn('creative-detail-change-value text-right', value < previousValue && 'is-negative')}>{formatSignedPercent(previousValue > 0 ? (value - previousValue) / previousValue : null)}</TableCell>,
-                      ];
-                    })}
-                  </TableRow>
-                  {data.items.map((item) => (
-                    <TableRow key={item.key} className="border-gray-100 hover:bg-gray-50">
-                      <TableCell className="font-medium text-foreground">{formatTierLabel(item.key)}</TableCell>
-                      {CREATIVE_METRICS.flatMap((metricKey) => {
-                        const previousValue = getCreativeMetricValue(item, metricKey, 'previous');
-                        const value = getCreativeMetricValue(item, metricKey, 'current');
-                        return [
-                          <TableCell key={`${metricKey}-previous`} className="creative-detail-value text-right">{formatMetricByKey(metricKey, previousValue)}</TableCell>,
-                          <TableCell key={`${metricKey}-current`} className="creative-detail-value creative-detail-current-value text-right">{formatMetricByKey(metricKey, value)}</TableCell>,
-                          <TableCell key={`${metricKey}-change`} className={cn('creative-detail-change-value text-right', value < previousValue && 'is-negative')}>{formatSignedPercent(previousValue > 0 ? (value - previousValue) / previousValue : null)}</TableCell>,
-                        ];
-                      })}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-        ) : null}
-    </div>
-  );
+function buildChainFunnelFallback(data: DashboardAttributionsResponse): ChainFunnelResponse | null {
+  if (data.dimension !== 'chain' || !data.comparison || !data.drivers?.length) return null;
+  const currentDays = data.comparison.analysisPeriodDays ?? data.comparison.periodDays ?? 1;
+  const baselineDays = data.comparison.baselinePeriodDays ?? data.comparison.periodDays ?? 1;
+  const metrics = (values: Record<string, number>, days: number, gmvUsd: number) => ({
+    activeUv: (values.activeUv ?? 0) / Math.max(days, 1),
+    exposeUv: (values.subExposeUv ?? 0) / Math.max(days, 1),
+    submitUv: (values.subSubmitUv ?? 0) / Math.max(days, 1),
+    payUv: (values.chainPayUv ?? 0) / Math.max(days, 1),
+    gmvUsd,
+    failOrders: 0,
+    failAmountUsd: 0,
+    exposeRate: values.subExposeRate ?? 0,
+    submitRate: values.subSubmitRate ?? 0,
+    payRate: values.chainPaySuccessRate ?? 0,
+    aov: values.chainArppu ?? 0,
+  });
+  const groupFromItem = (item: AttributionItem, key = item.key): ChainFunnelGroup => ({
+    key,
+    label: key,
+    current: metrics(item.metrics, currentDays, item.analysisDailyAvg),
+    baseline: metrics(item.previousMetrics, baselineDays, item.baselineDailyAvg),
+    gmvChange: item.analysisDailyAvg - item.baselineDailyAvg,
+    gmvContribution: item.contribution,
+  });
+  const tierItems = data.sections?.[0]?.items ?? data.items;
+  const lifecycleItems = data.sections?.[1]?.items ?? [];
+  const gmvCurrent = tierItems.reduce((sum, item) => sum + item.analysisDailyAvg, 0);
+  const gmvBaseline = tierItems.reduce((sum, item) => sum + item.baselineDailyAvg, 0);
+  const driver = (metricKey: string) => data.drivers?.find((item) => item.metricKey === metricKey);
+  const totalMetrics = {
+    activeUv: driver('activeUv')?.value ?? 0,
+    exposeRate: driver('subExposeRate')?.value ?? driver('exposeRate')?.value ?? 0,
+    submitRate: driver('subSubmitRate')?.value ?? driver('submitRate')?.value ?? 0,
+    payRate: driver('chainPaySuccessRate')?.value ?? driver('payRate')?.value ?? 0,
+    aov: driver('chainArppu')?.value ?? driver('aov')?.value ?? 0,
+  };
+  const totalBaselineMetrics = {
+    activeUv: driver('activeUv')?.previousValue ?? 0,
+    exposeRate: driver('subExposeRate')?.previousValue ?? driver('exposeRate')?.previousValue ?? 0,
+    submitRate: driver('subSubmitRate')?.previousValue ?? driver('submitRate')?.previousValue ?? 0,
+    payRate: driver('chainPaySuccessRate')?.previousValue ?? driver('payRate')?.previousValue ?? 0,
+    aov: driver('chainArppu')?.previousValue ?? driver('aov')?.previousValue ?? 0,
+  };
+  const driverKeyMap: Record<string, ChainFunnelResponse['drivers'][number]['metricKey']> = {
+    activeUv: 'activeUv',
+    subExposeRate: 'exposeRate',
+    exposeRate: 'exposeRate',
+    subSubmitRate: 'submitRate',
+    submitRate: 'submitRate',
+    chainPaySuccessRate: 'payRate',
+    payRate: 'payRate',
+    chainArppu: 'aov',
+    aov: 'aov',
+  };
+  const total: ChainFunnelGroup = {
+    key: 'all',
+    label: '全部链路',
+    current: { ...metrics({}, 1, gmvCurrent), activeUv: totalMetrics.activeUv, exposeRate: totalMetrics.exposeRate, submitRate: totalMetrics.submitRate, payRate: totalMetrics.payRate, aov: totalMetrics.aov },
+    baseline: { ...metrics({}, 1, gmvBaseline), activeUv: totalBaselineMetrics.activeUv, exposeRate: totalBaselineMetrics.exposeRate, submitRate: totalBaselineMetrics.submitRate, payRate: totalBaselineMetrics.payRate, aov: totalBaselineMetrics.aov },
+    gmvChange: gmvCurrent - gmvBaseline,
+    gmvContribution: 1,
+  };
+  return {
+    ready: true,
+    source: 'legacy',
+    comparison: data.comparison,
+    totals: total,
+    drivers: data.drivers
+      .filter((item) => driverKeyMap[item.metricKey])
+      .map((item) => ({
+        metricKey: driverKeyMap[item.metricKey],
+        metric: item.metric,
+        current: item.value,
+        baseline: item.previousValue,
+        change: item.change,
+        wowChange: item.wowChange,
+        contribution: item.contribution,
+      })),
+    tiers: tierItems.map((item) => groupFromItem(item)),
+    lifecycles: lifecycleItems.map((item) => groupFromItem(item, item.key === '新用户' ? 'NEW' : item.key === '老用户' ? 'OLD' : 'UNKNOWN')),
+    countries: [],
+    breakdowns: { EXPOSE_TYPE: [], EXPOSE_REASON: [], SUBMIT_CHANNEL: [], PAYMENT_CHANNEL: [] },
+  };
 }
 
 function SectionHeaderLine({
@@ -3403,6 +2880,7 @@ const DashboardPage = () => {
     null,
   );
   const [cardTrend, setCardTrend] = useState<OverviewTrendPoint[]>([]);
+  const [cardTrendLoading, setCardTrendLoading] = useState(false);
   const [gmvCoverage, setGmvCoverage] =
     useState<DashboardGmvCoverageResponse | null>(null);
   const [attributions, setAttributions] = useState<{
@@ -3414,6 +2892,9 @@ const DashboardPage = () => {
     chain: null,
     creative: null,
   });
+  const [chainFunnel, setChainFunnel] = useState<ChainFunnelResponse | null>(null);
+  const [adsOverview, setAdsOverview] = useState<AdsOverviewResponse | null>(null);
+  const [creativeOverview, setCreativeOverview] = useState<CreativeOverviewResponse | null>(null);
   const [syncRun, setSyncRun] = useState<SyncRunStatus | null>(null);
   const [selectedPaymentType, setSelectedPaymentType] = useState<PaymentChainType>('active');
   const [chainPlanTierOpen, setChainPlanTierOpen] = useState(false);
@@ -3548,6 +3029,9 @@ const DashboardPage = () => {
   const effectiveTrendUserTag = supportsTrendUserTag(trendMetric.key)
     ? trendUserTag
     : undefined;
+  const trendCountryTierParam = searchParams.get('trendCountryTier');
+  const trendCountryTier = ['T1', 'T2', 'T3', '未知'].includes(trendCountryTierParam ?? '') ? trendCountryTierParam! : undefined;
+  const effectiveTrendCountryTier = supportsTrendUserTag(trendMetric.key) ? trendCountryTier : undefined;
   const trendYearParam = searchParams.get('trendYear');
   const trendYear = isTrendYearParam(trendYearParam)
     ? trendYearParam
@@ -3577,6 +3061,7 @@ const DashboardPage = () => {
     [trendEndMonth, trendMonth, trendYear],
   );
   const attributionWindow = useMemo(() => {
+    if (LOCAL_DATA_WINDOW) return LOCAL_DATA_WINDOW;
     const startDate = baselineWeek < analysisWeek ? baselineWeek : analysisWeek;
     const lastWeek = baselineWeek < analysisWeek ? analysisWeek : baselineWeek;
     return {
@@ -3597,9 +3082,12 @@ const DashboardPage = () => {
       const end = isValidDateParam(effectiveTrendEndDate)
         ? effectiveTrendEndDate
         : trendWindow.endDate;
+      const minimum = LOCAL_DATA_WINDOW?.startDate ?? TREND_DATA_START_DATE;
+      const maximum = LOCAL_DATA_WINDOW?.endDate ?? dayjs().subtract(1, 'day').format('YYYY-MM-DD');
+      const clamp = (date: string) => date < minimum ? minimum : date > maximum ? maximum : date;
       return {
-        startDate: start <= end ? start : end,
-        endDate: start <= end ? end : start,
+        startDate: clamp(start <= end ? start : end),
+        endDate: clamp(start <= end ? end : start),
       };
     },
     [effectiveTrendEndDate, effectiveTrendStartDate, trendWindow],
@@ -3608,7 +3096,31 @@ const DashboardPage = () => {
     () => resolveTrendSourceWindow(selectedTrendWindow, granularity),
     [granularity, selectedTrendWindow],
   );
-  const cardTrendWindow = selectedTrendWindow;
+  const selectedAdsWindow = useMemo(() => {
+    const first = LOCAL_DATA_WINDOW?.startDate ?? trendWindow.startDate;
+    const last = LOCAL_DATA_WINDOW?.endDate ?? trendWindow.endDate;
+    const requestedStart = searchParams.get('adsStartDate');
+    const requestedEnd = searchParams.get('adsEndDate');
+    const start = isValidDateParam(requestedStart) ? requestedStart : first;
+    const end = isValidDateParam(requestedEnd) ? requestedEnd : last;
+    return {startDate: [first, start < end ? start : end].sort().at(-1)!, endDate: [last, start < end ? end : start].sort()[0]};
+  }, [searchParams, trendWindow.startDate, trendWindow.endDate]);
+  const creativeWeeks = {
+    baselineWeek: isSelectableWeekParam(searchParams.get('creativeBaselineWeek')) ? searchParams.get('creativeBaselineWeek')! : baselineWeek,
+    analysisWeek: isSelectableWeekParam(searchParams.get('creativeAnalysisWeek')) ? searchParams.get('creativeAnalysisWeek')! : analysisWeek,
+  };
+  const creativeTierWeeks = {
+    baselineWeek: isSelectableWeekParam(searchParams.get('creativeTierBaselineWeek')) ? searchParams.get('creativeTierBaselineWeek')! : baselineWeek,
+    analysisWeek: isSelectableWeekParam(searchParams.get('creativeTierAnalysisWeek')) ? searchParams.get('creativeTierAnalysisWeek')! : analysisWeek,
+  };
+  // Fetch comparison weeks as well as the chosen daily range. Filtering the
+  // visible daily rows must never remove the denominator of a weekly comparison.
+  const creativeSourceStart = [dayjs(selectedTrendWindow.startDate).subtract(7,'day').format('YYYY-MM-DD'), creativeWeeks.baselineWeek, creativeWeeks.analysisWeek].sort()[0];
+  const creativeSourceEnd = [selectedTrendWindow.endDate, dayjs(creativeWeeks.baselineWeek).add(6,'day').format('YYYY-MM-DD'), dayjs(creativeWeeks.analysisWeek).add(6,'day').format('YYYY-MM-DD')].sort().at(-1)!;
+  const cardTrendWindow = useMemo(
+    () => resolveTrendSourceWindow(selectedTrendWindow, 'day'),
+    [selectedTrendWindow],
+  );
   // Headline cards always show the latest daily values. The day/week control
   // belongs to the trend chart and must not change the card metric grain.
   const cardGranularity: Granularity = 'day';
@@ -3625,6 +3137,7 @@ const DashboardPage = () => {
         | 'creationTier'
         | 'userTag'
         | 'trendUserTag'
+        | 'trendCountryTier'
         | 'planTier'
         | 'chainType'
         | 'trendYear'
@@ -3679,7 +3192,9 @@ const DashboardPage = () => {
   );
 
   const refresh = useCallback(() => {
-    setRefreshToken((value) => value + 1);
+    dashboardApi.invalidateDashboardCache();
+    requestCacheRef.current.clear();
+    setRefreshToken(Date.now());
   }, []);
 
   const updateTrendRange = useCallback(
@@ -3701,6 +3216,42 @@ const DashboardPage = () => {
 
   const onPaymentLoadingChange = useCallback((value: boolean) => setSectionLoading('payType', value), [setSectionLoading]);
 
+  // Clear values from a previous scope before painting the new filter labels.
+  useLayoutEffect(() => {
+    setOverview(null);
+    setCardTrend([]);
+    setAdsOverview(null);
+    setCreativeOverview(null);
+    setChainFunnel(null);
+    setAttributions({ payType: null, chain: null, creative: null });
+  }, [platform, effectiveDeviceType, baselineWeek, analysisWeek]);
+
+  // Warm other workspaces after the current workspace gets the network first.
+  // Sequential reads avoid competing large model payloads and reuse the same API cache.
+  useEffect(() => {
+    let cancelled = false;
+    const common = {
+      platform, deviceType: effectiveDeviceType,
+      startDate: attributionWindow.startDate, endDate: attributionWindow.endDate,
+      baselinePeriod: baselineWeek, analysisPeriod: analysisWeek,
+      cacheBust: refreshToken || undefined,
+    };
+    const timer = window.setTimeout(async () => {
+      const reads = [
+        () => dashboardApi.getAdsOverview(common),
+        () => dashboardApi.getChainFunnel(common),
+        () => dashboardApi.getPaymentAnalysis({ platform, deviceType: effectiveDeviceType, baselinePeriod: baselineWeek, analysisPeriod: analysisWeek, attributionType: 'NONE', cacheBust: refreshToken || undefined }),
+        () => dashboardApi.getCreativeOverview(common),
+        () => dashboardApi.getDashboardAttributions({ ...common, granularity: 'week', dimension: 'creative' }),
+      ];
+      for (const read of reads) {
+        if (cancelled) break;
+        try { await read(); } catch { /* The destination owns visible error handling. */ }
+      }
+    }, 250);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [platform, effectiveDeviceType, baselineWeek, analysisWeek, attributionWindow.startDate, attributionWindow.endDate, refreshToken]);
+
   const setSectionError = useCallback(
     (key: DashboardLoadKey, value?: string) => {
       setLoadErrors((current) => ({ ...current, [key]: value }));
@@ -3719,6 +3270,7 @@ const DashboardPage = () => {
     }
     let cancelled = false;
     setSectionLoading('overview', true);
+    setOverview(null);
     setSectionError('overview');
     const requestWindow = trendSourceWindow;
     const cacheKey = [
@@ -3729,6 +3281,7 @@ const DashboardPage = () => {
       requestWindow.startDate,
       requestWindow.endDate,
       effectiveTrendUserTag ?? 'all',
+      effectiveTrendCountryTier ?? 'all',
       isRenewalTrendMetric(trendMetric.key) ? planTier : 'all',
     ].join('|');
 
@@ -3739,21 +3292,19 @@ const DashboardPage = () => {
         granularity,
         startDate: requestWindow.startDate,
         endDate: requestWindow.endDate,
+        metricDate: selectedTrendWindow.endDate,
         trendUserTag: effectiveTrendUserTag,
+        trendCountryTier: effectiveTrendCountryTier,
         planTier:
           isRenewalTrendMetric(trendMetric.key) && planTier !== 'all'
             ? planTier
             : undefined,
+        cacheBust: refreshToken || undefined,
       }),
     )
       .then((response) => {
         if (!cancelled) {
           setOverview({ ...response, granularity });
-          if (granularity === 'day' && cardGranularity === 'day') {
-            setCardTrend((response.payTypeTrend ?? response.cardTrend ?? response.trend).filter((row) =>
-              row.period >= selectedTrendWindow.startDate && row.period <= selectedTrendWindow.endDate,
-            ));
-          }
         }
       })
       .catch((cause) => {
@@ -3780,19 +3331,18 @@ const DashboardPage = () => {
     trendSourceWindow.endDate,
     trendSourceWindow.startDate,
     effectiveTrendUserTag,
+    effectiveTrendCountryTier,
     planTier,
     trendMetric.key,
-    cardGranularity,
-    selectedTrendWindow.startDate,
     selectedTrendWindow.endDate,
   ]);
 
-  /* Keep the headline cards readable independently from the main chart:
-     short ranges use daily bars, while ranges longer than one month use
-     business-week bars. */
+  // Headline data and loading belong to global filters only. Income-panel
+  // dimensions, metrics and granularity must never reset the headline cards.
   useEffect(() => {
-    if (activeTab !== 'trend' || (granularity === 'day' && cardGranularity === 'day')) return;
+    if (activeTab !== 'trend') return;
     let cancelled = false;
+    setCardTrendLoading(true);
     const cacheKey = [
       'overview',
       platform,
@@ -3800,6 +3350,7 @@ const DashboardPage = () => {
       cardGranularity,
       cardTrendWindow.startDate,
       cardTrendWindow.endDate,
+      'all',
       'all',
       'all',
     ].join('|');
@@ -3811,6 +3362,8 @@ const DashboardPage = () => {
         granularity: cardGranularity,
         startDate: cardTrendWindow.startDate,
         endDate: cardTrendWindow.endDate,
+        metricDate: cardTrendWindow.endDate,
+        cacheBust: refreshToken || undefined,
       }),
     )
       .then((response) => {
@@ -3818,6 +3371,9 @@ const DashboardPage = () => {
       })
       .catch(() => {
         if (!cancelled) setCardTrend([]);
+      })
+      .finally(() => {
+        if (!cancelled) setCardTrendLoading(false);
       });
 
     return () => {
@@ -3826,7 +3382,6 @@ const DashboardPage = () => {
   }, [
     activeTab,
     effectiveDeviceType,
-    granularity,
     cardGranularity,
     platform,
     refreshToken,
@@ -3876,33 +3431,48 @@ const DashboardPage = () => {
       'attribution',
       platform,
       effectiveDeviceType ?? 'all',
-      attributionWindow.startDate,
-      attributionWindow.endDate,
-      baselineWeek,
-      analysisWeek,
+      creativeSourceStart,
+      creativeSourceEnd,
+      creativeWeeks.baselineWeek,
+      creativeWeeks.analysisWeek,
+      creativeTierWeeks.baselineWeek,
+      creativeTierWeeks.analysisWeek,
       'creative',
     ].join('|');
 
     void getCachedRequest(requestCacheRef.current, cacheKey, () =>
-      dashboardApi.getDashboardAttributions({
-        platform,
-        deviceType: effectiveDeviceType,
-        granularity: 'week',
-        dimension: 'creative',
-        startDate: attributionWindow.startDate,
-        endDate: attributionWindow.endDate,
-        baselinePeriod: baselineWeek,
-        analysisPeriod: analysisWeek,
-      }),
+      Promise.all([
+        dashboardApi.getDashboardAttributions({
+          platform,
+          deviceType: effectiveDeviceType,
+          granularity: 'week',
+          dimension: 'creative',
+          startDate: [creativeTierWeeks.baselineWeek,creativeTierWeeks.analysisWeek].sort()[0],
+          endDate: dayjs([creativeTierWeeks.baselineWeek,creativeTierWeeks.analysisWeek].sort()[1]).add(6,'day').format('YYYY-MM-DD'),
+          baselinePeriod: creativeTierWeeks.baselineWeek,
+          analysisPeriod: creativeTierWeeks.analysisWeek,
+          cacheBust: refreshToken || undefined,
+        }),
+        dashboardApi.getCreativeOverview({
+          platform,
+          startDate: creativeSourceStart,
+          endDate: creativeSourceEnd,
+          baselinePeriod: creativeWeeks.baselineWeek,
+          analysisPeriod: creativeWeeks.analysisWeek,
+          cacheBust: refreshToken || undefined,
+        }),
+      ]),
     )
-      .then((response) => {
+      .then(([response, chainResponse]) => {
         if (!cancelled) {
           setAttributions((current) => ({ ...current, creative: response }));
+          setCreativeOverview(chainResponse);
         }
       })
       .catch((cause) => {
         if (!cancelled) {
           setAttributions((current) => ({ ...current, creative: null }));
+          setCreativeOverview(null);
           setSectionError('creative', getErrorMessage(cause));
         }
       })
@@ -3915,10 +3485,12 @@ const DashboardPage = () => {
     };
   }, [
     activeTab,
-    attributionWindow.endDate,
-    attributionWindow.startDate,
-    analysisWeek,
-    baselineWeek,
+    creativeSourceStart,
+    creativeSourceEnd,
+    creativeWeeks.baselineWeek,
+    creativeWeeks.analysisWeek,
+    creativeTierWeeks.baselineWeek,
+    creativeTierWeeks.analysisWeek,
     effectiveDeviceType,
     platform,
     refreshToken,
@@ -3927,8 +3499,97 @@ const DashboardPage = () => {
   ]);
 
   useEffect(() => {
+    if (activeTab !== 'ads') {
+      setSectionLoading('ads', false);
+      return;
+    }
+    let cancelled = false;
+    setSectionLoading('ads', true);
+    setSectionError('ads');
+    const cacheKey = [
+      'ads', platform, effectiveDeviceType ?? 'all', attributionWindow.startDate,
+      attributionWindow.endDate, baselineWeek, analysisWeek,
+    ].join('|');
+    void getCachedRequest(requestCacheRef.current, cacheKey, () => dashboardApi.getAdsOverview({
+      platform,
+      deviceType: effectiveDeviceType,
+      startDate: attributionWindow.startDate,
+      endDate: attributionWindow.endDate,
+      baselinePeriod: baselineWeek,
+      analysisPeriod: analysisWeek,
+      cacheBust: refreshToken || undefined,
+    }))
+      .then((response) => {
+        if (!cancelled) setAdsOverview(response);
+      })
+      .catch((cause) => {
+        if (!cancelled) {
+          setAdsOverview(null);
+          setSectionError('ads', getErrorMessage(cause));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSectionLoading('ads', false);
+      });
+    return () => { cancelled = true; };
+  }, [
+    activeTab, analysisWeek, attributionWindow.endDate, attributionWindow.startDate,
+    baselineWeek, effectiveDeviceType, platform, refreshToken, setSectionError, setSectionLoading,
+  ]);
+
+  useEffect(() => {
+    if (activeTab !== 'trend') {
+      setSectionLoading('payType', false);
+      return;
+    }
+    let cancelled = false;
+    const cacheKey = [
+      'attribution',
+      platform,
+      effectiveDeviceType ?? 'all',
+      attributionWindow.startDate,
+      attributionWindow.endDate,
+      baselineWeek,
+      analysisWeek,
+      'payType',
+    ].join('|');
+    void getCachedRequest(requestCacheRef.current, cacheKey, () =>
+      dashboardApi.getDashboardAttributions({
+        platform,
+        deviceType: effectiveDeviceType,
+        granularity: 'week',
+        dimension: 'pay_type',
+        startDate: attributionWindow.startDate,
+        endDate: attributionWindow.endDate,
+        baselinePeriod: baselineWeek,
+        analysisPeriod: analysisWeek,
+        cacheBust: refreshToken || undefined,
+      }),
+    )
+      .then((response) => {
+        if (!cancelled) setAttributions((current) => ({ ...current, payType: response }));
+      })
+      .catch(() => {
+        if (!cancelled) setAttributions((current) => ({ ...current, payType: null }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeTab,
+    analysisWeek,
+    attributionWindow.endDate,
+    attributionWindow.startDate,
+    baselineWeek,
+    effectiveDeviceType,
+    platform,
+    refreshToken,
+  ]);
+
+  useEffect(() => {
     if (activeTab !== 'chain') {
       setSectionLoading('chain', false);
+      setChainFunnel(null);
       return;
     }
     let cancelled = false;
@@ -3951,29 +3612,26 @@ const DashboardPage = () => {
       chainType === 'renewal' ? planTier : 'all',
     ].join('|');
 
-    void getCachedRequest(requestCacheRef.current, cacheKey, () =>
-      dashboardApi.getDashboardAttributions({
-        platform,
-        deviceType: effectiveDeviceType,
-        granularity: 'week',
-        dimension: 'chain',
-        startDate: attributionWindow.startDate,
-        endDate: attributionWindow.endDate,
-        baselinePeriod: baselineWeek,
-        analysisPeriod: analysisWeek,
-        chainPath: 'tier_to_user_to_chain',
-        chainType,
-        planTier:
-          chainType === 'renewal' && planTier !== 'all' ? planTier : undefined,
-        creationTier: chainType === 'active' ? creationTier : undefined,
-        userTag:
-          chainType === 'active' ? chainUserTag || undefined : undefined,
-      }),
-    )
+    void getCachedRequest(requestCacheRef.current, cacheKey, () => dashboardApi.getDashboardAttributions({
+      platform,
+      deviceType: effectiveDeviceType,
+      granularity: 'week',
+      dimension: 'chain',
+      startDate: attributionWindow.startDate,
+      endDate: attributionWindow.endDate,
+      baselinePeriod: baselineWeek,
+      analysisPeriod: analysisWeek,
+      chainPath: 'tier_to_user_to_chain',
+      chainType,
+      planTier:
+        chainType === 'renewal' && planTier !== 'all' ? planTier : undefined,
+      creationTier: chainType === 'active' ? creationTier : undefined,
+      userTag:
+        chainType === 'active' ? chainUserTag || undefined : undefined,
+      cacheBust: refreshToken || undefined,
+    }))
       .then((response) => {
-        if (!cancelled) {
-          setAttributions((current) => ({ ...current, chain: response }));
-        }
+        if (!cancelled) setAttributions((current) => ({ ...current, chain: response }));
       })
       .catch((cause) => {
         if (!cancelled) {
@@ -3984,6 +3642,33 @@ const DashboardPage = () => {
       .finally(() => {
         if (!cancelled) setSectionLoading('chain', false);
       });
+
+    if (chainType === 'active') {
+      const funnelCacheKey = [
+        'chain-funnel',
+        platform,
+        effectiveDeviceType ?? 'all',
+        attributionWindow.startDate,
+        attributionWindow.endDate,
+        baselineWeek,
+        analysisWeek,
+      ].join('|');
+      void getCachedRequest(requestCacheRef.current, funnelCacheKey, () => dashboardApi.getChainFunnel({
+        platform,
+        deviceType: effectiveDeviceType,
+        startDate: attributionWindow.startDate,
+        endDate: attributionWindow.endDate,
+        baselinePeriod: baselineWeek,
+        analysisPeriod: analysisWeek,
+        cacheBust: refreshToken || undefined,
+      }))
+        .then((funnel) => {
+          if (!cancelled) setChainFunnel(funnel);
+        })
+        .catch(() => {
+          if (!cancelled) setChainFunnel(null);
+        });
+    }
 
     return () => {
       cancelled = true;
@@ -4043,6 +3728,8 @@ const DashboardPage = () => {
           ? ['chain']
           : activeTab === 'creative'
             ? ['creative']
+            : activeTab === 'ads'
+              ? ['ads']
             : activeTab === 'data'
               ? ['coverage', 'sync']
               : [];
@@ -4065,28 +3752,41 @@ const DashboardPage = () => {
       ]
       : [];
   const primaryPaySection = paySections.find((section) => section.title.includes('一级') || section.title === '付费类型贡献') ?? null;
+  const revenueHeadlineSummary = useMemo<RevenueHeadlineSummary | undefined>(() => {
+    const items = primaryPaySection?.items ?? [];
+    if (!items.length) return undefined;
+    const renewal = items.find((item) => item.key.includes('自动续订'));
+    const totalCurrent = items.reduce((sum, item) => sum + item.analysisDailyAvg, 0);
+    const totalBaseline = items.reduce((sum, item) => sum + item.baselineDailyAvg, 0);
+    const renewalCurrent = renewal?.analysisDailyAvg ?? 0;
+    const renewalBaseline = renewal?.baselineDailyAvg ?? 0;
+    const period = attributions.payType?.comparison?.analysisPeriod ?? analysisWeek;
+    return {
+      totalGmv: { current: totalCurrent, baseline: totalBaseline, period },
+      activeGmv: { current: totalCurrent - renewalCurrent, baseline: totalBaseline - renewalBaseline, period },
+      renewalGmv: { current: renewalCurrent, baseline: renewalBaseline, period },
+    };
+  }, [analysisWeek, attributions.payType, primaryPaySection]);
   const selectedPayDrillSections = selectedPaymentType === 'renewal'
     ? paySections.filter((section) => section.title.includes('自动续订套餐'))
     : paySections.filter((section) => section.title === '主动付费下钻');
+  const activeStructureItems = paySections.find((section) => section.title === '主动付费下钻')?.items ?? [];
+  const renewalStructureItems = paySections.find((section) => section.title.includes('自动续订套餐'))?.items ?? [];
+  const revenueStructureItems = {
+    totalGmv: [...activeStructureItems, ...renewalStructureItems],
+    activeGmv: activeStructureItems,
+    renewalGmv: renewalStructureItems,
+  };
   const chainSection = attributions.chain?.sections?.[0] ?? null;
-  const chainUserTypeSection = attributions.chain?.sections?.[1] ?? null;
   const isRenewalChain = chainType === 'renewal';
   const activeCreationTier =
     creationTier ?? attributions.chain?.drill?.creationTier ?? 'all';
   const activeChainUserTag = chainUserTagParam;
-  const activeChainUserLabel =
-    activeChainUserTag === 'all' || activeChainUserTag === '全部'
-      ? '全部用户'
-      : activeChainUserTag === '新用户' || activeChainUserTag === '老用户'
-        ? `注册${activeChainUserTag}`
-        : activeChainUserTag;
   const chainDrivers = attributions.chain?.drivers ?? [];
-  const activeChainDriverDescription =
-    isRenewalChain
-      ? undefined
-      : activeCreationTier === 'all'
-      ? `主动付费整体 - ${activeChainUserLabel}，DAU、转化率、客单价按同一用户类型联动展示。`
-      : `${formatTierLabel(activeCreationTier)} - ${activeChainUserLabel}，DAU、转化率、客单价按同一用户类型联动展示。`;
+  const chainOverviewData = useMemo(() => {
+    if (isRenewalChain || !attributions.chain) return null;
+    return chainFunnel?.ready ? chainFunnel : buildChainFunnelFallback(attributions.chain);
+  }, [attributions.chain, chainFunnel, isRenewalChain]);
   const activeComparison =
     attributions.payType?.comparison ??
     attributions.chain?.comparison ??
@@ -4094,11 +3794,12 @@ const DashboardPage = () => {
     null;
   const availableWeeks = useMemo(
     () => {
-      const first = dayjs(getBusinessWeekStart(TREND_DATA_START_DATE));
-      const latest = dayjs(getBusinessWeekStart(dayjs().subtract(1, 'day').format('YYYY-MM-DD')));
+      const first = dayjs(getBusinessWeekStart(LOCAL_DATA_WINDOW?.startDate ?? TREND_DATA_START_DATE));
+      const latest = dayjs(getBusinessWeekStart(buildViewWindow().endDate));
       const weeks: string[] = [];
       for (let week = first; !week.isAfter(latest); week = week.add(WEEK_DAYS, 'day')) {
-        weeks.push(week.format('YYYY-MM-DD'));
+        const value = week.format('YYYY-MM-DD');
+        if (isSelectableWeekParam(value)) weeks.push(value);
       }
       return weeks;
     },
@@ -4113,12 +3814,13 @@ const DashboardPage = () => {
 
         </div>
         <div className="dashboard-action-bar">
-          {activeTab === 'trend' ? (
+          {['trend','creative'].includes(activeTab) ? (
             <DateRangePicker
               selectedRange={selectedTrendWindow}
               onRangeChange={updateTrendRange}
             />
           ) : null}
+          {activeTab === 'ads' && <DateRangePicker allowLocalSelection selectedRange={selectedAdsWindow} onRangeChange={range=>updateSearchParams({adsStartDate:range.startDate,adsEndDate:range.endDate})}/>}
           <GlobalDashboardControls
             platform={platform}
             onPlatformChange={(value) =>
@@ -4136,7 +3838,7 @@ const DashboardPage = () => {
             deviceType={deviceType}
             loading={loading}
             onRefresh={refresh}
-            showWeekControls={['payment', 'chain', 'creative'].includes(activeTab)}
+            showWeekControls={['payment', 'chain'].includes(activeTab)}
             baselineWeek={baselineWeek}
             analysisWeek={analysisWeek}
             availableWeeks={availableWeeks}
@@ -4157,10 +3859,13 @@ const DashboardPage = () => {
         <>
           <RevenueCards
             items={paySections[0]?.items ?? []}
-            loading={!cardTrend.length && loadingBySection.overview}
+            summary={revenueHeadlineSummary}
+            structureItems={revenueStructureItems}
+            loading={!cardTrend.length && cardTrendLoading}
             period={formatWeekRange(analysisWeek)}
             trend={cardTrend}
             dailyTrend={cardTrend}
+            zoomTrend={cardTrend}
             granularity={cardGranularity}
             analysisWeek={analysisWeek}
             baselineWeek={baselineWeek}
@@ -4199,9 +3904,11 @@ const DashboardPage = () => {
                   metricControls={<DashboardFilters
                     metric={trendMetric.key}
                     onMetricChange={(value) => updateSearchParams(
-                      { metric: value, trendUserTag: undefined },
+                      { metric: value, ...(!supportsTrendUserTag(value) ? {trendUserTag: undefined, trendCountryTier: undefined} : {}) },
                       isRenewalTrendMetric(value) ? [] : ['planTier'],
                     )}
+                    trendCountryTier={trendCountryTier}
+                    onTrendCountryTierChange={value => updateSearchParam('trendCountryTier', value === 'all' ? '' : value)}
                     trendUserTag={trendUserTag}
                     onTrendUserTagChange={(value) => updateSearchParam('trendUserTag', value === 'all' ? '' : value)}
                     planTier={planTier}
@@ -4212,7 +3919,6 @@ const DashboardPage = () => {
                   metric={trendMetric}
                   rangeStartDate={selectedTrendWindow.startDate}
                   rangeEndDate={selectedTrendWindow.endDate}
-                  onRangeChange={updateTrendRange}
                 />
               )}
             </div>
@@ -4234,17 +3940,16 @@ const DashboardPage = () => {
       {activeTab === 'chain' && (
         <div className="dashboard-enter" key="chain">
           <PageSection
-            title={isRenewalChain ? '自动续订归因' : '支付链路 x 创作分层'}
-            description={isRenewalChain
-              ? '比较到期用户数、续订率和续订客单价对续订 GMV 变化的贡献。'
-              : '先看整体支付链路；点击创作分层行，原位展开新老用户并联动下方链路。'}
+            className="cw-shell"
+            title={isRenewalChain ? '自动续订归因' : undefined}
             action={(
               <div className="chain-panel-controls">
-                <div className="chain-type-filter-primary">
+                <div className="chain-type-filter-primary chain-type-filter-primary-collapsible">
                   <IconBar
                     items={[{ value: 'active', label: '主动付费' }, { value: 'renewal', label: '自动续订' }]}
                     value={chainType}
                     label="支付链路类型"
+                    collapsible
                     onChange={(value) => {
                       setChainPlanTierOpen(false);
                       updateSearchParams({ chainType: value === 'active' ? undefined : value }, ['creationTier', 'userTag']);
@@ -4306,53 +4011,22 @@ const DashboardPage = () => {
                 )}
                 aria-busy={loadingBySection.chain}
               >
-                {!isRenewalChain && chainSection ? <div className={SUBSURFACE_CLASS}>
-                  <ContributionBars
-                    items={chainSection.items}
-                    selected={activeCreationTier}
-                    formatLabel={formatTierLabel}
-                    label="创作分层增量贡献"
-                    onSelect={(key) =>
-                      updateSearchParams(
-                        {
-                          creationTier:
-                            key === activeCreationTier ? 'all' : key,
-                        },
-                        ['userTag'],
-                      )
-                    }
-                    expandedContent={chainUserTypeSection ? (
-                      <ChainUserList
-                        section={chainUserTypeSection}
-                        selected={activeChainUserTag}
-                        onSelect={(key) => updateSearchParam('userTag', key === 'all' ? '' : key)}
-                      />
-                    ) : null}
+                {!isRenewalChain && chainOverviewData ? (
+                  <ChainWorkbench
+                    data={chainOverviewData}
+                    selectedTier={activeCreationTier}
+                    selectedLifecycle={activeChainUserTag === '新用户' ? 'NEW' : activeChainUserTag === '老用户' ? 'OLD' : 'all'}
+                    platform={platform}
+                    deviceType={effectiveDeviceType}
+                    refreshToken={refreshToken}
+                    onReset={() => updateSearchParams({ creationTier: 'all' }, ['userTag'])}
+                    onTierChange={(key) => updateSearchParams({ creationTier: key === activeCreationTier ? 'all' : key })}
+                    onLifecycleChange={(key) => updateSearchParam('userTag', key === 'NEW' ? '新用户' : key === 'OLD' ? '老用户' : '')}
+                    onAds={() => { const next = new URLSearchParams(searchParams); next.set('tab', 'ads'); setSearchParams(next); }}
                   />
-                </div> : null}
-                <div className="min-w-0">
-                  <SectionHeaderLine
-                    title={isRenewalChain ? '自动续订因子拆解' : '支付链路指标拆解'}
-                    description={activeChainDriverDescription}
-                    action={!isRenewalChain ? (
-                      <IconBar
-                        items={USER_TAG_OPTIONS.filter((option) => option.value !== '未知').map((option) => ({
-                          value: option.value,
-                          label: option.value === '新用户' || option.value === '老用户'
-                            ? `注册${option.label}` : option.label,
-                        }))}
-                        value={activeChainUserTag}
-                        label="支付链路注册用户类型"
-                        onChange={(value) => updateSearchParam('userTag', value === 'all' ? '' : value)}
-                      />
-                    ) : undefined}
-                  />
-                  <DriverTable
-                    drivers={chainDrivers}
-                    comparison={attributions.chain.comparison}
-                    outcomeType={chainType}
-                  />
-                </div>
+                ) : (
+                  <DriverTable drivers={chainDrivers} comparison={attributions.chain.comparison} outcomeType={chainType} />
+                )}
               </div>
             ) : (
               <EmptyBlock
@@ -4366,19 +4040,21 @@ const DashboardPage = () => {
         </div>
       )}
 
+      {activeTab === 'ads' && (
+        <div className="dashboard-enter" key="ads">
+          <PageSection className="op-shell" fullBleed>
+            {loadingBySection.ads && !adsOverview ? <LoadingBlock title="广告数据加载中" /> : <AdsDashboard data={adsOverview} dateRange={selectedAdsWindow} availableWeeks={availableWeeks} onComparisonChange={(baseline,analysis)=>updateSearchParams({baselineWeek:baseline,analysisWeek:analysis})} />}
+          </PageSection>
+        </div>
+      )}
+
       {activeTab === 'creative' && (
         <div className="dashboard-enter" key="creative">
-          <PageSection>
-            {loadingBySection.creative ? (
-              <LoadingBlock title="创作积极性加载中" />
-            ) : attributions.creative ? (
-              <CreativeMetricsTable data={attributions.creative} />
-            ) : (
-              <EmptyBlock
-                title="暂无创作数据"
-                description="当前比较窗口内没有创作积极性汇总。"
-              />
-            )}
+          <PageSection className="op-shell" fullBleed>
+            {loadingBySection.creative && !attributions.creative ? <LoadingBlock title="创作数据加载中" /> : <CreativeDashboard data={attributions.creative} chain={creativeOverview} dateRange={selectedTrendWindow} availableWeeks={availableWeeks}
+              featureWeeks={creativeWeeks} tierWeeks={creativeTierWeeks}
+              onFeatureWeeksChange={value=>updateSearchParams({creativeBaselineWeek:value.baselineWeek,creativeAnalysisWeek:value.analysisWeek})}
+              onTierWeeksChange={value=>updateSearchParams({creativeTierBaselineWeek:value.baselineWeek,creativeTierAnalysisWeek:value.analysisWeek})} />}
           </PageSection>
         </div>
       )}

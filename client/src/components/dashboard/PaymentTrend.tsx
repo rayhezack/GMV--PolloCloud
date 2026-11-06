@@ -7,7 +7,6 @@ import { getPaymentTrend } from "@/api/dashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
 import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
 import {
   Popover,
   PopoverContent,
@@ -25,6 +24,9 @@ import {
   type PaymentGrouping,
   type RevenueScope,
 } from "./payment-analysis.data";
+import LoadingWave from './LoadingWave';
+import { IconBar } from '@/components/bencho/IconBar';
+import { LOCAL_DATA_WINDOW } from '@/lib/local-data-window';
 
 const colors = [
   "#533afd",
@@ -34,7 +36,9 @@ const colors = [
   "#b18745",
   "#729d94",
 ];
-const ranges = { day: "近 30 天", week: "近 12 周", month: "近 12 月" };
+const ranges = LOCAL_DATA_WINDOW
+  ? { day: "近 30 天", week: "近 30 天", month: "近 30 天" }
+  : { day: "近 30 天", week: "近 13 周", month: "近 3 月" };
 export default function PaymentTrend({
   platform,
   deviceType,
@@ -43,6 +47,7 @@ export default function PaymentTrend({
   scope,
   grouping,
   refreshToken,
+  onDataChange,
 }: {
   platform: DashboardPlatform;
   deviceType?: AppDeviceType;
@@ -51,6 +56,7 @@ export default function PaymentTrend({
   scope: RevenueScope;
   grouping: PaymentGrouping;
   refreshToken: number;
+  onDataChange?: (data: PaymentTrendResponse | null) => void;
 }) {
   const [params, setParams] = useSearchParams();
   const granularity = (
@@ -71,6 +77,7 @@ export default function PaymentTrend({
     let active = true;
     setLoading(true);
     setError("");
+    onDataChange?.(null);
     void getPaymentTrend({
       platform,
       deviceType,
@@ -79,10 +86,12 @@ export default function PaymentTrend({
       granularity,
       income: scope,
       groupBy: grouping,
+      cacheBust: refreshToken || retry || undefined,
     })
       .then((d) => {
         if (active) {
           setData(d);
+          onDataChange?.(d);
           setSelected((old) =>
             old.filter((key) => d.series.some((s) => s.key === key)).length
               ? old.filter((key) => d.series.some((s) => s.key === key))
@@ -160,28 +169,9 @@ export default function PaymentTrend({
             {ranges[granularity]} · 日均 GMV
           </span>
         </div>
-        <ButtonGroup className="payment-granularity" aria-label="趋势颗粒度">
-          {(["day", "week", "month"] as const).map((g) => (
-            <Button
-              key={g}
-              variant="ghost"
-              size="sm"
-              aria-pressed={g === granularity}
-              onClick={() =>
-                setParams(
-                  (p) => {
-                    const next = new URLSearchParams(p);
-                    next.set("paymentGranularity", g);
-                    return next;
-                  },
-                  { replace: true },
-                )
-              }
-            >
-              {{ day: "日", week: "周", month: "月" }[g]}
-            </Button>
-          ))}
-        </ButtonGroup>
+        <IconBar label="趋势颗粒度" value={granularity}
+          items={[{value:'day',label:'日'},{value:'week',label:'周'},{value:'month',label:'月'}] as const}
+          onChange={value => setParams(p => { const next = new URLSearchParams(p); next.set('paymentGranularity',value); return next; }, {replace:true})}/>
       </CardHeader>
       <CardContent className="payment-viz-content">
         <div className="payment-series-toolbar">
@@ -229,7 +219,9 @@ export default function PaymentTrend({
           </Popover>
         </div>
         {loading ? (
-          <div className="payment-line-chart" role="status" aria-label="正在读取趋势" />
+          <div className="payment-line-chart payment-trend-loading" role="status" aria-label="正在读取趋势">
+            <LoadingWave />
+          </div>
         ) : error ? (
           <div className="payment-trend-state" role="alert">
             {error}
@@ -262,9 +254,7 @@ export default function PaymentTrend({
                 <XAxis
                   dataKey="period"
                   tickFormatter={(s: string) =>
-                    granularity === "month"
-                      ? s.slice(0, 7).replace("-", "/")
-                      : s.slice(5, 10).replace("-", "/")
+                    s.slice(5, 10).replace("-", "/")
                   }
                   axisLine={false}
                   tickLine={false}
@@ -294,9 +284,7 @@ export default function PaymentTrend({
                     active && payload?.length ? (
                       <div className="payment-history-tooltip">
                         <strong>
-                          {granularity === "month"
-                            ? String(label).slice(0, 7)
-                            : label}
+                          {label}
                         </strong>
                         {payload.map((p) => (
                           <span key={String(p.dataKey)}>

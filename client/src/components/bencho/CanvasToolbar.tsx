@@ -1,12 +1,11 @@
-import { CalendarDays, Download, MoreHorizontal, RotateCcw, Table2 } from 'lucide-react';
+import { CalendarDays, Download, MoreHorizontal, Table2 } from 'lucide-react';
 import type { Granularity } from '@shared/api.interface';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
-export function CanvasToolbar({ granularity, onGranularityChange, onResetRange, showData, onToggleData, onExport }: {
+export function CanvasToolbar({ granularity, onGranularityChange, showData, onToggleData, onExport }: {
   granularity: Granularity;
   onGranularityChange: (value: Granularity) => void;
-  onResetRange: () => void;
   showData: boolean;
   onToggleData: () => void;
   onExport: () => void;
@@ -24,7 +23,6 @@ export function CanvasToolbar({ granularity, onGranularityChange, onResetRange, 
           <button type="button" className="canvas-toolbar-tool" aria-label="更多图表操作"><MoreHorizontal size={18}/></button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="canvas-toolbar-menu border-0">
-          <DropdownMenuItem onSelect={onResetRange}><RotateCcw size={15}/>全部范围</DropdownMenuItem>
           <DropdownMenuItem onSelect={onToggleData}><Table2 size={15}/>{showData ? '收起明细' : '数据明细'}</DropdownMenuItem>
           <DropdownMenuItem onSelect={onExport}><Download size={15}/>导出 CSV</DropdownMenuItem>
         </DropdownMenuContent>

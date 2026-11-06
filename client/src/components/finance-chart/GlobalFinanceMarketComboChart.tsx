@@ -4,6 +4,7 @@
 
 import { animate, stagger, svg, utils, type JSAnimation } from "animejs";
 import * as React from "react";
+import { flowBarLayout, endpointLabels } from './flow-bar-layout';
 import { ArrowUp, ArrowDown } from "lucide-react";
 
 import { ChartButton } from "./primitives";
@@ -42,6 +43,7 @@ import {
   valueAt,
 } from "./series";
 import { cn } from "@/lib/utils";
+import { comparisonSummary } from "./comparison-summary";
 
 type GlobalFinanceMarketComboPoint = {
   /** An ISO date ("2026-03-16") or date-time ("2026-03-16T08:00:00Z"), read as UTC. */
@@ -112,6 +114,7 @@ type GlobalFinanceMarketComboChartProps = {
     flowLabel?: string;
     /** The stats' labels: the first is followed by the year ("Global AUM’26"), the last follows the outlook's year ("2027 Forecast"). */
     aumLabel?: string;
+    comparableLabel?: string;
     growthLabel?: string;
     outlookLabel?: string;
     exportLabel?: string;
@@ -169,7 +172,6 @@ const RING = "focus-visible:ring-primary-green-500/40"; // the card's focus ring
 const DRAW_AT = 450;
 const DRAW_DURATION = 1500;
 const GROW = 800;
-const RIDE = 450;
 const MORPH = 800;
 
 const HOUR = 3_600_000;
@@ -340,23 +342,9 @@ const turnLength = (points: Point[]) =>
       )
     : 0;
 
-/** A value of a series at a time: linear between its points, undefined outside them. */
+/** Only observed values are valid comparisons; missing dates stay missing. */
 function valueOn(points: { time: number; value: number }[], time: number) {
-  if (
-    !points.length ||
-    time < points[0].time ||
-    time > points[points.length - 1].time
-  )
-    return undefined;
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1];
-    const b = points[i];
-    if (time <= b.time)
-      return b.time === a.time
-        ? b.value
-        : a.value + ((b.value - a.value) * (time - a.time)) / (b.time - a.time);
-  }
-  return points[points.length - 1].value;
+  return points.find((point) => point.time === time)?.value;
 }
 
 const sorted = (points: GlobalFinanceMarketComboPoint[] | undefined) =>
@@ -383,7 +371,11 @@ function layoutChart(
   const times = [...actual, ...forecast, ...flows].map((p) => p.time);
   const start = actual[0]?.time ?? Math.min(...times, 0);
   const end = actual[actual.length - 1]?.time ?? Math.max(...times, 1);
-  const { monthly, x } = timeScale(start, end, width);
+  const barSlots = flowBarLayout(actual.map(point => point.time), width, BAR_WIDTH);
+  const inset = Math.min(width / 2, Math.max(MARKER / 2 + 2, flows.length ? barSlots.inset : 0));
+  const scale = timeScale(start, end, Math.max(0,width-2*inset));
+  const monthly = scale.monthly;
+  const x = (time:number) => inset + scale.x(time);
   const values = [
     ...(shown.actual ? actual : []),
     ...(shown.forecast ? forecast : []),
@@ -401,12 +393,12 @@ function layoutChart(
     hi > lo ? BASE - ((value - lo) / (hi - lo)) * SPAN : BASE;
   const line = (points: { time: number; value: number }[]): Line =>
     points.map((p) => ({ ...p, x: x(p.time), y: y(p.value) }));
-  const barWidth = Math.min(BAR_WIDTH, width / Math.max(flows.length, 1) * 0.65);
+  const barWidth = barSlots.width;
   const bars: BarShape[] = flows.map((p) => ({
     key: String(p.time),
     time: p.time,
     value: p.value,
-    x: Math.round(x(p.time) - barWidth / 2),
+    x: x(p.time) - barWidth / 2,
     width: barWidth,
     top: Math.min(BAR_BOTTOM, y(Math.abs(p.value))),
     bottom: BAR_BOTTOM,
@@ -438,7 +430,18 @@ function layoutChart(
     unit: "month" | "week" | "day";
   }[] = [];
   if (actual.length) {
-    if (monthly || period === "month") {
+    if (period === "week" || period === "month") {
+      const spacing = Math.max(1, Math.ceil(actual.length / Math.max(2, Math.floor(width / 90))));
+      actual.forEach((point, index) => {
+        if (index % spacing !== 0 && index !== actual.length - 1) return;
+        labels.push({
+          key: `p${point.time}`,
+          time: point.time,
+          x: x(point.time),
+          unit: period,
+        });
+      });
+    } else if (monthly) {
       for (
         let d = new Date(start);
         d.getTime() <= end;
@@ -476,7 +479,9 @@ function layoutChart(
     ticks,
     y,
     grid,
-    labels,
+    labels: actual.length ? endpointLabels(labels,
+      { key: `edge${start}`, time: start, x: x(start), unit: 'day' as const },
+      { key: `edge${end}`, time: end, x: x(end), unit: 'day' as const }) : [],
     x,
   };
 }
@@ -517,9 +522,9 @@ function stripesPath(bar: { x: number; top: number; bottom: number; width?: numb
   const oy = bar.top + (bar.bottom - bar.top) / 2 + STRIPE_Y;
   const box = [
     [bar.x - STRIPE_PERIOD, -STRIPE_PERIOD],
-    [bar.x + BAR_WIDTH + STRIPE_PERIOD, -STRIPE_PERIOD],
+    [bar.x + (bar.width ?? BAR_WIDTH) + STRIPE_PERIOD, -STRIPE_PERIOD],
     [bar.x - STRIPE_PERIOD, PLOT_HEIGHT + STRIPE_PERIOD],
-    [bar.x + BAR_WIDTH + STRIPE_PERIOD, PLOT_HEIGHT + STRIPE_PERIOD],
+    [bar.x + (bar.width ?? BAR_WIDTH) + STRIPE_PERIOD, PLOT_HEIGHT + STRIPE_PERIOD],
   ];
   const along = box.map(
     ([x, y]) => (x - ox) * STRIPE_ALONG.x + (y - oy) * STRIPE_ALONG.y,
@@ -701,6 +706,7 @@ function Stat({
   return (
     <div
       data-slot="global-finance-market-combo-chart-stat"
+      data-direction={direction === undefined ? undefined : direction > 0 ? 'up' : direction < 0 ? 'down' : 'flat'}
       className="flex min-w-0 flex-1 flex-col items-start gap-3 overflow-hidden rounded-2xl bg-surface-disable p-4"
     >
       <p className="typo-label-02-medium hug-w -my-0.5 max-w-full truncate py-0.5 text-fg-soft">
@@ -849,6 +855,7 @@ function GlobalFinanceMarketComboChart({
   forecastLabel = "Forecast",
   flowLabel = "Net flow",
   aumLabel = "Global AUM",
+  comparableLabel = "Comparable daily average",
   growthLabel = "Market growth",
   outlookLabel = "Forecast",
   exportLabel = "Export CSV",
@@ -915,6 +922,13 @@ function GlobalFinanceMarketComboChart({
       : null;
   const [hovered, setHovered] = React.useState<number | null>(null);
   const [held, setHeld] = React.useState(n - 1);
+  const previousDataKey = React.useRef(dataKey);
+  useIsomorphicLayoutEffect(() => {
+    if (previousDataKey.current === dataKey) return;
+    previousDataKey.current = dataKey;
+    setIndex(null);
+    setHovered(null);
+  }, [dataKey, setIndex]);
   const active = hovered !== null && hovered < n ? hovered : selected;
   const visible = active !== null;
   const at = Math.max(0, Math.min(active ?? held, n - 1));
@@ -934,7 +948,7 @@ function GlobalFinanceMarketComboChart({
   // the bar whose half-month (or week, or day) the point falls in: the last one standing at or before it
   const activeBar =
     visible && point
-      ? bars.reduce((found, bar, i) => (bar.time <= point.time ? i : found), -1)
+      ? bars.findIndex(bar => bar.time === point.time)
       : -1;
 
   const money = React.useCallback(
@@ -973,29 +987,22 @@ function GlobalFinanceMarketComboChart({
       locale,
     );
   const labelText = (label: Layout["labels"][number]) =>
-    formatTime(
-      label.time,
-      label.unit === "month"
-        ? { year: "numeric", month: "short" }
-        : { month: "short", day: "numeric" },
-      locale,
-    );
+    formatTime(label.time, { month: "short", day: "numeric" }, locale);
 
-  // Summary tiles describe the visible range; pinning the cursor only pins its tooltip.
-  const aum = actual.length
-    ? actual.reduce((n, p) => n + p.value, 0) / actual.length
-    : undefined;
-  const outlook = shownData.outlook;
+  // Hover previews the cursor only; clicking commits the stats, as in the registry. In the range overview,
+  // both amounts use matching dates so their displayed change reconciles.
+  const summary = React.useMemo(() => comparisonSummary(actual, forecast, selected), [actual, forecast, selected]);
+  const aum = summary.current;
+  const outlookValue = forecast.length || selected !== null ? summary.baseline : shownData.outlook?.value;
+  const growthValue = forecast.length || selected !== null ? summary.change : shownData.growth?.value;
+  const summaryLabel = selected !== null && actual[selected] ? dateText(actual[selected].time, false)
+    : summary.comparableCount > 0 && summary.comparableCount < actual.length ? comparableLabel : aumLabel;
   const outlookChange = undefined;
 
   const bucketText = (i: number) => {
     const bar = bars[i];
     if (!bar) return "";
-    const next = bars[i + 1]?.time ?? layout.end + 1;
-    const last = next - DAY;
-    return last > bar.time
-      ? `${formatTime(bar.time, { month: "short", day: "numeric" }, locale)} – ${formatTime(last, { day: "numeric" }, locale)}`
-      : formatTime(bar.time, { month: "short", day: "numeric" }, locale);
+    return formatTime(bar.time, { month: "short", day: "numeric" }, locale);
   };
   const tooltip: TooltipText | undefined = point
     ? {
@@ -1156,8 +1163,8 @@ function GlobalFinanceMarketComboChart({
   // The numbers the entrance counts up from zero.
   const counted = {
     aum: aum ?? 0,
-    growth: shownData.growth?.value ?? 0,
-    outlook: outlook?.value ?? 0,
+    growth: growthValue ?? 0,
+    outlook: outlookValue ?? 0,
   };
   const counts = React.useRef(counted);
   const latestBars = React.useRef(bars);
@@ -1340,118 +1347,10 @@ function GlobalFinanceMarketComboChart({
     };
   });
 
-  // A new point sends the cursor riding along the lines (its dots follow the curves) and slides the tooltip over; when
-  // the tooltip changes sides it pops in again. The cursor pops in and out with the tooltip.
-  const drawnX = React.useRef(cursorX);
-  const ride = React.useRef<JSAnimation | null>(null);
-  const lastSelection = React.useRef({
-    cursorX,
-    width,
-    dataKey,
-    visible,
-    tipLeft,
-    tipTop,
-    flipped,
-  });
+  // Position the cursor at the actual point in the same layout pass as its tooltip.
   useIsomorphicLayoutEffect(() => {
-    const before = lastSelection.current;
-    lastSelection.current = {
-      cursorX,
-      width,
-      dataKey,
-      visible,
-      tipLeft,
-      tipTop,
-      flipped,
-    };
-    const tip = tipRef.current;
-    const el = cursorRef.current;
-    if (reduced || before.width !== width || before.dataKey !== dataKey) {
-      ride.current?.cancel();
-      drawnX.current = cursorX;
-      settleCursor();
-      return;
-    }
-    if (before.visible !== visible) {
-      ride.current?.cancel();
-      drawnX.current = cursorX;
-      settleCursor();
-      if (visible) {
-        if (tip)
-          animate(tip, {
-            opacity: [0, 1],
-            scale: [0.94, 1],
-            translateY: [6, 0],
-            duration: 350,
-            ease: "outBack(1.6)",
-            onComplete: releaseStyles("opacity", "transform"),
-          });
-        if (el)
-          animate(el.querySelectorAll("[data-slot] > span"), {
-            opacity: [0, 1],
-            scale: [0.6, 1],
-            duration: 300,
-            ease: "outBack(1.8)",
-            onComplete: releaseStyles("opacity", "transform"),
-          });
-      } else if (tip)
-        animate(tip, {
-          opacity: [1, 0],
-          duration: 200,
-          ease: "outQuad",
-          onComplete: releaseStyles("opacity"),
-        });
-      return;
-    }
-    if (!visible) return;
-    if (
-      tip &&
-      (before.tipLeft !== tipLeft ||
-        before.tipTop !== tipTop ||
-        before.flipped !== flipped)
-    ) {
-      if (before.flipped !== flipped)
-        animate(tip, {
-          opacity: [0, 1],
-          scale: [0.94, 1],
-          duration: 300,
-          ease: "outQuad",
-          onComplete: releaseStyles("opacity", "transform"),
-        });
-      else
-        animate(tip, {
-          translateX: [
-            before.tipLeft - tipLeft + utils.get(tip, "translateX", false),
-            0,
-          ],
-          translateY: [
-            before.tipTop - tipTop + utils.get(tip, "translateY", false),
-            0,
-          ],
-          duration: RIDE,
-          ease: "outExpo",
-          onComplete: releaseStyles("transform"),
-        });
-    }
-    const from = drawnX.current;
-    if (from === cursorX) return;
-    const state = { x: from };
-    ride.current?.cancel();
-    paintCursor(from);
-    ride.current = animate(state, {
-      x: cursorX,
-      duration: RIDE,
-      ease: "outExpo",
-      onUpdate: () => {
-        drawnX.current = state.x;
-        paintCursor(state.x);
-      },
-      onComplete: () => {
-        drawnX.current = cursorX;
-        settleCursor();
-      },
-    });
-  }, [cursorX, width, dataKey, visible, tipLeft, tipTop, flipped, reduced]);
+    settleCursor();
+  }, [cursorX, settleCursor]);
 
   // New data (a menu, a legend toggle that rescales the axis) morphs both lines and every bar from what is on screen:
   // a bar that stays (the same date) moves and resizes, a new one grows from the axis. A resize redraws at once; while
@@ -1567,7 +1466,6 @@ function GlobalFinanceMarketComboChart({
   }, [shapeKey, width, reduced]);
   React.useEffect(
     () => () => {
-      ride.current?.cancel();
       morph.current?.cancel();
     },
     [],
@@ -1617,10 +1515,8 @@ function GlobalFinanceMarketComboChart({
   };
   // Pointer positions in the plot's own pixels (the live demo may scale the card with CSS zoom).
   const pointAt = (event: React.PointerEvent<HTMLElement>) => {
-    const target = event.currentTarget;
-    const box = target.getBoundingClientRect();
-    const zoom = box.width / (target.offsetWidth || box.width || 1) || 1;
-    const x = (event.clientX - box.left) / zoom;
+    // The empty scrubber fills the plot; offsetX avoids a layout read per move.
+    const x = event.nativeEvent.offsetX;
     if (!n) return null;
     let lo = 0;
     let hi = n - 1;
@@ -1730,7 +1626,7 @@ function GlobalFinanceMarketComboChart({
       {/* Figma "Stats": three equal tiles 12px apart; they wrap when the card gets too narrow for the amounts */}
       {variant === "combo" && <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3 p-5">
         <Stat
-          label={aumLabel}
+          label={summaryLabel}
           value={aum}
           change={undefined}
           kind="money"
@@ -1739,16 +1635,16 @@ function GlobalFinanceMarketComboChart({
         />
         <Stat
           label={growthLabel}
-          direction={shownData.growth?.value}
-          value={shownData.growth?.value}
-          change={shownData.growth?.change}
+          direction={growthValue}
+          value={growthValue}
+          change={undefined}
           kind="percent"
           format={percent}
           locale={locale}
         />
         <Stat
-          label={outlookLabel}
-          value={outlook?.value}
+          label={visible ? forecastLabel : outlookLabel}
+          value={outlookValue}
           change={outlookChange}
           kind="money"
           format={money}
@@ -1837,7 +1733,7 @@ function GlobalFinanceMarketComboChart({
           ))}
         </div>
 
-        <div className="flex items-start gap-3">
+        <div data-slot="global-finance-market-combo-chart-frame" className="flex min-w-0 w-full items-start gap-3">
           {/* Figma "Y Axis Labels": 38px wide, spread over the plot's height, left-aligned */}
           <div
             aria-hidden
@@ -2147,12 +2043,13 @@ function GlobalFinanceMarketComboChart({
             </div>
 
             {/* the months (or the Mondays, or the days) centred on their first moment */}
-            <div aria-hidden className="relative h-3.5">
+            <div aria-hidden data-slot="global-finance-market-combo-chart-axis" className="relative h-3.5">
               {labels.map((label) => (
                 <span
                   key={label.key}
                   data-slot="global-finance-market-combo-chart-label"
                   className="absolute top-0"
+                  data-align={label.align}
                   style={{ left: label.x }}
                 >
                   <span className="typo-label-02-regular block -translate-x-1/2 whitespace-nowrap text-fg-soft">

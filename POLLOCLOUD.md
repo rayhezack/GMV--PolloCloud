@@ -12,6 +12,11 @@ pollocloud db execute --name pollo-ai --file db/0006_sync_staging.sql
 pollocloud db execute --name pollo-ai --file db/0007_paused_job_indexes.sql
 pollocloud db execute --name pollo-ai --file db/0008_sync_staging_chunks.sql
 pollocloud db execute --name pollo-ai --file db/0009_pollo_da_analytics.sql
+pollocloud db execute --name pollo-ai --file db/0013_creation_chain.sql
+pollocloud db execute --name pollo-ai --file db/0015_payment_registration.sql
+pollocloud db execute --name pollo-ai --file db/0016_chain_sync_stage.sql
+pollocloud db execute --name pollo-ai --file db/0017_payment_sync_stage.sql
+# Inspect existing columns before applying ALTERs in 0014 / 0018; see release check below.
 pollocloud deploy
 ```
 
@@ -37,9 +42,42 @@ Dashboard endpoints push platform and date filters into D1, merge identical in-f
 
 The one-time migration uses `db/0009_pollo_da_analytics.sql`, then imports the Base snapshot into `pollo_da_base_records`, daily facts into `pollo_da_fact_rows`, reports into `pollo_da_reports`, and product actions into `pollo_da_product_actions`. The existing D1 database is bound to the `pollo-ai` app; the `pollo_da_*` prefix is the logical Pollo DA database namespace. The dashboard's analytical facts are D1-only; Base is not an analytical fallback.
 
-The top three GMV cards read `pay_type_daily`. The trend chart reads `chain_daily` for active payment and `renewal_daily` for renewal; the chain attribution tab uses the same respective fact tables.
+The GMV cards and active-payment trend use canonical payment-result facts (`dataset='pay_type'`, with attribution modes kept separate). Funnel diagnostics use `pollo_da_chain_funnel` / `pollo_da_chain_breakdown`. Renewal process metrics still use the legacy `dataset='renewal'` facts because no replacement source exists; preserve those rows during any payment-result migration.
+
+### 2026-11-07 远程发布前数据检查
+
+本次仅执行数据库准备，未提交 Git、推送或部署代码。证据及导入脚本在 `.impeccable/review/2026-11-07-release/remote-data/`。
+
+| 迁移 | 远程状态 |
+| --- | --- |
+| 0014 | 已为整体、功能创作的 daily / stage 四张表添加 `valid_creation_task_cnt`；重复执行 ALTER 会报错，先查 `PRAGMA table_info`。 |
+| 0015 | registration 正式表及索引已存在；本轮不盲目覆盖旧支付父表。 |
+| 0016 | 已创建 chain funnel / breakdown 两张同步 stage。 |
+| 0017 | payment fact / registration 两张同步 stage 已存在，列顺序与各自主表一致。 |
+| 0018 | fact / payment fact stage 均已有 `product_type`、`product_type_lv2`，本轮没有重复 ALTER。有列不等于历史数据已完成 SKU 回填。 |
+
+创作请求数已从源表只读聚合导出并按键补齐：2026-09-27 至 2026-11-05 的整体 161 行、功能 47,509 行全部有值，两表请求数合计均为 18,981,296。补值前逐行验证原 `creation_task_cnt` 与源表相同；仅填充新增列的 NULL，保留远程较新的采纳、留存、GMV 等其他字段。两表 GMV 仍各为 9,683,201.48438977。源表额外组合未扩写到正式功能表。
+
+**发布阻塞：registration 尚未激活。** 本地 17,829 行（2026-10-06 至 2026-11-04）已完整导入独立的 `pollo_da_registration_release_20261107`，主键无 NULL、无重复，GMV 为 4,003,401.1535354424。它与当前 ADS/SKU 新快照的 597 个日期×设备×支付类型分组全部一致，最大浮点误差约 1.46e-11；但远程支付父表仍有 74 组旧“首订／重新订阅”分类，与之不一致。正式 registration 仍为 0 行，不能宣称注册国家／生命周期下钻已可发布。不要按比例调整明细、改分类规则或补零来掩盖这项差异。
+
+先由支付 SKU 回填负责方完成本次对应日期的 canonical 父表替换，再运行下列带对账门禁的激活命令。它仅在全部父子分组误差不超过 1e-6 时写入正式表并清 D1 响应缓存；不一致时退出码为 2，正式表不变。不会删除或更新 `renewal` 数据。
+
+```bash
+python3 .impeccable/review/2026-11-07-release/remote-data/import-stages.py activate-registration
+pollocloud db execute --name pollo-ai --file .impeccable/review/2026-11-07-release/remote-data/verify.sql --json
+```
+
+旧自动续订在本轮前后均为 4,114 行、到期用户合计 584,704、续订用户合计 322,782、金额 7,624,728.233426。注册表按非空复合主键幂等导入；链路表的复合键包含 NULL，SQLite 不会阻止 NULL 键重复，后续链路替换应使用验证过的有界分区暂存切换，不应简单 `INSERT OR REPLACE` 叠加。本次未替换或删除历史链路、续订事实，也未扩大全年支付回填范围。
+
+CLI 每次请求最多 1 MB，但单条 SQL 另有长度限制。此次实际使用每条 INSERT 不超过约 60 KB、每次请求约 480 KB；不要把 1 MB 当成单条 INSERT 的可用长度。
 
 Set `VITE_DATA_MODE=demo` only for a local visual preview. Production uses the same-origin Worker routes and does not require `API_ORIGIN`.
+
+### 本地演示数据
+
+在 Node.js 22.13+ 下运行 `npm run data:local`，将各数据源共同覆盖的最新日期及之前 29 天从 D1 分页读取并保存为只读 SQLite 快照，核对付费类型的行数及 GMV 后启用。快照保存在被 Git 忽略的 `.local-data/`，包含支付分层、链路诊断、广告、创作及期间报告。
+
+准备完成后运行 `npm run dev`（已有服务需重启），各 Tab 直接读取本地快照，统一使用最近 30 天。按钮刷新只重新读取本地数据；需要更新快照时重新运行 `npm run data:local`。网络中断后可用 `npm run data:local -- --resume` 复用已完成的分页。`POLLO_REMOTE_DATA=1 npm run dev` 可恢复原有远端开发代理。生产构建不包含本地快照。
 
 ## 定时任务
 
@@ -49,6 +87,8 @@ Set `VITE_DATA_MODE=demo` only for a local visual preview. Production uses the s
 - 每周六 12:00（`0 12 * * 6` → `/api/cron/weekly-reports`）：选择上一完整周六至周五业务周，依次生成 Web 和 App 诊断报告。
 
 广告归因聚合保存在 `pollo_da_ads_daily`，粒度为注册日、广告渠道、国家和 Web/App 端，业务周为周六至周五。广告表同步只读取 `product_type='ALL'` 与 `is_first_purchase='汇总'`，避免叠加拆分行。09:05 支付链路任务完成后，会同时回刷广告最近 7 天及距今 14/30/60/90/180 天的 cohort 分区；该表会动态更新最近 181 天分区，但历史分区从 2026-01-01 起仍可读取。历史全量回刷在本地运行 `python3 scripts/backfill-ads.py --start 2026-01-01 --end 2026-11-03`，脚本通过 Tunnel 完整读取、校验后暂存并切换远程 D1。`POST /api/ads/sync` 可由已授权账号指定 `date` 补刷单日。
+
+创作链路使用 `pollo_da_creation_overall_daily`（日×源端，源表 `creation_mode='汇总'`，跨功能去重 UV）和 `pollo_da_creation_function_daily`（日×源端×功能×新老用户×近 30 天付费分层，仅保留两个分层维度的明细行）。两个表均不使用发起、提交埋点或预存比率。功能 UV、每日 UV、各端 UV 不能跨相应粒度相加；`platform_type='汇总'` 是源表跨端去重行。业务周为周六至周五，周去重 UV 无法从日聚合推导；`user_type=NEW` 指当日注册，不是本业务周注册。`未归因` 功能仅作 GMV 对账。源表历史覆盖自 2026-09-27 起；本地运行 `python3 scripts/backfill-creation-chain.py extract`、`estimate`、`backfill` 导出聚合行、校验并回刷。现有 09:15 创作任务完成后补刷昨日及之前 3 日，并更新距昨日 7/30 天的留存分区；`POST /api/creation-chain/sync` 可指定 `date` 补刷单日。未成熟的 D3/D7/D30 留存人数保持 NULL。
 
 `gmv_d14` 至 `gmv_d180` 对未成熟 cohort 也可能返回截至当前的部分累计值，不会自动置空。业务周比较这些指标时，仅使用整个业务周均已达到相应观察天数的 cohort；花费、曝光、点击、注册和 D0 可按已覆盖日期聚合。
 

@@ -245,6 +245,7 @@ export function buildPaymentView(
           .reduce((v, r) => v + r.gmvUsd, 0);
   const trend = Array.from({ length: 7 }, (_, day) => ({
     day,
+    date: comparison ? new Date(Date.parse(comparison.analysisPeriod) + day * 86400000).toISOString().slice(0,10) : "",
     label: comparison
       ? new Date(Date.parse(comparison.analysisPeriod) + day * 86400000)
           .toISOString()

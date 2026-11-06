@@ -72,12 +72,169 @@ export interface PaymentAnalysisResponse {
   revenues: PaymentRevenuePoint[];
   costs: PaymentCostPoint[];
   costAvailable: boolean;
+  registration?: {
+    rows: { period: string; weekStart: string; payType: string; userLifecycle: string; regCountry: string; gmvUsd: number }[];
+    verifiedPayTypes: string[];
+  };
 }
 
 export const RENEWAL_PLAN_TIERS = ['LITE', 'PRO', 'ULTRA'] as const;
 export type RenewalPlanTier = (typeof RENEWAL_PLAN_TIERS)[number];
 
 export type PaymentChainType = 'active' | 'renewal';
+
+export type ChainFunnelBreakdownType = 'EXPOSE_TYPE' | 'EXPOSE_REASON' | 'SUBMIT_CHANNEL' | 'PAYMENT_CHANNEL';
+
+export interface ChainFunnelMetrics {
+  activeUv: number;
+  exposeUv: number;
+  submitUv: number;
+  payUv: number;
+  gmvUsd: number;
+  failOrders: number;
+  failAmountUsd: number;
+  exposeRate: number;
+  submitRate: number;
+  payRate: number;
+  aov: number;
+}
+
+export interface ChainFunnelGroup {
+  key: string;
+  label: string;
+  current: ChainFunnelMetrics;
+  baseline: ChainFunnelMetrics;
+  gmvChange: number;
+  gmvContribution: number | null;
+}
+
+export interface ChainFunnelDriver {
+  metricKey: 'activeUv' | 'exposeRate' | 'submitRate' | 'payRate' | 'aov';
+  metric: string;
+  current: number;
+  baseline: number;
+  change: number;
+  wowChange: number | null;
+  contribution: number | null;
+}
+
+export interface ChainFunnelResponse {
+  comparisonDates?: { analysis: string[]; baseline: string[] };
+  ready: boolean;
+  source: 'pollo_da_chain_funnel' | 'legacy' | 'unavailable';
+  comparison: AttributionComparisonWindow | null;
+  totals: ChainFunnelGroup | null;
+  drivers: ChainFunnelDriver[];
+  tiers: ChainFunnelGroup[];
+  lifecycles: ChainFunnelGroup[];
+  countries: ChainFunnelGroup[];
+  breakdowns: Record<ChainFunnelBreakdownType, ChainFunnelGroup[]>;
+}
+
+export interface AdsAggregate {
+  costUsd: number;
+  impressions: number;
+  clicks: number;
+  registerUsers: number;
+  gmvD0: number;
+  gmvD7: number | null;
+  gmvD14: number;
+  gmvD30: number;
+  gmvD60: number;
+  gmvD90: number;
+  gmvD180: number;
+  ctr: number;
+  cpc: number;
+  cpm: number;
+  roasD30: number;
+  roasByHorizon?: Record<"D0" | "D7" | "D30", number | null>;
+}
+
+export interface AdsTrendPoint {
+  roasByHorizon?: Record<"D0" | "D7" | "D30", number | null>;
+  period: string;
+  costUsd: number;
+  impressions: number;
+  clicks: number;
+  registerUsers: number;
+  gmvD30: number;
+  gmvD0: number;
+  gmvD7: number | null;
+}
+
+export interface AdsChannelRow {
+  key: string;
+  label: string;
+  current: AdsAggregate;
+  baseline: AdsAggregate;
+}
+
+export interface AdsCohortMatrixRow {
+  key: string;
+  label: string;
+  values: Array<{
+    horizon: 'D0' | 'D14' | 'D30' | 'D60' | 'D90' | 'D180';
+    value: number | null;
+    gmvUsd: number;
+    costUsd: number;
+    registerUsers: number;
+  }>;
+}
+
+export interface AdsCountryDetail {
+  key: string;
+  channels: Array<AdsChannelRow & { trend: AdsTrendPoint[] }>;
+}
+
+export interface AdsOverviewResponse {
+  observedThrough?: string;
+  comparisonDates?: { analysis: string[]; baseline: string[] };
+  ready: boolean;
+  source: 'pollo_da_ads_daily' | 'unavailable';
+  comparison: AttributionComparisonWindow | null;
+  totals: { current: AdsAggregate; baseline: AdsAggregate } | null;
+  trend: AdsTrendPoint[];
+  channels: AdsChannelRow[];
+  countries: AdsChannelRow[];
+  cohortMatrix: AdsCohortMatrixRow[];
+  countryDetails?: AdsCountryDetail[];
+}
+
+export interface CreativeChainTrendPoint {
+  period: string;
+  validCreationTaskCnt: number | null;
+  activity?: { activeUv: number; creationUv: number; creationTaskCnt: number };
+  creationTaskCnt: number;
+  creationUserCnt: number;
+  successTaskCnt: number;
+  successOutputCnt: number;
+  adoptedTaskCnt: number;
+  adoptedOutputCnt: number;
+  d3CreationUserCnt: number | null;
+  d7CreationUserCnt: number | null;
+  d30CreationUserCnt: number | null;
+  gmvUsd: number;
+}
+
+export interface CreativeFunctionRow {
+  key: string;
+  label: string;
+  userType: string;
+  payGmv30d: string;
+  current: CreativeChainTrendPoint;
+  baseline: CreativeChainTrendPoint;
+  daily: CreativeChainTrendPoint[];
+}
+
+export interface CreativeOverviewResponse {
+  observedThrough?: string;
+  comparisonDates?: { analysis: string[]; baseline: string[] };
+  ready: boolean;
+  source: 'pollo_da_creation_chain' | 'unavailable';
+  comparison: AttributionComparisonWindow | null;
+  trend: CreativeChainTrendPoint[];
+  functions: CreativeFunctionRow[];
+}
 
 /* ===== 同步链路 ===== */
 
@@ -168,6 +325,8 @@ export interface OverviewTrendPoint {
   renewalRate: number;
   renewalAov: number;
   activePayTypeGmv: Record<string, number>;
+  totalPayTypeGmv?: Record<string, number>;
+  renewalPayTypeGmv?: Record<string, number>;
   gmv: number;
   dau: number;
   paywallExposureRate: number;
@@ -366,7 +525,7 @@ export interface ReportSummary {
 }
 
 export interface PaymentTrendResponse {
-  series: Array<{ key: string; label: string; points: Array<{period: string; gmvUsd: number | null}> }>;
+  series: Array<{ key: string; label: string; points: Array<{period: string; gmvUsd: number | null; modelCostUsd?: number | null}> }>;
 
   granularity: 'day' | 'week' | 'month';
   startDate: string;

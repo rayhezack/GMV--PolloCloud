@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
-import { FileText, RefreshCw, Copy } from 'lucide-react';
+import { FileText, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
@@ -12,7 +12,8 @@ import type { CreateMenuScope } from '@/components/bencho';
 import { buildDefaultRequest, getReportPeriodKey, parseReportPeriodKey, reportWeekOptions } from './report-page.utils';
 import { ReportWeekSelect } from './ReportWeekSelect';
 import { copyAnalysis } from '@/components/dashboard/AnalysisWidgets';
-import { ReportInsightArticle } from './ReportInsightRenderer';
+import { ReportInsightArticle, normalizeReportNarrative } from './ReportInsightRenderer';
+import LoadingWave from '@/components/dashboard/LoadingWave';
 
 export default function ReportPage() {
   const { trackReport } = useOutletContext<{ trackReport: (job: ReportGenerationStatus) => void }>();
@@ -97,11 +98,11 @@ export default function ReportPage() {
             disabled={generationPending || loading || Boolean(loadError) || accessLoading || !isAdmin}
             onSelect={scope => void generate(scope)}
           />
-          {report && <Button variant="ghost" size="sm" className="report-copy-button rounded-xl" onClick={() => void copyAnalysis(report.markdown)}><Copy size={14} />复制报告</Button>}
+          {report && <Button variant="ghost" size="sm" className="report-copy-button rounded-xl" onClick={() => void copyAnalysis(normalizeReportNarrative(report.markdown))}><Copy size={14} />复制报告</Button>}
         </div>
       </div>
       {pollError && <p className="text-sm text-muted-foreground" role="status">{pollError}</p>}
-      {loading ? <section className="report-empty" role="status"><RefreshCw className="animate-spin" />正在读取报告</section>
+      {loading ? <section className="report-empty report-loading" role="status"><LoadingWave label="正在读取报告" /></section>
         : loadError ? <section className="report-empty" role="alert"><p>{loadError}</p><Button variant="outline" onClick={() => setReload(value => value + 1)}>重试</Button></section>
           : report ? <ReportInsightArticle report={report} />
             : <section className="report-empty"><FileText size={32} /><strong>该业务周暂无报告</strong><p>{isAdmin ? '选择业务周后，点击「生成」即可创建报告。' : '请联系管理员生成该业务周的报告。'}</p></section>}

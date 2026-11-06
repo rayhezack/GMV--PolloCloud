@@ -1,3 +1,4 @@
+import { buildChainFunnelSql } from './chain-funnel-sql';
 import { buildMiddleTableSql } from './middle-table-sql';
 
 // SQL 口径对齐用户提供的原始日度脚本与重建说明。
@@ -102,8 +103,10 @@ ORDER BY
     plan_tier,
     plan_cycle
 `.trim();
-    case 'pay_type':
     case 'chain':
+      if (params.granularity === 'weekly') throw new Error('链路只同步日表，周指标由日表聚合');
+      return buildChainFunnelSql(platform, params.start, params.end);
+    case 'pay_type':
       if (params.granularity === 'weekly') throw new Error('ADS 口径只同步日表，周指标由日表聚合');
       return buildMiddleTableSql(dataset, platform, startKey, endKey);
     case 'creative':

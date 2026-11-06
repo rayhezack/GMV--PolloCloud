@@ -69,7 +69,10 @@ function formatSummary(summary: string) {
     .join('\n\n');
 }
 const sectionTitle = (title: string) => title.replace(/^[一二三四五六七八九十]+[、．.]\s*/, '');
-const normalizeReportNarrative = (markdown: string) => markdown.replace(/自动续订一级口径/g, '自动续订').replace(/一级口径/g, '');
+export const normalizeReportNarrative = (markdown: string) => markdown
+  .replace(/自动续订一级口径/g, '自动续订')
+  .replace(/一级口径/g, '')
+  .replace(/分析期前\s*30\s*日(?=无创作|创作)/g, '近30日');
 const analysisWeekStart = (baselineStart: string) => new Date(Date.parse(`${baselineStart}T00:00:00Z`) + 7 * 86400000).toISOString().slice(0, 10);
 
 export function ReportInsightArticle({ report }: { report: ReportSummary }) {

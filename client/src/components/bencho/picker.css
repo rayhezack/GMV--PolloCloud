@@ -1,0 +1,141 @@
+/* Bencho Picker (MIT): one anchored surface, compact text-only adaptation. */
+.bencho-picker {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  color: #0d253d;
+  font-family: 'Inter Variable', Inter, 'PingFang SC', sans-serif;
+}
+
+.bencho-picker .bencho-picker-trigger {
+  display: inline-flex;
+  justify-content: flex-start;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #f6f9fc;
+  color: #0d253d;
+  box-shadow: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 150ms ease, color 150ms ease, transform 130ms ease;
+}
+
+.bencho-picker-trigger:hover,
+.bencho-picker-trigger[data-open],
+.bencho-picker-trigger[data-pressed] {
+  background: #f0f1f4;
+  color: #0d253d;
+}
+
+.bencho-picker-trigger[data-pressed] { transform: scale(.97); }
+.bencho-picker-trigger[disabled] { opacity: .5; cursor: not-allowed; }
+.bencho-picker-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Popover is portalled by HeroUI. Keep its positioning transform separate
+   from the inner Bencho spring, and clamp both desktop and mobile widths. */
+.bencho-picker-popover {
+  z-index: 100;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: min(184px, calc(100vw - 24px));
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: #0d253d;
+  box-shadow: none;
+  outline: none;
+  overflow: visible;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #b3a9e8 #fff;
+}
+
+.bencho-picker-popover[data-entering] { animation: none; }
+.bencho-picker-popover[data-exiting] { animation: bencho-picker-exit 160ms ease; pointer-events: none; }
+.bencho-picker-surface {
+  max-height: inherit;
+  border-radius: inherit;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(13 37 61 / 10%);
+  /* End alignment mirrors Bencho's top-left origin to the trigger's right. */
+  transform-origin: top right;
+}
+.bencho-picker-dialog { box-sizing: border-box; display: flex; flex-direction: column; max-height: inherit; overflow: hidden; padding: 6px; border-radius: inherit; outline: none; }
+.bencho-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  min-height: 0;
+  max-height: min(320px, 50dvh);
+  overflow: auto;
+  padding: 0;
+  border: 0;
+  outline: none;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #b3a9e8 #fff;
+}
+
+.bencho-picker-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex: none;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #0d253d;
+  font-family: 'Inter Variable', Inter, 'PingFang SC', sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  cursor: pointer;
+  outline: none;
+  transition: background 140ms ease, color 140ms ease;
+}
+.bencho-picker-option-label { min-width: 0; overflow-wrap: anywhere; }
+.bencho-picker-option-content { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; min-width: 0; }
+.bencho-picker-option[data-hovered],
+.bencho-picker-option[data-focused] { background: #f0f1f4; }
+.bencho-picker-option[data-selected] { background: #f0f1f4; color: #0d253d; font-weight: 500; }
+.bencho-picker-option [data-slot='list-box-item-indicator'] { flex: none; color: #0d253d; }
+.bencho-picker-search { flex: none; width: 100%; padding: 0 0 6px; }
+.bencho-picker-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: #f6f9fc;
+  color: #0d253d;
+  caret-color: #533afd;
+  font: 12px 'Inter Variable', Inter, 'PingFang SC', sans-serif;
+  outline: none;
+}
+.bencho-picker-input::placeholder { color: #61718a; }
+.bencho-picker-input::selection { color: #0d253d; background: #e4dfff; }
+.bencho-picker-empty { padding: 16px 10px; color: #61718a; font-size: 12px; }
+.bencho-picker-trigger:focus-visible,
+.bencho-picker-trigger[data-focus-visible],
+.bencho-picker-input:focus-visible { outline: 2px solid #533afd; outline-offset: 2px; }
+.bencho-picker-option[data-focus-visible] { box-shadow: inset 0 0 0 2px #533afd; }
+
+@keyframes bencho-picker-exit { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .bencho-picker .bencho-picker-trigger, .bencho-picker-option { transition: none; }
+  .bencho-picker-popover[data-exiting] { animation: none; }
+}

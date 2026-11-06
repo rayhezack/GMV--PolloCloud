@@ -5,11 +5,17 @@ import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
 import { canManagePollocloudApp } from '@/lib/pollocloud';
 
 import Layout from './components/Layout';
-import AdminManagementPage from './pages/AdminManagementPage/AdminManagementPage';
 import DashboardPage from './pages/DashboardPage/DashboardPage';
-import ReportPage from './pages/ReportPage/ReportPage';
 import NotFound from './pages/NotFound/NotFound';
-import PermissionsPage from './pages/PermissionsPage/PermissionsPage';
+
+const ReportPage = React.lazy(() => import('./pages/ReportPage/ReportPage'));
+const AdminManagementPage = React.lazy(() => import('./pages/AdminManagementPage/AdminManagementPage'));
+const PermissionsPage = React.lazy(() => import('./pages/PermissionsPage/PermissionsPage'));
+
+if (import.meta.env.DEV && new URLSearchParams(location.search).has('perf')) {
+  // Delay until React has mounted the shell used by the acceptance probe.
+  window.addEventListener('load', () => { void import('./lib/dashboard-performance'); }, { once: true });
+}
 
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = usePollocloudUser();

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
-import { BarChart3, CalendarRange, Check, ChevronDown, Copy, Expand, Info, LineChart, X } from 'lucide-react';
+import { ArrowDownToLine, BarChart3, Expand, LineChart } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { ActionNode, PullToRefresh } from '@/components/bencho';
@@ -12,6 +12,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { ExpensesChart, type ExpensesCategory, type ExpensesPeriod } from '@/components/expenses-chart';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
 import type { AttributionItem, Granularity, OverviewTrendPoint } from '@shared/api.interface';
 import { getBusinessWeekStart } from '@shared/business-week';
 import {
@@ -23,7 +26,6 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { dashboardHref } from './navigation';
 
 export async function copyAnalysis(text: string) {
   try {
@@ -62,24 +64,20 @@ export function downloadCsv(
 }
 
 type RevenueMetric = 'totalGmv' | 'activeGmv' | 'renewalGmv';
-
-const TREND_RANGE_OPTIONS = [
-  { value: 7, label: '近一周' },
-  { value: 30, label: '近一个月' },
-  { value: 90, label: '近一个季度' },
-] as const;
+export type RevenueHeadlineSummary = Partial<Record<RevenueMetric, { current: number; baseline: number; period: string }>>;
 
 function formatTrendDate(period: string) {
   return period.length >= 10 ? period.slice(5).replace('-', '/') : period;
 }
 
 function resolveTrendDialogYAxisDomain(
-  rows: OverviewTrendPoint[],
+  rows: Array<Partial<Record<RevenueMetric, number | null>>>,
   metric: RevenueMetric | null,
 ): [number, number] {
   const key = metric ?? 'totalGmv';
   const values = rows
-    .map((row) => Number(row[key] ?? 0))
+    .filter((row) => row[key] != null)
+    .map((row) => Number(row[key]))
     .filter((value) => Number.isFinite(value));
   if (values.length === 0) return [0, 1];
 
@@ -126,19 +124,25 @@ function selectCardTrendRows(
 
 export function RevenueCards({
   items,
+  summary,
+  structureItems = {},
   loading,
   period,
   trend = [],
   dailyTrend = [],
+  zoomTrend = [],
   granularity = 'day',
   headlineStartDate,
   headlineEndDate,
 }: {
   items: AttributionItem[];
+  summary?: RevenueHeadlineSummary;
+  structureItems?: Partial<Record<RevenueMetric, AttributionItem[]>>;
   loading: boolean;
   period: string;
   trend?: OverviewTrendPoint[];
   dailyTrend?: OverviewTrendPoint[];
+  zoomTrend?: OverviewTrendPoint[];
   granularity?: Granularity;
   analysisWeek?: string;
   baselineWeek?: string;
@@ -146,19 +150,15 @@ export function RevenueCards({
   headlineEndDate?: string;
 }) {
   const { search } = useLocation();
-  const [trendDays, setTrendDays] = useState<Record<RevenueMetric, number>>({
-    totalGmv: 30,
-    activeGmv: 30,
-    renewalGmv: 30,
-  });
+  const trendDays: Record<RevenueMetric, number> = { totalGmv: 30, activeGmv: 30, renewalGmv: 30 };
   const [chartTypes, setChartTypes] = useState<Record<RevenueMetric, 'bar' | 'line'>>({
     totalGmv: 'bar',
     activeGmv: 'bar',
     renewalGmv: 'bar',
   });
   const [expandedMetric, setExpandedMetric] = useState<RevenueMetric | null>(null);
-  const [drillOpen, setDrillOpen] = useState(false);
-  const [activePayType, setActivePayType] = useState('整体');
+  const [exportMetric, setExportMetric] = useState<RevenueMetric | null>(null);
+  const [structureMetric, setStructureMetric] = useState<RevenueMetric | null>(null);
   const searchParams = useMemo(() => new URLSearchParams(search), [search]);
   const focusMetricParam = searchParams.get('focusMetric');
   const focusMetric: RevenueMetric | null = focusMetricParam === 'totalGmv' || focusMetricParam === 'activeGmv' || focusMetricParam === 'renewalGmv'
@@ -203,16 +203,7 @@ export function RevenueCards({
     (!headlineEndDate || row.period <= headlineEndDate),
   );
   const latestRows = headlineRows.length ? headlineRows : sourceRows;
-  const valueOf = (row: OverviewTrendPoint, metric: RevenueMetric) =>
-    metric === 'activeGmv' && activePayType !== '整体'
-      ? Number(row.activePayTypeGmv?.[activePayType] ?? 0)
-      : Number(row[metric] ?? 0);
-  const payTypeOptions = [
-    '整体',
-    ...Array.from(
-      new Set(sourceRows.flatMap((row) => Object.keys(row.activePayTypeGmv ?? {}))),
-    ).filter((key) => key !== '整体'),
-  ];
+  const valueOf = (row: OverviewTrendPoint, metric: RevenueMetric) => Number(row[metric] ?? 0);
   const definitions = [
     { key: '大盘 GMV', metric: 'totalGmv' as const, color: '#5B3FF2' },
     { key: '主动付费', metric: 'activeGmv' as const, color: '#25243D' },
@@ -220,15 +211,15 @@ export function RevenueCards({
   ];
   const cards = definitions.map((definition) => ({
     ...definition,
-    latestValue: latestRows.length ? valueOf(latestRows[latestRows.length - 1], definition.metric) : null,
-    latestPeriod: latestRows.at(-1)?.period ?? period,
+    latestValue: latestRows.length ? valueOf(latestRows[latestRows.length - 1], definition.metric) : summary?.[definition.metric]?.current ?? null,
+    latestPeriod: latestRows.at(-1)?.period ?? summary?.[definition.metric]?.period ?? period,
     previousValue: latestRows.at(-1)
       ? valueOf(
           comparisonRows.find((row) => row.period === addDays(latestRows.at(-1)!.period, -7)) ??
             ({} as OverviewTrendPoint),
           definition.metric,
         )
-      : null,
+      : summary?.[definition.metric]?.baseline ?? null,
   }));
   const money = (v: number) => '$' + Math.round(v).toLocaleString('en-US');
   return (
@@ -254,37 +245,23 @@ export function RevenueCards({
               !loading && item.latestValue !== null && 'revenue-card-ready',
               i === 0 && 'revenue-card-primary',
             )}
-            rangeOptions={[...TREND_RANGE_OPTIONS]}
-            selectedRange={selectedDays}
-            onRangeChange={(value) => {
-              setTrendDays((current) => ({ ...current, [item.metric]: value }));
-            }}
-            rangeIcon={CalendarRange}
-            rangeLabel="选择趋势范围"
             actions={[
               {
-                id: 'copy',
-                label: '复制数值',
-                Icon: Copy,
-                onSelect: () =>
-                  void copyAnalysis(
-                    `${item.key} · ${item.latestPeriod} · ${money(item.latestValue ?? 0)}`,
-                  ),
+                id: 'export',
+                label: '导出数据',
+                Icon: ArrowDownToLine,
+                onSelect: () => setExportMetric(item.metric),
               },
               {
-                id: 'definition',
-                label: '查看指标口径',
-                Icon: Info,
-                href: dashboardHref('data', search),
+                id: 'structure',
+                label: item.metric === 'totalGmv'
+                  ? '查看 GMV 构成'
+                  : item.metric === 'activeGmv'
+                    ? '查看主动付费构成'
+                    : '查看自动续订构成',
+                Icon: BarChart3,
+                onSelect: () => setStructureMetric(item.metric),
               },
-              ...(item.metric === 'activeGmv'
-                ? [{
-                    id: 'drilldown',
-                    label: '切换主动付费类型',
-                    Icon: ChevronDown,
-                    onSelect: () => setDrillOpen((current) => !current),
-                  }]
-                : []),
               {
                 id: 'chart-type',
                 label: chartType === 'bar' ? '切换为折线图' : '切换为柱状图',
@@ -304,54 +281,17 @@ export function RevenueCards({
             ]}
           >
             <div className="revenue-label">
-              <span>
-                {item.key}
-                {item.metric === 'activeGmv' && activePayType !== '整体' ? (
-                  <span className="text-[11px] opacity-65"> · {activePayType}</span>
-                ) : null}
-              </span>
+              <span>{item.key}</span>
             </div>
             <motion.div
               className="revenue-card-body"
-              data-picker={item.metric === 'activeGmv' && drillOpen || undefined}
               initial={false}
-              animate={{ minHeight: item.metric === 'activeGmv' && drillOpen ? 202 : 148 }}
+              animate={{ minHeight: 148 }}
               transition={{ type: 'spring', duration: 0.42, bounce: 0.1 }}
             >
               <AnimatePresence mode="wait" initial={false}>
-                {item.metric === 'activeGmv' && drillOpen ? (
-                  <motion.div
-                    key="picker"
-                    className="revenue-drill-panel"
-                    role="group"
-                    aria-label="主动付费类型"
-                    initial={{ opacity: 0, y: 9 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -7 }}
-                    transition={{ duration: 0.18 }}
-                  >
-                    <div className="revenue-drill-heading">
-                      <span>主动付费类型</span>
-                      <button type="button" aria-label="关闭类型选择" onClick={() => setDrillOpen(false)}><X size={14} /></button>
-                    </div>
-                    {payTypeOptions.map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        aria-pressed={activePayType === option}
-                        onClick={() => {
-                          setActivePayType(option);
-                          setDrillOpen(false);
-                        }}
-                      >
-                        <span>{option}</span>
-                        {activePayType === option ? <Check size={14} aria-hidden="true" /> : null}
-                      </button>
-                    ))}
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key={`${item.metric}-${item.metric === 'activeGmv' ? activePayType : 'overall'}`}
+                <motion.div
+                    key={item.metric}
                     className="revenue-card-face"
                     initial={{ opacity: 0, y: 7 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -376,28 +316,57 @@ export function RevenueCards({
                       metric={item.metric}
                       color={item.color}
                       formatValue={money}
-                      label={`${item.key}${TREND_RANGE_OPTIONS.find((option) => option.value === selectedDays)?.label ?? '趋势'}${granularity === 'week' ? '周' : '日'}趋势`}
+                      label={`${item.key}${granularity === 'week' ? '周' : '日'}趋势`}
                       chartType={chartType}
                       focusPeriod={focusApplies && focusMetric === item.metric ? focusPeriod ?? undefined : undefined}
                     />
-                  </motion.div>
-                )}
+                </motion.div>
               </AnimatePresence>
             </motion.div>
           </ActionNode>
         );
       })}
+      <Sheet open={exportMetric !== null} onOpenChange={(open) => { if (!open) setExportMetric(null); }}>
+        <SheetContent className="payment-daily-sheet">
+          <SheetHeader>
+            <SheetTitle>{definitions.find((item) => item.metric === exportMetric)?.key ?? 'GMV'}明细</SheetTitle>
+            <SheetDescription>按日期查看及导出趋势数据</SheetDescription>
+          </SheetHeader>
+          {exportMetric && (() => {
+            const cardRows = sourceRows.map((row) => ({ ...row, activeGmv: valueOf(row, 'activeGmv') }));
+            const rows = selectCardTrendRows(cardRows, trendDays[exportMetric], exportMetric, granularity)
+              .map((row) => ({ period: row.period, value: Number(row[exportMetric] ?? 0) }));
+            const title = definitions.find((item) => item.metric === exportMetric)?.key ?? 'GMV';
+            const periodLabel = granularity === 'week' || trendDays[exportMetric] === 90 ? '业务周起始日' : '日期';
+            return <>
+              <div className="payment-daily-toolbar">
+                <Button variant="ghost" disabled={!rows.length} onClick={() => downloadCsv(`Pollo-${title}-明细.csv`, [[periodLabel, `${title}_USD`], ...rows.map((row) => [row.period, row.value])])}>
+                  <ArrowDownToLine size={14} />导出 CSV
+                </Button>
+              </div>
+              <div className="payment-daily-table">
+                <table className="w-full text-left text-sm"><thead><tr><th className="p-2">{periodLabel}</th><th className="p-2 text-right">{title} / USD</th></tr></thead><tbody>{rows.map((row) => <tr key={row.period} className="border-b border-slate-100"><td className="p-2">{row.period}</td><td className="p-2 text-right tabular-nums">{money(row.value)}</td></tr>)}</tbody></table>
+              </div>
+            </>;
+          })()}
+        </SheetContent>
+      </Sheet>
       <TrendDialog
         metric={expandedMetric}
-        rows={headlineRows.map((row) => ({ ...row, activeGmv: valueOf(row, 'activeGmv') }))}
+        rows={(zoomTrend.length ? zoomTrend : sourceRows).map((row) => ({ ...row, activeGmv: valueOf(row, 'activeGmv') }))}
         startDate={headlineStartDate}
         endDate={headlineEndDate}
-        definitions={definitions.map((item) => ({
-          ...item,
-          key: item.metric === 'activeGmv' && activePayType !== '整体'
-            ? `${item.key} · ${activePayType}` : item.key,
-        }))}
+        definitions={definitions}
         onClose={() => setExpandedMetric(null)}
+      />
+      <RevenueStructureDialog
+        metric={structureMetric}
+        items={structureMetric ? structureItems[structureMetric] ?? [] : []}
+        definitions={definitions}
+        currentPoint={latestRows.at(-1)}
+        baselinePoint={latestRows.at(-1) ? comparisonRows.find(row => row.period === addDays(latestRows.at(-1)!.period, -7)) : undefined}
+        daily={granularity === 'day'}
+        onClose={() => setStructureMetric(null)}
       />
     </div>
   );
@@ -445,7 +414,21 @@ function TrendDialog({
   const title = definition?.key ?? '趋势';
   const money = (value: number) => '$' + Math.round(value).toLocaleString('en-US');
   const [grain, setGrain] = useState<DialogTrendGrain>('day');
-  const chartRows = useMemo(() => aggregateDialogTrend(rows, metric ?? 'totalGmv', grain), [rows, metric, grain]);
+  const [rangeDays, setRangeDays] = useState<30 | 90>(30);
+  const rangeEnd = endDate ?? rows.at(-1)?.period;
+  const rangeStart = rangeEnd ? new Date(Date.parse(`${rangeEnd}T00:00:00Z`) - (rangeDays - 1) * 86400000).toISOString().slice(0, 10) : undefined;
+  const chartRows = useMemo(() => {
+    const selected = rows.filter(row => (!rangeStart || row.period >= rangeStart) && (!rangeEnd || row.period <= rangeEnd));
+    const aggregated = aggregateDialogTrend(selected, metric ?? 'totalGmv', grain);
+    if (!rangeStart || !rangeEnd) return aggregated;
+    const byPeriod = new Map(aggregated.map(row => [row.period, row]));
+    const periods = new Set<string>();
+    for (let time = Date.parse(`${rangeStart}T00:00:00Z`); time <= Date.parse(`${rangeEnd}T00:00:00Z`); time += 86400000) {
+      const date = new Date(time).toISOString().slice(0, 10);
+      periods.add(grain === 'week' ? getBusinessWeekStart(date) : grain === 'month' ? date.slice(0, 7) : date);
+    }
+    return [...periods].map(period => byPeriod.get(period) ?? {period, coverage: period, days: 0, totalGmv: null, activeGmv: null, renewalGmv: null});
+  }, [grain, metric, rangeEnd, rangeStart, rows]);
   const yAxisDomain = resolveTrendDialogYAxisDomain(chartRows, metric);
   return (
     <Dialog open={metric !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -453,16 +436,25 @@ function TrendDialog({
         <DialogHeader className="pr-8">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <DialogTitle>{title}趋势</DialogTitle>
-            <div className="payment-trend-mode revenue-dialog-grain" role="group" aria-label="放大趋势粒度">
-              {(['day', 'week', 'month'] as const).map((value) => (
-                <button key={value} type="button" aria-pressed={grain === value} onClick={() => setGrain(value)}>
-                  {{ day: '日', week: '周', month: '月' }[value]}
-                </button>
-              ))}
+            <div className="revenue-dialog-controls">
+              <div className="payment-trend-mode revenue-dialog-range" role="group" aria-label="放大趋势范围">
+                {([30, 90] as const).map((value) => (
+                  <button key={value} type="button" aria-pressed={rangeDays === value} onClick={() => setRangeDays(value)}>
+                    {value === 30 ? '近一个月' : '近一个季度'}
+                  </button>
+                ))}
+              </div>
+              <div className="payment-trend-mode revenue-dialog-grain" role="group" aria-label="趋势粒度">
+                {(['day', 'week', 'month'] as const).map((value) => (
+                  <button key={value} type="button" aria-pressed={grain === value} onClick={() => setGrain(value)}>
+                    {{ day: '日', week: '周', month: '月' }[value]}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <DialogDescription>
-            按{{ day: '日', week: '业务周', month: '自然月' }[grain]}展示日均 GMV{startDate && endDate ? `：${startDate} 至 ${endDate}` : '。'}
+            按{{ day: '日', week: '业务周', month: '自然月' }[grain]}展示日均 GMV{rangeStart && rangeEnd ? `：${rangeStart} 至 ${rangeEnd}` : '。'}
           </DialogDescription>
         </DialogHeader>
         <div className="h-[360px] w-full">
@@ -474,7 +466,7 @@ function TrendDialog({
               <Tooltip
                 cursor={{ stroke: '#e7e7ef', strokeDasharray: '4 4' }}
                 content={({ active, payload }) => {
-                  if (!active || !payload?.length) return null;
+                  if (!active || !payload?.length || !payload[0].payload.days) return null;
                   const point = payload[0].payload as typeof chartRows[number];
                   return (
                     <div className="trend-tooltip revenue-dialog-tooltip">
@@ -491,6 +483,7 @@ function TrendDialog({
               />
               <Area
                 type="monotone"
+                connectNulls={false}
                 dataKey={metric ?? 'totalGmv'}
                 stroke={definition?.color ?? '#5B3FF2'}
                 fill={definition?.color ?? '#5B3FF2'}
@@ -500,6 +493,42 @@ function TrendDialog({
             </AreaChart>
           </ResponsiveContainer>
         </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RevenueStructureDialog({
+  metric,
+  items,
+  definitions,
+  currentPoint, baselinePoint, daily,
+  onClose,
+}: {
+  metric: RevenueMetric | null;
+  items: AttributionItem[];
+  currentPoint?: OverviewTrendPoint;
+  baselinePoint?: OverviewTrendPoint;
+  daily: boolean;
+  definitions: Array<{ key: string; metric: RevenueMetric; color: string }>;
+  onClose: () => void;
+}) {
+  const title = `${definitions.find(item => item.metric === metric)?.key ?? 'GMV'}构成`;
+  const colors: ExpensesCategory['color'][] = ['purple', 'blue', 'green', 'orange', 'yellow', 'teal'];
+  const mapFor = (point?: OverviewTrendPoint) => !point || !metric ? undefined : metric === 'totalGmv' ? point.totalPayTypeGmv : metric === 'activeGmv' ? point.activePayTypeGmv : point.renewalPayTypeGmv;
+  const current = mapFor(currentPoint) ?? Object.fromEntries(items.map(item => [item.key, item.analysisDailyAvg]));
+  const baseline = mapFor(baselinePoint) ?? (currentPoint ? undefined : Object.fromEntries(items.map(item => [item.key, item.baselineDailyAvg])));
+  const keys = [...new Set([...Object.keys(current), ...Object.keys(baseline ?? {})])];
+  const categories: ExpensesCategory[] = keys.map((key, i) => ({ id: key, label: key, color: colors[i % colors.length] }));
+  const periods: ExpensesPeriod[] = [
+    { value: 'analysis', label: currentPoint?.period ?? '分析周', values: current, previous: baseline ? Object.values(baseline).reduce((sum, value) => sum + value, 0) : undefined, changeLabel: '较上周同期' },
+    ...(baseline ? [{ value: 'baseline', label: baselinePoint?.period ?? '基准周', values: baseline }] : []),
+  ];
+  return (
+    <Dialog open={metric !== null} onOpenChange={open => { if (!open) onClose(); }}>
+      <DialogContent className="revenue-structure-dialog" aria-describedby={undefined}>
+        <DialogTitle className="sr-only">{title}</DialogTitle>
+        {keys.length ? <ExpensesChart key={metric} title={title} totalLabel={daily ? "GMV" : "日均 GMV"} categories={categories} periods={periods} defaultPeriod="analysis" currency="USD" locale="zh-CN" /> : <div className="revenue-structure-empty">暂无构成数据</div>}
       </DialogContent>
     </Dialog>
   );

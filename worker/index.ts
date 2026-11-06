@@ -1,4 +1,6 @@
-import { chainDriverEffects } from './chain-attribution';
+import { chainDriverEffects, lmdiDriverEffects } from './chain-attribution';
+import { serializeStagingChunks } from './sync-staging';
+import { assertChainConservation, assertPaymentModeConservation } from './source-conservation';
 import { getBusinessWeekStart } from '../shared/business-week';
 import { paymentAnalysisSql } from './payment-analysis-sql';
 import { GMV_ATTRIBUTION_TYPES, type GmvAttributionType, type PaymentAnalysisResponse, type PaymentTrendResponse } from '../shared/api.interface';
@@ -7,9 +9,12 @@ import { GMV_ATTRIBUTION_TYPES, type GmvAttributionType, type PaymentAnalysisRes
 import { MaxComputeClient } from '../server/modules/maxcompute/maxcompute.client';
 import { buildDatasetSql, type DatasetKind } from '../server/modules/maxcompute/sql-templates';
 import { buildAdsSql } from '../server/modules/maxcompute/ads-sql';
+import { buildCreationChainSql, type CreationChainKind } from '../server/modules/maxcompute/creation-chain-sql';
+import { buildChainFunnelSql } from '../server/modules/maxcompute/chain-funnel-sql';
+import { buildPaymentRegistrationSql } from '../server/modules/maxcompute/payment-registration-sql';
 import { POLLOCLOUD_APP_OWNER_ID } from '../shared/auth.constants';
 import { executeReport, reportGenerations } from './report-jobs';
-import type { DashboardAttributionsResponse, ReportGenerationRequest, ReportGenerationStatus, ReportSummary, AttributionItem, AttributionDriverItem, SyncDataset, SyncMode, SyncRunStatus } from '../shared/api.interface';
+import type { AdsAggregate, AdsOverviewResponse, DashboardAttributionsResponse, ReportGenerationRequest, ReportGenerationStatus, ReportSummary, AttributionItem, AttributionDriverItem, SyncDataset, SyncMode, SyncRunStatus, SyncRunResponse, CreativeChainTrendPoint, CreativeOverviewResponse } from '../shared/api.interface';
 
 type D1Row = Record<string, string | number | null>;
 type D1Result<T> = { results: T[] };
@@ -68,12 +73,12 @@ let feishuTokenCache: { token: string; expiresAt: number } | null = null;
 const baseCache = new Map<string, { expiresAt: number; records: BaseRecord[] }>();
 const baseLoads = new Map<string, Promise<BaseRecord[]>>();
 const dashboardLoads = new Map<string, Promise<Response>>();
+const dashboardMemoryCache = new Map<string, { payload: string; expiresAt: number }>();
 
 const WEEK_DAYS = 7;
 const REPORT_PLATFORMS = new Set(['web', 'app']);
 const DASHBOARD_PLATFORMS = new Set(['all', 'web', 'app']);
 const FULL_REFRESH_START_DATE = '2026-01-01';
-const STAGING_CHUNK_SIZE = 250;
 const TABLES = new Set([
   'pay_type_daily',
   'chain_daily',
@@ -113,6 +118,7 @@ const FACT_VALUE_COLUMNS = [
   'sub_submit_rate', 'chain_pay_success_rate', 'chain_arppu', 'expire_user_cnt',
   'renew_user_cnt', 'renew_amount_usd', 'pay_user_cnt', 'gmv_usd', 'order_equivalent', 'model_cost_usd',
   'attribution_type', 'attribution_name', 'actual_supplier', 'actual_provider', 'pay_category', 'metric_version',
+  'product_type', 'product_type_lv2',
   'fields_json', 'updated_at',
 ] as const;
 
@@ -126,11 +132,19 @@ const errorResponse = (message: string, status = 400) =>
   json({ error: message }, status);
 
 async function cachedDashboardResponse(env: Env, request: Request, context: { waitUntil(promise: Promise<unknown>): void }, load: () => Promise<Response>): Promise<Response> {
-  if (!env.DB) return load();
   const url = new URL(request.url);
+  url.searchParams.delete('cacheBust');
   url.searchParams.sort();
-  const version = url.pathname === '/api/dashboard/overview' ? 'v3' : 'v2';
+  const version = ['/api/dashboard/chain-funnel', '/api/dashboard/attributions'].includes(url.pathname) ? 'v9-lmdi' : url.pathname === '/api/dashboard/payment-analysis' ? 'v4' : ['/api/dashboard/creative-overview', '/api/dashboard/overview'].includes(url.pathname) ? 'v8' : url.pathname === '/api/dashboard/ads-overview' ? 'v5' : 'v3';
   const key = `${version}:${url.pathname}?${url.searchParams}`;
+  const isCacheablePayload = (payload: string) => {
+    if (!url.pathname.endsWith('/chain-funnel')) return true;
+    try {
+      return JSON.parse(payload)?.ready !== false;
+    } catch {
+      return false;
+    }
+  };
   const refresh = () => {
     const pending = dashboardLoads.get(key);
     if (pending) return pending;
@@ -138,8 +152,14 @@ async function cachedDashboardResponse(env: Env, request: Request, context: { wa
       const response = await load();
       if (response.ok) {
         const payload = await response.clone().text();
-        await env.DB!.prepare('INSERT OR REPLACE INTO dashboard_response_cache (cache_key, payload, expires_at) VALUES (?, ?, ?)')
-          .bind(key, payload, Date.now() + DASHBOARD_CACHE_TTL_MS).run().catch(() => undefined);
+        if (isCacheablePayload(payload)) {
+          const expiresAt = Date.now() + DASHBOARD_CACHE_TTL_MS;
+          dashboardMemoryCache.set(key, { payload, expiresAt });
+          if (env.DB) {
+            await env.DB.prepare('INSERT OR REPLACE INTO dashboard_response_cache (cache_key, payload, expires_at) VALUES (?, ?, ?)')
+              .bind(key, payload, expiresAt).run().catch(() => undefined);
+          }
+        }
       }
       return response;
     })();
@@ -147,11 +167,25 @@ async function cachedDashboardResponse(env: Env, request: Request, context: { wa
     void task.finally(() => dashboardLoads.delete(key)).catch(() => undefined);
     return task;
   };
+  const memory = dashboardMemoryCache.get(key);
+  if (memory) {
+    if (memory.expiresAt > Date.now()) return json(JSON.parse(memory.payload));
+    if (memory.expiresAt + DASHBOARD_STALE_TTL_MS > Date.now()) {
+      context.waitUntil(refresh().then(() => undefined).catch(() => undefined));
+      return json(JSON.parse(memory.payload));
+    }
+    dashboardMemoryCache.delete(key);
+  }
+  if (!env.DB) return (await refresh()).clone();
   try {
     const cached = await env.DB.prepare('SELECT payload, expires_at FROM dashboard_response_cache WHERE cache_key = ?')
       .bind(key).first<{ payload: string; expires_at: number }>();
-    if (cached && cached.expires_at > Date.now()) return json(JSON.parse(cached.payload));
-    if (cached && cached.expires_at + DASHBOARD_STALE_TTL_MS > Date.now()) {
+    if (cached && isCacheablePayload(cached.payload) && cached.expires_at > Date.now()) {
+      dashboardMemoryCache.set(key, { payload: cached.payload, expiresAt: cached.expires_at });
+      return json(JSON.parse(cached.payload));
+    }
+    if (cached && isCacheablePayload(cached.payload) && cached.expires_at + DASHBOARD_STALE_TTL_MS > Date.now()) {
+      dashboardMemoryCache.set(key, { payload: cached.payload, expiresAt: cached.expires_at });
       context.waitUntil(refresh().then(() => undefined).catch(() => undefined));
       return json(JSON.parse(cached.payload));
     }
@@ -162,6 +196,7 @@ async function cachedDashboardResponse(env: Env, request: Request, context: { wa
 }
 
 async function invalidateDashboardCache(env: Env) {
+  dashboardMemoryCache.clear();
   if (env.DB) await env.DB.prepare('DELETE FROM dashboard_response_cache').run().catch(() => undefined);
 }
 
@@ -373,6 +408,9 @@ const normalizePayType = (value: string) => {
   return labels[value] || value;
 };
 
+const isAttributedPayRow = (row: D1Row) =>
+  ['NONE', 'CREATION_MODE', 'MODEL', 'ACTUAL_MODEL'].includes(asText(row.attribution_type));
+
 const tierRank = (key: string) => {
   const known = TIER_ORDER.indexOf(key);
   if (known >= 0) return known;
@@ -403,6 +441,7 @@ function factSourceId(dataset: string, row: D1Row) {
     row.user_tag, row.creation_cnt_30d_level_id, row.creation_cnt_30d,
     row.platform_type, row.plan_tier, row.plan_cycle, row.subscription_tier,
     row.attribution_type, row.attribution_name, row.actual_supplier, row.actual_provider, row.pay_category,
+    row.product_type, row.product_type_lv2,
   ].map(value => asText(value)).join('|');
   return identity || crypto.randomUUID();
 }
@@ -432,7 +471,9 @@ function factValues(dataset: string, row: D1Row, now = Date.now()) {
     actual_supplier: asText(row.actual_supplier) || null,
     actual_provider: asText(row.actual_provider) || null,
     pay_category: asText(row.pay_category) || null,
-    metric_version: asText(row.metric_version) || null,
+    product_type: asText(row.product_type) || null,
+    product_type_lv2: asText(row.product_type_lv2) || null,
+    metric_version: dataset === 'pay_type' ? null : asText(row.metric_version) || null,
     fields_json: dataset === 'pay_type' ? '{}' : JSON.stringify(row),
     updated_at: now,
   };
@@ -465,8 +506,98 @@ async function clearFactRange(env: Env, dataset: string, startDate: string, endD
 
 async function replaceFactRange(env: Env, dataset: string, platform: string, startDate: string, endDate: string, rows: D1Row[]) {
   if ((dataset === 'pay_type' || dataset === 'chain') && !rows.length) throw new Error('中间表返回空结果，已阻止覆盖已有数据');
+  if (dataset === 'chain') return replaceChainRange(env, platform, startDate, endDate, rows);
+  if (dataset === 'pay_type') return replacePaymentRange(env, platform, startDate, endDate, rows);
   await clearFactRange(env, dataset, startDate, endDate, platform);
   return writeFactRows(env, dataset, rows);
+}
+
+async function replacePaymentRange(env: Env, platform: string, startDate: string, endDate: string, rows: D1Row[]) {
+  if (!env.DB?.batch) throw new Error('付费同步需要批量事务');
+  const parents = rows.filter(row => row.source_kind !== 'registration');
+  const children = rows.filter(row => row.source_kind === 'registration');
+  assertPaymentModeConservation(parents);
+  const registrationKeys = new Set<string>();
+  for (const row of children) {
+    const key = JSON.stringify(['period','platform','device_type','pay_type','user_lifecycle','reg_country'].map(field=>row[field]));
+    if (registrationKeys.has(key) || !['web','app','unknown'].includes(asText(row.platform)) || (platform !== 'all' && row.platform !== platform) || asText(row.period) < startDate || asText(row.period) > endDate || !Number.isFinite(Number(row.gmv_usd))) throw new Error('注册下钻身份重复或范围无效，已保留原数据');
+    registrationKeys.add(key);
+  }
+  const totals = (records: D1Row[]) => {
+    const groups = new Map<string, number>();
+    for (const row of records) {
+      const key = [row.period,row.device_type,row.pay_type].join('|');
+      const amount = Number(row.gmv_usd ?? 0);
+      if (!Number.isFinite(amount)) throw new Error('付费金额无效，已保留原数据');
+      groups.set(key,(groups.get(key) ?? 0)+amount);
+    }
+    return groups;
+  };
+  const expected = totals(parents.filter(row => row.attribution_type === 'NONE' && row.pay_type !== '汇总'));
+  const actual = totals(children);
+  if (!parents.length || !children.length || [...new Set([...expected.keys(),...actual.keys()])].some(key => Math.abs((expected.get(key) ?? 0)-(actual.get(key) ?? 0)) > .005)) throw new Error('付费结果与注册维度未对齐，已保留原数据');
+  const identities = new Set<string>();
+  for (const row of parents) {
+    const key = factSourceId('pay_type',row);
+    if (identities.has(key) || row.platform !== platform || asText(row.period) < startDate || asText(row.period) > endDate) throw new Error('付费聚合身份重复或范围无效');
+    identities.add(key);
+    for (const field of ['gmv_usd','model_cost_usd','order_equivalent']) if (row[field] != null && !Number.isFinite(Number(row[field]))) throw new Error('付费数值无效，已保留原数据');
+  }
+  const regFields = ['period','week_start','platform','device_type','pay_type','user_lifecycle','reg_country','gmv_usd'];
+  const regWhere = `period BETWEEN ? AND ?${platform === 'all' ? '' : ' AND platform = ?'}`;
+  const regBinds = platform === 'all' ? [startDate,endDate] : [startDate,endDate,platform];
+  const factWhere = "dataset='pay_type' AND platform=? AND period BETWEEN ? AND ?";
+  const factBinds = [platform,startDate,endDate];
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM pollo_da_payment_fact_stage WHERE ${factWhere}`).bind(...factBinds),
+    env.DB.prepare(`DELETE FROM pollo_da_payment_registration_stage WHERE ${regWhere}`).bind(...regBinds),
+  ]);
+  const factInsert = FACT_INSERT_SQL.replace('INSERT OR REPLACE INTO pollo_da_fact_rows','INSERT INTO pollo_da_payment_fact_stage');
+  const inserts = [...parents.map(row => env.DB!.prepare(factInsert).bind(...factValues('pay_type',row))),
+    ...children.map(row => env.DB!.prepare(`INSERT INTO pollo_da_payment_registration_stage (${regFields.join(',')}) VALUES (${regFields.map(()=>'?').join(',')})`).bind(...regFields.map(field=>row[field])))];
+  for (let i=0;i<inserts.length;i+=50) await env.DB.batch(inserts.slice(i,i+50));
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM pollo_da_fact_rows WHERE ${factWhere}`).bind(...factBinds),
+    env.DB.prepare(`INSERT INTO pollo_da_fact_rows (${FACT_VALUE_COLUMNS.join(',')}) SELECT ${FACT_VALUE_COLUMNS.join(',')} FROM pollo_da_payment_fact_stage WHERE ${factWhere}`).bind(...factBinds),
+    env.DB.prepare(`DELETE FROM pollo_da_payment_registration WHERE ${regWhere}`).bind(...regBinds),
+    env.DB.prepare(`INSERT INTO pollo_da_payment_registration (${regFields.join(',')}) SELECT ${regFields.join(',')} FROM pollo_da_payment_registration_stage WHERE ${regWhere}`).bind(...regBinds),
+    env.DB.prepare(`DELETE FROM pollo_da_payment_fact_stage WHERE ${factWhere}`).bind(...factBinds),
+    env.DB.prepare(`DELETE FROM pollo_da_payment_registration_stage WHERE ${regWhere}`).bind(...regBinds),
+  ]);
+  return parents.length+children.length;
+}
+
+async function replaceChainRange(env: Env, platform: string, startDate: string, endDate: string, rows: D1Row[]) {
+  if (!env.DB?.batch) throw new Error('链路同步需要批量事务');
+  const dimensions = ['period','week_start','week_end','platform','device_type','country_tier','user_lifecycle','creation_cnt_30d_label'];
+  const kinds = [
+    { kind:'funnel', table:'pollo_da_chain_funnel', fields:[...dimensions,'active_uv','paywall_expose_uv','paywall_submit_uv','pay_uv','gmv_usd','pay_fail_order_cnt','pay_fail_amount_usd'] },
+    { kind:'breakdown', table:'pollo_da_chain_breakdown', fields:[...dimensions,'breakdown_type','breakdown_value','expose_uv','submit_uv','pay_uv','gmv_usd'] },
+  ];
+  if (!rows.some(row => row.source_kind === 'funnel') || rows.some(row => asText(row.period) < startDate || asText(row.period) > endDate || !['funnel','breakdown'].includes(asText(row.source_kind)) || !['web','app'].includes(asText(row.platform)) || (platform !== 'all' && row.platform !== platform))) throw new Error('链路同步范围无效，已保留原数据');
+  assertChainConservation(rows);
+  const where = `period BETWEEN ? AND ?${platform === 'all' ? '' : ' AND platform = ?'}`;
+  const binds = platform === 'all' ? [startDate,endDate] : [startDate,endDate,platform];
+  const commit: D1Statement[] = [];
+  for (const {kind,table,fields} of kinds) {
+    const stage = `${table}_stage`;
+    await env.DB.prepare(`DELETE FROM ${stage} WHERE ${where}`).bind(...binds).run();
+    const insert = `INSERT INTO ${stage} (${fields.join(',')}) VALUES (${fields.map(()=>'?').join(',')})`;
+    const records = rows.filter(row => row.source_kind === kind);
+    const keys = new Set<string>();
+    const statements = records.map(row => {
+      const values = fields.map(field => dimensions.includes(field) || field.startsWith('breakdown_') ? (asText(row[field]) || '未知') : Number(row[field] ?? 0));
+      const key = values.slice(0,kind==='funnel'?8:10).join('|');
+      if (keys.has(key) || values.slice(kind==='funnel'?8:10).some(value=>!Number.isFinite(value))) throw new Error('链路聚合重复或数值无效，已保留原数据');
+      keys.add(key);
+      return env.DB!.prepare(insert).bind(...values);
+    });
+    for (let index=0;index<statements.length;index+=80) await env.DB.batch(statements.slice(index,index+80));
+    commit.push(env.DB.prepare(`DELETE FROM ${table} WHERE ${where}`).bind(...binds), env.DB.prepare(`INSERT INTO ${table} (${fields.join(',')}) SELECT ${fields.join(',')} FROM ${stage} WHERE ${where}`).bind(...binds), env.DB.prepare(`DELETE FROM ${stage} WHERE ${where}`).bind(...binds));
+  }
+  // Readers switch parent + breakdown together; no partial replacement window.
+  await env.DB.batch(commit);
+  return rows.length;
 }
 
 async function dailyRows(env: Env, table: 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily', params: {
@@ -474,9 +605,36 @@ async function dailyRows(env: Env, table: 'pay_type_daily' | 'chain_daily' | 'cr
   startDate?: string;
   endDate?: string;
   deviceType?: string;
-}) {
+}): Promise<D1Row[]> {
+  // Every chain consumer (reports, coverage, anomalies and exports included)
+  // reads the same enriched source. Missing dates must never fall back to an
+  // older definition just because the old snapshot contains more days.
+  if (table === 'chain_daily') {
+    const conditions = ['1=1'];
+    const binds: unknown[] = [];
+    if (params.platform && params.platform !== 'all') { conditions.push('platform = ?'); binds.push(params.platform); }
+    if (params.startDate) { conditions.push('period >= ?'); binds.push(params.startDate); }
+    if (params.endDate) { conditions.push('period <= ?'); binds.push(params.endDate); }
+    if (params.deviceType) { conditions.push('device_type = ?'); binds.push(params.deviceType); }
+    const source = await queryRows(env, `SELECT * FROM pollo_da_chain_funnel WHERE ${conditions.join(' AND ')} ORDER BY period`, ...binds);
+    const rows = source.map<D1Row>(row => ({ ...row, dataset_kind: 'daily',
+      creation_cnt_30d: asText(row.creation_cnt_30d_label),
+      creation_cnt_30d_level_id: TIER_ORDER.indexOf(asText(row.creation_cnt_30d_label)),
+      sub_expose_rate: asNumber(row.active_uv) ? asNumber(row.paywall_expose_uv) / asNumber(row.active_uv) : null,
+      sub_submit_rate: asNumber(row.paywall_expose_uv) ? asNumber(row.paywall_submit_uv) / asNumber(row.paywall_expose_uv) : null,
+      chain_pay_success_rate: asNumber(row.paywall_submit_uv) ? asNumber(row.pay_uv) / asNumber(row.paywall_submit_uv) : null,
+      chain_arppu: asNumber(row.pay_uv) ? asNumber(row.gmv_usd) / asNumber(row.pay_uv) : null,
+      user_tag: row.user_lifecycle === 'NEW' ? '新用户' : row.user_lifecycle === 'OLD' ? '老用户' : '未知',
+      sub_expose_uv: row.paywall_expose_uv, sub_submit_uv: row.paywall_submit_uv,
+      chain_pay_uv: row.pay_uv, chain_gmv_usd: row.gmv_usd,
+    }));
+    // Unscoped callers explicitly select each scope. Scoped callers receive
+    // only one representation, so all + web/app can never be summed twice.
+    if (!params.platform) return [...rows, ...rows.map(row => ({ ...row, platform: 'all' }))];
+    return params.platform === 'all' ? rows.map(row => ({ ...row, platform: 'all' })) : rows;
+  }
   const conditions = ['dataset = ?'];
-  if (table === 'pay_type_daily') conditions.push("(attribution_type IS NULL OR (attribution_type = 'NONE' AND pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL') AND pay_type <> '汇总'))");
+  if (table === 'pay_type_daily') conditions.push("(attribution_type IS NULL OR (attribution_type = 'NONE' AND pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL','API') AND pay_type <> '汇总'))");
   const binds: unknown[] = [factDataset(table)];
   if (params.platform) { conditions.push('platform = ?'); binds.push(params.platform); }
   if (params.startDate) { conditions.push('period >= ?'); binds.push(params.startDate); }
@@ -489,6 +647,10 @@ async function latestDailyPeriod(
   env: Env,
   table: 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily',
 ) {
+  if (table === 'chain_daily') {
+    const rows = await queryRows(env, 'SELECT MAX(period) AS period FROM pollo_da_chain_funnel');
+    return asText(rows[0]?.period);
+  }
   const row = await env.DB!.prepare('SELECT MAX(period) AS period FROM pollo_da_fact_rows WHERE dataset = ?')
     .bind(factDataset(table)).first<{ period: string | null }>();
   return row?.period || '';
@@ -537,6 +699,17 @@ function alignComparisonWeekdays(
       analysisOffsets.has(dayOffset(row))
     );
   });
+}
+
+function matchedComparisonCalendar(calendar: D1Row[], baseline: string, analysis: string) {
+  const offset = (row: D1Row) => Math.round((Date.parse(asText(row.period)) - Date.parse(asText(row.week_start))) / 86400000);
+  const current = new Set(calendar.filter(row => asText(row.week_start) === analysis).map(offset));
+  const previous = new Set(calendar.filter(row => asText(row.week_start) === baseline).map(offset));
+  return calendar.filter(row => current.has(offset(row)) && previous.has(offset(row)));
+}
+function rowsOnCalendar(rows: D1Row[], calendar: D1Row[]) {
+  const dates = new Set(calendar.map(row => asText(row.period)));
+  return rows.filter(row => dates.has(asText(row.period)));
 }
 
 function sumChain(rows: D1Row[]) {
@@ -588,27 +761,7 @@ function renewalDriverEffects(
   current: ReturnType<typeof renewalFactors>,
 ) {
   const keys = RENEWAL_DRIVER_DEFINITIONS.map(([key]) => key);
-  const permutations = [
-    [keys[0], keys[1], keys[2]],
-    [keys[0], keys[2], keys[1]],
-    [keys[1], keys[0], keys[2]],
-    [keys[1], keys[2], keys[0]],
-    [keys[2], keys[0], keys[1]],
-    [keys[2], keys[1], keys[0]],
-  ];
-  const multiply = (factors: typeof previous) =>
-    keys.reduce((product, key) => product * factors[key], 1);
-  const effects = { expireUserCnt: 0, renewalRate: 0, renewalAov: 0 };
-  for (const permutation of permutations) {
-    const state = { ...previous };
-    for (const key of permutation) {
-      const before = multiply(state);
-      state[key] = current[key];
-      effects[key] += multiply(state) - before;
-    }
-  }
-  keys.forEach((key) => { effects[key] /= permutations.length; });
-  return effects;
+  return lmdiDriverEffects(previous, current, keys);
 }
 
 function sumRenewal(rows: D1Row[]) {
@@ -620,7 +773,7 @@ function sumRenewal(rows: D1Row[]) {
 }
 
 function isActivePayDetailRow(row: D1Row) {
-  return row.metric_version === 'ads_v1'
+  return isAttributedPayRow(row)
     ? row.pay_category === 'ACTIVE_PAYMENT' && row.pay_type !== '汇总'
     : normalizePayType(asText(row.pay_type)) !== RENEWAL_PAY_TYPE && Boolean(asText(row.function_name));
 }
@@ -637,7 +790,7 @@ function buildComparison(rows: D1Row[], startDate: string, endDate: string, base
   const current = analysis || candidates.at(-1);
   const previous = baseline || candidates.at(-2);
   if (!current || !previous) return null;
-  const versions = new Set(rows.filter(row => [current, previous].includes(asText(row.week_start))).map(row => asText(row.metric_version) || 'legacy'));
+  const versions = new Set(rows.filter(row => [current, previous].includes(asText(row.week_start))).map(row => isAttributedPayRow(row) ? 'ads_v1' : asText(row.metric_version) || 'legacy'));
   if (versions.size > 1) throw new Error('对比期间跨越新旧口径，需补齐中间表历史数据后再比较');
   return {
     baselinePeriod: previous,
@@ -738,9 +891,20 @@ function payTrend(
     // Headline cards use pay_type as their single source of truth. Keep the
     // drilldown rows separate because they are only the attributed active-pay
     // dimensions and may not sum to the headline total.
-    const activeRows = group.filter((row) => normalizePayType(asText(row.pay_type)) !== '自动续订');
+    const activeRows = group.filter((row) => isAttributedPayRow(row) ? row.pay_category === 'ACTIVE_PAYMENT' : normalizePayType(asText(row.pay_type)) !== '自动续订');
     const activeDrill = activePayDetailRows(group);
     const activePayTypeGmv: Record<string, number> = {};
+    const totalPayTypeGmv: Record<string, number> = {};
+    const renewalPayTypeGmv: Record<string, number> = {};
+    for (const row of group) {
+      const key = normalizePayType(asText(row.pay_type));
+      totalPayTypeGmv[key] = (totalPayTypeGmv[key] || 0) + asNumber(row.gmv_usd) / divisor;
+      if (key === '自动续订') {
+        const tier = asText(row.subscription_tier);
+        const renewalKey = tier ? `${key} · ${tier}` : key;
+        renewalPayTypeGmv[renewalKey] = (renewalPayTypeGmv[renewalKey] || 0) + asNumber(row.gmv_usd) / divisor;
+      }
+    }
     for (const row of activeDrill) {
       const key = normalizePayType(asText(row.pay_type));
       activePayTypeGmv[key] = (activePayTypeGmv[key] || 0) + asNumber(row.gmv_usd) / divisor;
@@ -756,6 +920,8 @@ function payTrend(
       activeGmv: active / divisor,
       renewalGmv: renewalGmvForPeriod ? renewalGmvForPeriod(period) : renewal / divisor,
       activePayTypeGmv,
+      totalPayTypeGmv,
+      renewalPayTypeGmv,
       gmv: 0,
       dau: 0,
       paywallExposureRate: 0,
@@ -810,10 +976,17 @@ async function overview(env: Env, request: Request) {
   const endDate = url.searchParams.get('endDate') || '9999-12-31';
   const deviceType = url.searchParams.get('deviceType') || undefined;
   const trendUserTag = url.searchParams.get('trendUserTag') || undefined;
+  const trendCountryTier = url.searchParams.get('trendCountryTier') || undefined;
+  if (trendUserTag && !['新用户', '老用户', '未知'].includes(trendUserTag)) return errorResponse('注册新老筛选无效');
+  if (trendCountryTier && !['T1', 'T2', 'T3', '未知'].includes(trendCountryTier)) return errorResponse('国家分层筛选无效');
   const planTier = url.searchParams.get('planTier')?.toUpperCase() || undefined;
   if (!DASHBOARD_PLATFORMS.has(platform)) return errorResponse('platform 必须是 all / web / app 之一');
-  const [chain, pay, renewalRecords] = await Promise.all([
-    dailyRows(env, 'chain_daily', { platform, startDate, endDate, deviceType }),
+  const funnelConditions = ['period BETWEEN ? AND ?'];
+  const funnelBinds: unknown[] = [startDate, endDate];
+  if (platform !== 'all') { funnelConditions.push('platform = ?'); funnelBinds.push(platform); }
+  if (deviceType) { funnelConditions.push('device_type = ?'); funnelBinds.push(deviceType); }
+  const [funnel, pay, renewalRecords] = await Promise.all([
+    queryRows(env, `SELECT * FROM pollo_da_chain_funnel WHERE ${funnelConditions.join(' AND ')} ORDER BY period`, ...funnelBinds),
     dailyRows(env, 'pay_type_daily', { platform, startDate, endDate, deviceType }),
     dailyRows(env, 'renewal_daily', { platform, startDate, endDate }),
   ]);
@@ -824,12 +997,18 @@ async function overview(env: Env, request: Request) {
     ...row,
     period: trendPeriod(row, granularity),
   }));
-  const filteredChain = trendUserTag ? chain.filter((row) => asText(row.user_tag) === trendUserTag) : chain;
+  const chain = funnel.map<D1Row>(row => ({...row,
+    user_tag: asText(row.user_lifecycle) === 'NEW' ? '新用户' : asText(row.user_lifecycle) === 'OLD' ? '老用户' : '未知',
+    sub_expose_uv: row.paywall_expose_uv, sub_submit_uv: row.paywall_submit_uv,
+    chain_pay_uv: row.pay_uv, chain_gmv_usd: row.gmv_usd,
+  }));
+  const scoped = Boolean(trendUserTag || trendCountryTier);
+  const filteredChain = chain.filter(row => (!trendUserTag || row.user_tag === trendUserTag) && (!trendCountryTier || (asText(row.country_tier) || '未知') === trendCountryTier));
   // Divisors must be computed from the original daily rows. After weekly
   // grouping, every row shares one week_start and would otherwise look like
   // a one-day week.
   const payDays = trendPeriodDivisors(pay, granularity);
-  const chainDays = trendPeriodDivisors(filteredChain, granularity);
+  const chainDays = trendPeriodDivisors(chain, granularity);
   const renewalDays = trendPeriodDivisors(renewal, granularity);
   const firstPeriod = trendPeriod({ period: startDate, week_start: getBusinessWeekStart(startDate) }, granularity);
   const periods = groupByPeriod([...filteredChain, ...pay, ...renewal], granularity).filter((period) => dateInRange(period, firstPeriod, endDate));
@@ -839,11 +1018,8 @@ async function overview(env: Env, request: Request) {
   };
   const payTrendRows = payTrend(payForTrend, periods, payDays, renewalGmvForPeriod);
   const payPeriods = groupByPeriod(pay, granularity).filter((period) => dateInRange(period, firstPeriod, endDate));
-  // Headline cards must stay on the payment-result dataset. The main trend
-  // series below intentionally merges chain metrics for the diagnostic chart.
-  // The three homepage cards must all be derived from pay_type_daily. The
-  // optional renewal callback remains reserved for the lower diagnostic trend,
-  // which keeps its chain/renewal-specific data contract independent.
+  // Cards and the main trend share payment-result activeGmv. Chain-attributed
+  // revenue remains in gmv alongside the diagnostic funnel metrics below.
   const payTypeTrend = payTrend(payForTrend, payPeriods, payDays);
   const chainTrendRows = chainTrend(filteredChain.map((row) => ({ ...row, period: trendPeriod(row, granularity) })), periods, chainDays);
   const trend = payTrendRows.map((row, index) => {
@@ -853,22 +1029,25 @@ async function overview(env: Env, request: Request) {
     return {
       ...row,
       ...chainRow,
-      activeGmv: chainRow.gmv,
+      ...(scoped ? {activeGmv: chainRow.gmv} : {}),
       expireUserCnt: renewalTotal.expireUserCnt / renewalPeriodDays,
       renewalRate: renewalTotal.expireUserCnt ? renewalTotal.renewUserCnt / renewalTotal.expireUserCnt : 0,
       renewalAov: renewalTotal.renewUserCnt ? renewalTotal.renewAmountUsd / renewalTotal.renewUserCnt : 0,
     };
   });
+  // Revenue-only history supports the card zoom; missing diagnostic history
+  // must not create zero-valued chain/renewal points in the main chart.
+  const diagnosticTrend = trend.filter(row => chainDays.has(row.period) || (!scoped && renewalDays.has(row.period)));
   const requestedMetricDate = url.searchParams.get('metricDate') || endDate;
   const availableMetricDates = [...new Set(chain.map((row) => asText(row.period)))].filter(Boolean).sort();
   const metricDate = availableMetricDates.includes(requestedMetricDate)
     ? requestedMetricDate
     : availableMetricDates.filter((period) => period <= requestedMetricDate).at(-1) || availableMetricDates.at(-1) || requestedMetricDate;
-  const current = sumChain(chain.filter((row) => asText(row.period) === metricDate));
+  const current = sumChain(filteredChain.filter((row) => asText(row.period) === metricDate));
   const previousDate = new Date(`${metricDate}T00:00:00Z`);
   previousDate.setUTCDate(previousDate.getUTCDate() - 1);
   const previousPeriod = previousDate.toISOString().slice(0, 10);
-  const previous = sumChain(chain.filter((row) => asText(row.period) === previousPeriod));
+  const previous = sumChain(filteredChain.filter((row) => asText(row.period) === previousPeriod));
   return json({
     selectedPeriod: metricDate,
     gmvTotal: current.chainGmvUsd,
@@ -879,7 +1058,7 @@ async function overview(env: Env, request: Request) {
     submitRate: current.subExposeUv ? current.subSubmitUv / current.subExposeUv : 0,
     payRate: current.subSubmitUv ? current.chainPayUv / current.subSubmitUv : 0,
     aov: current.chainPayUv ? current.chainGmvUsd / current.chainPayUv : 0,
-    trend,
+    trend: diagnosticTrend,
     payTypeTrend,
     cardTrend: payTypeTrend,
   });
@@ -1062,16 +1241,25 @@ async function paymentTrend(env: Env, request: Request) {
   if (!DASHBOARD_PLATFORMS.has(platform) || !GMV_ATTRIBUTION_TYPES.includes(attributionType) || !['day','week','month'].includes(granularity) || !['ALL','ACTIVE_PAYMENT','AUTO_RENEWAL','API'].includes(income)) return errorResponse('趋势筛选无效');
   if (deviceType && (platform !== 'app' || !['ios','android'].includes(deviceType))) return errorResponse('设备筛选无效');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(analysis) || Number.isNaN(Date.parse(analysis))) return errorResponse('业务周无效');
-  const endDate = shiftDate(analysis,6);
+  const endDate = p.get('endDate') || shiftDate(analysis,6);
   const monthStart = (value:string) => value.slice(0,7)+'-01';
   const shiftMonth = (value:string,n:number) => { const d=new Date(monthStart(value)+'T00:00:00Z');d.setUTCMonth(d.getUTCMonth()+n);return d.toISOString().slice(0,10); };
-  const startDate = granularity==='day' ? shiftDate(endDate,-29) : granularity==='week' ? shiftDate(analysis,-77) : shiftMonth(endDate,-11);
+  const startDate = p.get('startDate') || (granularity==='day' ? shiftDate(endDate,-29) : granularity==='week' ? shiftDate(analysis,-84) : shiftMonth(endDate,-2));
+  if (![startDate, endDate].every((date) => /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date))) || startDate > endDate) return errorResponse('趋势日期范围无效');
   const daily = await dailyRows(env,'pay_type_daily',{platform,deviceType,startDate,endDate});
   const hasModels = ['MODEL','ACTUAL_MODEL'].includes(attributionType);
-  const byDate = new Map(daily.filter((r)=>!hasModels || r.metric_version==='ads_v1').map((r)=>[asText(r.period),r]));
+  const byDate = new Map(daily.filter((r)=>!hasModels || isAttributedPayRow(r)).map((r)=>[asText(r.period),r]));
+  // Canonical revenue history may predate model attribution coverage. Missing model
+  // facts must stay unavailable instead of becoming invented zero-cost observations.
+  if (hasModels) {
+    const available = await queryRows(env, `SELECT DISTINCT period FROM pollo_da_fact_rows WHERE dataset='pay_type' AND platform=? AND attribution_type=? AND period>=? AND period<=?${deviceType ? ' AND device_type=?' : ''}`, platform, attributionType, startDate, endDate, ...(deviceType ? [deviceType] : []));
+    const dates = new Set(available.map(row=>asText(row.period)));
+    for (const date of byDate.keys()) if (!dates.has(date)) byDate.delete(date);
+  }
   const groupBy = p.get('groupBy') || (attributionType==='NONE' ? 'payType' : 'attributionName');
   if (!['payType','attributionName','actualSupplier','actualProvider'].includes(groupBy) || (attributionType==='NONE' && groupBy!=='payType') || (attributionType!=='ACTUAL_MODEL' && ['actualSupplier','actualProvider'].includes(groupBy))) return errorResponse('趋势维度无效');
   const entities = new Map<string,Map<string,number>>();
+  const entityCosts = new Map<string,Map<string,number>>();
   const buckets = new Map<string,PaymentTrendResponse['points'][number]>();
   const bucketKey = (period:string) => granularity==='day' ? period : granularity==='month' ? monthStart(period) : shiftDate(period,-((new Date(period+'T00:00:00Z').getUTCDay()+1)%7));
   for(let date=startDate;date<=endDate;date=shiftDate(date,1)) {
@@ -1079,16 +1267,16 @@ async function paymentTrend(env: Env, request: Request) {
   }
   for(const [date,row] of byDate) {
     const point=buckets.get(bucketKey(date))!;
-    const source=row.metric_version==='ads_v1' ? 'ads_v1' : 'legacy';
+    const source=isAttributedPayRow(row) ? 'ads_v1' : 'legacy';
     point.days++;point.gmvUsd=0;
     point.source=point.source && point.source!==source ? 'mixed' : source;
     if(hasModels)point.modelCostUsd=0;
   }
   for(const legacy of [false,true]) {
-    const dates=[...byDate].filter(([,r])=>(r.metric_version!=='ads_v1')===legacy).map(([d])=>d);
+    const dates=[...byDate].filter(([,r])=>(!isAttributedPayRow(r))===legacy).map(([d])=>d);
     if(!dates.length)continue;
     const scope={dates,platform,deviceType,attributionType,legacy};
-    const revenueQuery=paymentAnalysisSql(scope,'revenue'),costQuery=paymentAnalysisSql(scope,'cost',true);
+    const revenueQuery=paymentAnalysisSql(scope,'revenue'),costQuery=paymentAnalysisSql(scope,'cost');
     const [revenues,costs]=await Promise.all([queryRows(env,revenueQuery.sql,...revenueQuery.binds),hasModels ? queryRows(env,costQuery.sql,...costQuery.binds) : Promise.resolve([])]);
     for(const r of revenues)if(income==='ALL' || r.pay_category===income){
       const bucket=bucketKey(asText(r.period)), point=buckets.get(bucket)!;
@@ -1096,9 +1284,15 @@ async function paymentTrend(env: Env, request: Request) {
       const key=asText(r[groupBy==='payType'?'pay_type':groupBy==='actualSupplier'?'actual_supplier':groupBy==='actualProvider'?'actual_provider':'attribution_name']) || (groupBy==='actualSupplier'?'unknown_supplier':groupBy==='actualProvider'?'unknown_provider':'未归因');
       if(!entities.has(key))entities.set(key,new Map());const values=entities.get(key)!;values.set(bucket,(values.get(bucket)||0)+value);
     }
-    for(const r of costs){const point=buckets.get(bucketKey(asText(r.period)))!;point.modelCostUsd=(point.modelCostUsd || 0)+asNumber(r.model_cost_usd);}
+    for(const r of costs){
+      const bucket=bucketKey(asText(r.period)),point=buckets.get(bucket)!;
+      const value=asNumber(r.model_cost_usd);point.modelCostUsd=(point.modelCostUsd || 0)+value;
+      const key=asText(r[groupBy==='actualSupplier'?'actual_supplier':groupBy==='actualProvider'?'actual_provider':'attribution_name']) || (groupBy==='actualSupplier'?'unknown_supplier':groupBy==='actualProvider'?'unknown_provider':'未归因');
+      if(!entityCosts.has(key))entityCosts.set(key,new Map());const values=entityCosts.get(key)!;values.set(bucket,(values.get(bucket)||0)+value);
+    }
   }
-  const series=[...entities].sort((a,b)=>sum([...b[1].values()])-sum([...a[1].values()])).map(([key,values])=>({key,label:key,points:[...buckets.values()].map(bucket=>({period:bucket.period,gmvUsd:bucket.days ? values.get(bucket.period)||0 : null}))}));
+  const keys=[...new Set([...entities.keys(),...entityCosts.keys()])];
+  const series=keys.sort((a,b)=>sum([...(entities.get(b)?.values()??[])])-sum([...(entities.get(a)?.values()??[])])).map(key=>({key,label:key,points:[...buckets.values()].map(bucket=>({period:bucket.period,gmvUsd:bucket.days ? entities.get(key)?.get(bucket.period)||0 : null,modelCostUsd:bucket.days&&hasModels ? entityCosts.get(key)?.get(bucket.period)||0 : null}))}));
   return json({granularity,startDate,endDate,points:[...buckets.values()],series} satisfies PaymentTrendResponse);
 }
 
@@ -1119,7 +1313,7 @@ async function paymentAnalysis(env: Env, request: Request) {
     .filter((row) => [baseline,analysis].includes(asText(row.week_start)));
   const hasBothWeeks = [baseline, analysis].every((week) => canonical.some((row) => asText(row.week_start) === week));
   const comparison = hasBothWeeks ? buildComparison(alignComparisonWeekdays(canonical, baseline, analysis), startDate, endDate, baseline, analysis) : null;
-  const legacy = canonical.some((row) => row.metric_version !== 'ads_v1');
+  const legacy = canonical.some((row) => !isAttributedPayRow(row));
   const availableAttributionTypes: GmvAttributionType[] = legacy ? ['NONE','CREATION_MODE'] : [...GMV_ATTRIBUTION_TYPES];
   const dates = [...new Set(canonical.map((row) => asText(row.period)))];
   const costAvailable = !legacy && dates.length > 0 && ['MODEL','ACTUAL_MODEL'].includes(attributionType);
@@ -1146,7 +1340,430 @@ async function paymentAnalysis(env: Env, request: Request) {
     costs: costs.map((row) => ({ ...identity(row), modelCostUsd: asNumber(row.model_cost_usd) })),
     costAvailable,
   };
+  if (attributionType === 'NONE' && !legacy && dates.length) {
+    const filters = ['period IN (SELECT value FROM json_each(?))'];
+    const binds: unknown[] = [JSON.stringify(dates)];
+    if (platform !== 'all') { filters.push('platform=?'); binds.push(platform); }
+    if (deviceType) { filters.push('device_type=?'); binds.push(deviceType); }
+    try {
+      const rows = await queryRows(env, `SELECT period,week_start,pay_type,user_lifecycle,reg_country,SUM(gmv_usd) AS gmv_usd FROM pollo_da_payment_registration WHERE ${filters.join(' AND ')} GROUP BY period,week_start,pay_type,user_lifecycle,reg_country`, ...binds);
+      // Verify every date, including zero/missing groups, against payment results.
+      // Never rescale registration slices or substitute funnel revenue for orders.
+      const parent = new Map<string, number>();
+      const children = new Map<string, number>();
+      for (const row of response.revenues) {
+        const key = `${row.period}|${row.payType}`;
+        parent.set(key, (parent.get(key) ?? 0) + row.gmvUsd);
+      }
+      for (const row of rows) {
+        const key = `${asText(row.period)}|${asText(row.pay_type)}`;
+        children.set(key, (children.get(key) ?? 0) + asNumber(row.gmv_usd));
+      }
+      const verifiedPayTypes = [...new Set(response.revenues.map(row => row.payType))].filter(type =>
+        rows.some(row => asText(row.pay_type) === type) && dates.every(date => Math.abs((parent.get(`${date}|${type}`) ?? 0) - (children.get(`${date}|${type}`) ?? 0)) < .005));
+      response.registration = {
+        verifiedPayTypes,
+        rows: rows.filter(row => verifiedPayTypes.includes(asText(row.pay_type))).map(row => ({period:asText(row.period),weekStart:asText(row.week_start),payType:asText(row.pay_type),userLifecycle:asText(row.user_lifecycle),regCountry:asText(row.reg_country),gmvUsd:asNumber(row.gmv_usd)})),
+      };
+    } catch (error) {
+      if (!String(error).includes('no such table: pollo_da_payment_registration')) throw error;
+    }
+  }
   return json(response);
+}
+
+type ChainFunnelRawMetrics = {
+  activeUv: number;
+  exposeUv: number;
+  submitUv: number;
+  payUv: number;
+  gmvUsd: number;
+  failOrders: number;
+  failAmountUsd: number;
+};
+
+function chainFunnelMetric(rows: D1Row[], days: number, breakdown = false) {
+  const raw: ChainFunnelRawMetrics = {
+    activeUv: sum(rows.map((row) => breakdown ? 0 : asNumber(row.active_uv))),
+    exposeUv: sum(rows.map((row) => asNumber(row[breakdown ? 'expose_uv' : 'paywall_expose_uv']))),
+    submitUv: sum(rows.map((row) => asNumber(row[breakdown ? 'submit_uv' : 'paywall_submit_uv']))),
+    payUv: sum(rows.map((row) => asNumber(row[breakdown ? 'pay_uv' : 'pay_uv']))),
+    gmvUsd: sum(rows.map((row) => asNumber(row.gmv_usd))),
+    failOrders: sum(rows.map((row) => breakdown ? 0 : asNumber(row.pay_fail_order_cnt))),
+    failAmountUsd: sum(rows.map((row) => breakdown ? 0 : asNumber(row.pay_fail_amount_usd))),
+  };
+  const divisor = Math.max(days, 1);
+  const activeUv = raw.activeUv / divisor;
+  const exposeUv = raw.exposeUv / divisor;
+  const submitUv = raw.submitUv / divisor;
+  const payUv = raw.payUv / divisor;
+  const gmvUsd = raw.gmvUsd / divisor;
+  return {
+    activeUv,
+    exposeUv,
+    submitUv,
+    payUv,
+    gmvUsd,
+    failOrders: raw.failOrders / divisor,
+    failAmountUsd: raw.failAmountUsd / divisor,
+    exposeRate: activeUv ? exposeUv / activeUv : 0,
+    submitRate: exposeUv ? submitUv / exposeUv : 0,
+    payRate: submitUv ? payUv / submitUv : 0,
+    aov: payUv ? gmvUsd / payUv : 0,
+  };
+}
+
+function chainFunnelGroup(
+  key: string,
+  label: string,
+  currentRows: D1Row[],
+  baselineRows: D1Row[],
+  currentDays: number,
+  baselineDays: number,
+  totalDelta: number,
+  breakdown = false,
+) {
+  const current = chainFunnelMetric(currentRows, currentDays, breakdown);
+  const baseline = chainFunnelMetric(baselineRows, baselineDays, breakdown);
+  const gmvChange = current.gmvUsd - baseline.gmvUsd;
+  return {
+    key,
+    label,
+    current,
+    baseline,
+    gmvChange,
+    gmvContribution: totalDelta ? gmvChange / totalDelta : null,
+  };
+}
+
+async function chainFunnel(env: Env, request: Request) {
+  const url = new URL(request.url);
+  const platform = url.searchParams.get('platform') || 'web';
+  const deviceType = url.searchParams.get('deviceType') || undefined;
+  const startDate = url.searchParams.get('startDate') || '';
+  const endDate = url.searchParams.get('endDate') || '';
+  const baselinePeriod = url.searchParams.get('baselinePeriod') || '';
+  const analysisPeriod = url.searchParams.get('analysisPeriod') || '';
+  const creationTier = url.searchParams.get('creationTier') || undefined;
+  const userLifecycle = url.searchParams.get('userLifecycle') || undefined;
+  if (!DASHBOARD_PLATFORMS.has(platform)) return errorResponse('platform 必须是 all / web / app 之一');
+  if (![startDate, endDate, baselinePeriod, analysisPeriod].every((value) => /^\d{4}-\d{2}-\d{2}$/u.test(value))) {
+    return errorResponse('支付链路比较窗口无效');
+  }
+  if (baselinePeriod === analysisPeriod) return errorResponse('请选择两个不同的业务周');
+  const unavailable = () => json({ ready: false, source: 'unavailable', comparison: null, totals: null, drivers: [], tiers: [], lifecycles: [], countries: [], breakdowns: { EXPOSE_TYPE: [], EXPOSE_REASON: [], SUBMIT_CHANNEL: [], PAYMENT_CHANNEL: [] } });
+  try {
+    const conditions = ['period BETWEEN ? AND ?', 'week_start IN (?, ?)'];
+    const binds: unknown[] = [startDate, endDate, baselinePeriod, analysisPeriod];
+    if (platform !== 'all') { conditions.push('platform = ?'); binds.push(platform); }
+    if (deviceType) { conditions.push('device_type = ?'); binds.push(deviceType); }
+    const calendar = matchedComparisonCalendar(await queryRows(env, `SELECT DISTINCT period, week_start FROM pollo_da_chain_funnel WHERE ${conditions.join(' AND ')}`, ...binds), baselinePeriod, analysisPeriod);
+    if (creationTier && creationTier !== 'all') { conditions.push('creation_cnt_30d_label = ?'); binds.push(creationTier); }
+    if (userLifecycle && userLifecycle !== 'all') { conditions.push("COALESCE(NULLIF(TRIM(user_lifecycle), ''), '未知') = ?"); binds.push(userLifecycle); }
+    const where = conditions.join(' AND ');
+    const [rawFunnelRows, rawBreakdownRows] = await Promise.all([
+      queryRows(env, `
+        SELECT
+          period,
+          week_start,
+          platform,
+          device_type,
+          country_tier,
+          user_lifecycle,
+          creation_cnt_30d_label,
+          SUM(active_uv) AS active_uv,
+          SUM(paywall_expose_uv) AS paywall_expose_uv,
+          SUM(paywall_submit_uv) AS paywall_submit_uv,
+          SUM(pay_uv) AS pay_uv,
+          SUM(gmv_usd) AS gmv_usd,
+          SUM(pay_fail_order_cnt) AS pay_fail_order_cnt,
+          SUM(pay_fail_amount_usd) AS pay_fail_amount_usd
+        FROM pollo_da_chain_funnel
+        WHERE ${where}
+        GROUP BY period, week_start, platform, device_type, country_tier, user_lifecycle, creation_cnt_30d_label
+        ORDER BY period
+      `, ...binds),
+      queryRows(env, `
+        SELECT
+          period,
+          week_start,
+          breakdown_type,
+          COALESCE(breakdown_value, '未知') AS breakdown_value,
+          SUM(expose_uv) AS expose_uv,
+          SUM(submit_uv) AS submit_uv,
+          SUM(pay_uv) AS pay_uv,
+          SUM(gmv_usd) AS gmv_usd
+        FROM pollo_da_chain_breakdown
+        WHERE ${where}
+        GROUP BY period, week_start, breakdown_type, COALESCE(breakdown_value, '未知')
+      `, ...binds),
+    ]);
+    const funnelRows = rowsOnCalendar(rawFunnelRows, calendar);
+    const breakdownRows = rowsOnCalendar(rawBreakdownRows, calendar);
+    if (!funnelRows.length) return unavailable();
+    const currentRows = funnelRows.filter((row) => asText(row.week_start) === analysisPeriod);
+    const baselineRows = funnelRows.filter((row) => asText(row.week_start) === baselinePeriod);
+    const dayCounts = weekDayCounts(calendar);
+    const currentDays = dayCounts.get(analysisPeriod) || WEEK_DAYS;
+    const baselineDays = dayCounts.get(baselinePeriod) || WEEK_DAYS;
+    const total = chainFunnelGroup('all', '全部链路', currentRows, baselineRows, currentDays, baselineDays, 0);
+    const totalDelta = total.gmvChange;
+    const driverDefinitions = [
+      ['activeUv', 'DAU'],
+      ['exposeRate', '付费墙曝光率'],
+      ['submitRate', '付费墙提交率'],
+      ['payRate', '提交支付率'],
+      ['aov', '客单价'],
+    ] as const;
+    const previousFactors = {
+      activeUv: total.baseline.activeUv,
+      subExposeRate: total.baseline.exposeRate,
+      subSubmitRate: total.baseline.submitRate,
+      chainPaySuccessRate: total.baseline.payRate,
+      chainArppu: total.baseline.aov,
+    };
+    const currentFactors = {
+      activeUv: total.current.activeUv,
+      subExposeRate: total.current.exposeRate,
+      subSubmitRate: total.current.submitRate,
+      chainPaySuccessRate: total.current.payRate,
+      chainArppu: total.current.aov,
+    };
+    const lmdiEffects = chainDriverEffects(previousFactors, currentFactors);
+    const drivers = driverDefinitions.map(([metricKey, metric]) => {
+      const factorKey = metricKey === 'exposeRate' ? 'subExposeRate' : metricKey === 'submitRate' ? 'subSubmitRate' : metricKey === 'payRate' ? 'chainPaySuccessRate' : metricKey === 'aov' ? 'chainArppu' : 'activeUv';
+      const current = total.current[metricKey];
+      const baseline = total.baseline[metricKey];
+      const change = current - baseline;
+      const contribution = totalDelta ? lmdiEffects[factorKey] / totalDelta : null;
+      return { metricKey, metric, current, baseline, change, wowChange: baseline ? change / baseline : null, contribution };
+    });
+    const group = (field: string, rows = funnelRows) => {
+      const keys = [...new Set(rows.map((row) => asText(row[field]) || '未知'))];
+      return keys.map((key) => chainFunnelGroup(
+        key,
+        key,
+        rows.filter((row) => (asText(row[field]) || '未知') === key && asText(row.week_start) === analysisPeriod),
+        rows.filter((row) => (asText(row[field]) || '未知') === key && asText(row.week_start) === baselinePeriod),
+        currentDays,
+        baselineDays,
+        totalDelta,
+      )).sort((a, b) => b.gmvChange - a.gmvChange);
+    };
+    const breakdownTypes = ['EXPOSE_TYPE', 'EXPOSE_REASON', 'SUBMIT_CHANNEL', 'PAYMENT_CHANNEL'] as const;
+    const breakdowns = Object.fromEntries(breakdownTypes.map((type) => {
+      const rows = breakdownRows.filter((row) => asText(row.breakdown_type) === type);
+      const keys = [...new Set(rows.map((row) => asText(row.breakdown_value) || '未知'))];
+      return [type, keys.map((key) => chainFunnelGroup(
+        key,
+        key,
+        rows.filter((row) => (asText(row.breakdown_value) || '未知') === key && asText(row.week_start) === analysisPeriod),
+        rows.filter((row) => (asText(row.breakdown_value) || '未知') === key && asText(row.week_start) === baselinePeriod),
+        currentDays,
+        baselineDays,
+        totalDelta,
+        true,
+      )).sort((a, b) => b.current.gmvUsd - a.current.gmvUsd)];
+    }));
+    return json({
+      ready: true,
+      source: 'pollo_da_chain_funnel',
+      comparison: { baselinePeriod, analysisPeriod, periodDays: currentDays, baselinePeriodDays: baselineDays, analysisPeriodDays: currentDays },
+      comparisonDates: { analysis: [...new Set(calendar.filter(row=>asText(row.week_start)===analysisPeriod).map(row=>asText(row.period)))].sort(), baseline: [...new Set(calendar.filter(row=>asText(row.week_start)===baselinePeriod).map(row=>asText(row.period)))].sort() },
+      totals: total,
+      drivers,
+      tiers: group('creation_cnt_30d_label'),
+      lifecycles: group('user_lifecycle'),
+      countries: group('country_tier'),
+      breakdowns,
+    });
+  } catch {
+    return unavailable();
+  }
+}
+
+const ADS_HORIZONS = ['D0', 'D14', 'D30', 'D60', 'D90', 'D180'] as const;
+
+function adsAggregate(rows: D1Row[], observedThrough?: string): AdsAggregate {
+  const costUsd = sum(rows.map((row) => asNumber(row.cost_usd)));
+  const impressions = sum(rows.map((row) => asNumber(row.impressions)));
+  const clicks = sum(rows.map((row) => asNumber(row.clicks)));
+  const registerUsers = sum(rows.map((row) => asNumber(row.register_user_cnt)));
+  const gmvD0 = sum(rows.map((row) => asNumber(row.gmv_d0)));
+  const gmvD14 = sum(rows.map((row) => asNumber(row.gmv_d14)));
+  const gmvD30 = sum(rows.map((row) => asNumber(row.gmv_d30)));
+  const gmvD60 = sum(rows.map((row) => asNumber(row.gmv_d60)));
+  const gmvD90 = sum(rows.map((row) => asNumber(row.gmv_d90)));
+  const gmvD180 = sum(rows.map((row) => asNumber(row.gmv_d180)));
+  return {
+    costUsd, impressions, clicks, registerUsers, gmvD0, gmvD7: null, gmvD14, gmvD30, gmvD60, gmvD90, gmvD180,
+    ctr: impressions ? clicks / impressions : 0,
+    cpc: clicks ? costUsd / clicks : 0,
+    cpm: impressions ? costUsd / impressions * 1000 : 0,
+    roasD30: costUsd ? gmvD30 / costUsd : 0,
+    roasByHorizon: Object.fromEntries([0,7,30].map(horizon => {
+      const field = `gmv_d${horizon}`;
+      const available = rows.length > 0 && observedThrough && rows.every(row => (Date.parse(observedThrough) - Date.parse(asText(row.period))) / 86400000 >= horizon && row[field] != null);
+      return [`D${horizon}`, available && costUsd > 0 ? sum(rows.map(row => asNumber(row[field]))) / costUsd : null];
+    })) as AdsAggregate['roasByHorizon'],
+  };
+}
+
+function adsDailyPoint(period: string, rows: D1Row[], observedThrough: string) {
+  const aggregate = adsAggregate(rows, observedThrough);
+  return {
+    period,
+    costUsd: aggregate.costUsd,
+    impressions: aggregate.impressions,
+    clicks: aggregate.clicks,
+    registerUsers: aggregate.registerUsers,
+    gmvD30: aggregate.gmvD30,
+    gmvD0: aggregate.gmvD0,
+    gmvD7: aggregate.gmvD7,
+    roasByHorizon: aggregate.roasByHorizon,
+  };
+}
+
+async function adsOverview(env: Env, request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const platform = url.searchParams.get('platform') || 'web';
+  const startDate = url.searchParams.get('startDate') || '';
+  const endDate = url.searchParams.get('endDate') || '';
+  const baselinePeriod = url.searchParams.get('baselinePeriod') || '';
+  const analysisPeriod = url.searchParams.get('analysisPeriod') || '';
+  const unavailable = (): AdsOverviewResponse => ({ ready: false, source: 'unavailable', comparison: null, totals: null, trend: [], channels: [], countries: [], cohortMatrix: [] });
+  if (!DASHBOARD_PLATFORMS.has(platform) || ![startDate, endDate, baselinePeriod, analysisPeriod].every((value) => /^\d{4}-\d{2}-\d{2}$/u.test(value))) return errorResponse('广告侧比较窗口无效');
+  if (baselinePeriod === analysisPeriod) return errorResponse('请选择两个不同的广告比较周');
+  try {
+    const conditions = ['period BETWEEN ? AND ?'];
+    const binds: unknown[] = [startDate, endDate];
+    if (platform !== 'all') { conditions.push('LOWER(platform) = ?'); binds.push(platform); }
+    const rows = await queryRows(env, `SELECT period, week_start, channel, country, platform, SUM(cost_usd) AS cost_usd, SUM(impressions) AS impressions, SUM(clicks) AS clicks, SUM(register_user_cnt) AS register_user_cnt, CASE WHEN COUNT(gmv_d0) = COUNT(*) THEN SUM(gmv_d0) ELSE NULL END AS gmv_d0, CASE WHEN COUNT(gmv_d14) = COUNT(*) THEN SUM(gmv_d14) ELSE NULL END AS gmv_d14, CASE WHEN COUNT(gmv_d30) = COUNT(*) THEN SUM(gmv_d30) ELSE NULL END AS gmv_d30, CASE WHEN COUNT(gmv_d60) = COUNT(*) THEN SUM(gmv_d60) ELSE NULL END AS gmv_d60, CASE WHEN COUNT(gmv_d90) = COUNT(*) THEN SUM(gmv_d90) ELSE NULL END AS gmv_d90, CASE WHEN COUNT(gmv_d180) = COUNT(*) THEN SUM(gmv_d180) ELSE NULL END AS gmv_d180 FROM pollo_da_ads_daily WHERE ${conditions.join(' AND ')} GROUP BY period, week_start, channel, country, platform ORDER BY period`, ...binds);
+    if (!rows.length) return json(unavailable());
+    const watermark = await queryRows(env, `SELECT MAX(period) AS observed_through FROM pollo_da_ads_daily${platform !== 'all' ? ' WHERE LOWER(platform) = ?' : ''}`, ...(platform !== 'all' ? [platform] : []));
+    const asOf = asText(watermark[0]?.observed_through);
+    const comparisonRows = matchedComparisonCalendar(rows.filter(row => [analysisPeriod,baselinePeriod].includes(asText(row.week_start))), baselinePeriod, analysisPeriod);
+    const currentRows = comparisonRows.filter((row) => asText(row.week_start) === analysisPeriod);
+    const baselineRows = comparisonRows.filter((row) => asText(row.week_start) === baselinePeriod);
+    if (!currentRows.length || !baselineRows.length) return json(unavailable());
+    const dayCounts = weekDayCounts(comparisonRows);
+    const currentDays = dayCounts.get(analysisPeriod) || WEEK_DAYS;
+    const baselineDays = dayCounts.get(baselinePeriod) || WEEK_DAYS;
+    const aggregateBy = (field: string) => {
+      const keys = [...new Set(rows.map((row) => asText(row[field]) || '未知'))];
+      return keys.map((key) => {
+        const current = currentRows.filter((row) => (asText(row[field]) || '未知') === key);
+        const baseline = baselineRows.filter((row) => (asText(row[field]) || '未知') === key);
+        return { key, label: key, current: adsAggregate(current, asOf), baseline: adsAggregate(baseline, asOf) };
+      }).filter((row) => [row.current, row.baseline].some(value => value.costUsd || value.gmvD30 || value.clicks || value.impressions || value.registerUsers))
+        .sort((a, b) => b.current.gmvD30 - a.current.gmvD30);
+    };
+    const countries = aggregateBy('country');
+    const channels = aggregateBy('channel');
+    const periodKeys = [...new Set(rows.map((row) => asText(row.period)))].sort();
+    const trend = periodKeys.map((period) => adsDailyPoint(period, rows.filter((row) => asText(row.period) === period), asOf));
+    const matrixRows = periodKeys.slice().reverse().map((period) => {
+      const cohortRows = rows.filter((row) => asText(row.period) === period);
+      const cohort = adsAggregate(cohortRows);
+      const age = Math.floor((Date.parse(asOf) - Date.parse(period)) / 86400000);
+      const values = ADS_HORIZONS.map((horizon) => {
+        const field = `gmv_${horizon.toLowerCase()}`;
+        const gmvUsd = sum(cohortRows.map(row => asNumber(row[field])));
+        const available = age >= Number(horizon.slice(1)) && cohortRows.every(row => row[field] != null);
+        return { horizon, value: available && cohort.registerUsers > 0 ? gmvUsd / cohort.registerUsers : null, gmvUsd, costUsd: cohort.costUsd, registerUsers: cohort.registerUsers };
+      });
+      return { key: period, label: period, values };
+    });
+    const countryDetails = countries.map(country => {
+      const countryRows = rows.filter(row => (asText(row.country) || '未知') === country.key);
+      return { key: country.key, channels: [...new Set(countryRows.map(row => asText(row.channel)))].map(key => {
+        const channelRows = countryRows.filter(row => asText(row.channel) === key);
+        return { key, label: key, current: adsAggregate(rowsOnCalendar(channelRows, currentRows), asOf), baseline: adsAggregate(rowsOnCalendar(channelRows, baselineRows), asOf), trend: periodKeys.map(period => adsDailyPoint(period, channelRows.filter(row => asText(row.period) === period), asOf)) };
+      }) };
+    });
+    return json({
+      ready: true,
+      source: 'pollo_da_ads_daily',
+      comparison: { baselinePeriod, analysisPeriod, periodDays: currentDays, baselinePeriodDays: baselineDays, analysisPeriodDays: currentDays },
+      totals: { current: adsAggregate(currentRows, asOf), baseline: adsAggregate(baselineRows, asOf) },
+      trend, channels, countries, cohortMatrix: matrixRows, countryDetails, observedThrough: asOf, comparisonDates: {analysis: [...new Set(currentRows.map(row=>asText(row.period)))], baseline: [...new Set(baselineRows.map(row=>asText(row.period)))]},
+    } satisfies AdsOverviewResponse);
+  } catch {
+    return json(unavailable());
+  }
+}
+
+function creativeChainPoint(period: string, rows: D1Row[]): CreativeChainTrendPoint {
+  return {
+    period,
+    validCreationTaskCnt: rows.length && rows.every(row => row.valid_creation_task_cnt != null) ? sum(rows.map(row => asNumber(row.valid_creation_task_cnt))) : null,
+    creationTaskCnt: sum(rows.map((row) => asNumber(row.creation_task_cnt))),
+    creationUserCnt: sum(rows.map((row) => asNumber(row.creation_user_cnt))),
+    successTaskCnt: sum(rows.map((row) => asNumber(row.success_task_cnt))),
+    successOutputCnt: sum(rows.map((row) => asNumber(row.success_output_cnt))),
+    adoptedTaskCnt: sum(rows.map((row) => asNumber(row.adopted_task_cnt))),
+    adoptedOutputCnt: sum(rows.map((row) => asNumber(row.adopted_output_cnt))),
+    d3CreationUserCnt: rows.length && rows.every(row => row.d3_creation_user_cnt != null) ? sum(rows.map((row) => asNumber(row.d3_creation_user_cnt))) : null,
+    d7CreationUserCnt: rows.length && rows.every(row => row.d7_creation_user_cnt != null) ? sum(rows.map((row) => asNumber(row.d7_creation_user_cnt))) : null,
+    d30CreationUserCnt: rows.length && rows.every(row => row.d30_creation_user_cnt != null) ? sum(rows.map((row) => asNumber(row.d30_creation_user_cnt))) : null,
+    gmvUsd: sum(rows.map((row) => asNumber(row.gmv_usd))),
+  };
+}
+
+async function creativeOverview(env: Env, request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const platform = url.searchParams.get('platform') || 'web';
+  const startDate = url.searchParams.get('startDate') || '';
+  const endDate = url.searchParams.get('endDate') || '';
+  const baselinePeriod = url.searchParams.get('baselinePeriod') || '';
+  const analysisPeriod = url.searchParams.get('analysisPeriod') || '';
+  const unavailable = (): CreativeOverviewResponse => ({ ready: false, source: 'unavailable', comparison: null, trend: [], functions: [] });
+  if (!DASHBOARD_PLATFORMS.has(platform) || ![startDate, endDate, baselinePeriod, analysisPeriod].every((value) => /^\d{4}-\d{2}-\d{2}$/u.test(value))) return errorResponse('创作侧比较窗口无效');
+  try {
+    const platformCondition = platform === 'all' ? " AND platform_type = '汇总'" : platform === 'web' ? ' AND platform_type = ?' : " AND platform_type IN ('IOS', 'ANDROID')";
+    const platformBind = platform === 'web' ? ['WEB'] : [];
+    const validTaskColumns = await Promise.all(['overall', 'function'].map(kind => queryRows(env, `PRAGMA table_info(pollo_da_creation_${kind}_daily)`)));
+    const validTasksSql = (index: number) => validTaskColumns[index].some(row => row.name === 'valid_creation_task_cnt') ? 'CASE WHEN COUNT(valid_creation_task_cnt) = COUNT(*) THEN SUM(valid_creation_task_cnt) ELSE NULL END' : 'NULL';
+    const overallRows = await queryRows(env, `SELECT period, week_start, platform_type, SUM(creation_task_cnt) AS creation_task_cnt, SUM(creation_user_cnt) AS creation_user_cnt, SUM(success_task_cnt) AS success_task_cnt, SUM(success_output_cnt) AS success_output_cnt, SUM(adopted_task_cnt) AS adopted_task_cnt, SUM(adopted_output_cnt) AS adopted_output_cnt, CASE WHEN COUNT(d3_creation_user_cnt) = COUNT(*) THEN SUM(d3_creation_user_cnt) ELSE NULL END AS d3_creation_user_cnt, CASE WHEN COUNT(d7_creation_user_cnt) = COUNT(*) THEN SUM(d7_creation_user_cnt) ELSE NULL END AS d7_creation_user_cnt, CASE WHEN COUNT(d30_creation_user_cnt) = COUNT(*) THEN SUM(d30_creation_user_cnt) ELSE NULL END AS d30_creation_user_cnt, ${validTasksSql(0)} AS valid_creation_task_cnt, SUM(gmv_usd) AS gmv_usd FROM pollo_da_creation_overall_daily WHERE period BETWEEN ? AND ?${platformCondition} GROUP BY period, week_start, platform_type ORDER BY period`, startDate, endDate, ...platformBind);
+    if (!overallRows.length) return json(unavailable());
+    const watermark = await queryRows(env, `SELECT MAX(period) AS observed_through FROM pollo_da_creation_overall_daily WHERE 1=1${platformCondition}`, ...platformBind);
+    const observedThrough = asText(watermark[0]?.observed_through);
+    const comparisonRows = matchedComparisonCalendar(overallRows.filter(row => [analysisPeriod,baselinePeriod].includes(asText(row.week_start))), baselinePeriod, analysisPeriod);
+    const currentRows = comparisonRows.filter((row) => asText(row.week_start) === analysisPeriod);
+    const baselineRows = comparisonRows.filter((row) => asText(row.week_start) === baselinePeriod);
+    if (!currentRows.length || !baselineRows.length) return json(unavailable());
+    const dayCounts = weekDayCounts(comparisonRows);
+    const currentDays = dayCounts.get(analysisPeriod) || WEEK_DAYS;
+    const baselineDays = dayCounts.get(baselinePeriod) || WEEK_DAYS;
+    const periodKeys = [...new Set(overallRows.map((row) => asText(row.period)))].sort();
+    const activityRows = await dailyRows(env, 'creative_daily', { platform, startDate, endDate });
+    const trend = periodKeys.map((period) => {
+      const point = creativeChainPoint(period, overallRows.filter(row => asText(row.period) === period));
+      const activity = activityRows.filter(row => asText(row.period) === period);
+      // Active UV has no replacement in the creation middle table. Creator
+      // and task counts do, and must follow that table's current definition.
+      if (activity.length) point.activity = { activeUv: sum(activity.map(row => asNumber(row.active_uv))), creationUv: point.creationUserCnt, creationTaskCnt: point.creationTaskCnt };
+      return point;
+    });
+    const functionRows = await queryRows(env, `SELECT period, week_start, platform_type, creation_mode, user_type, pay_gmv_usd_30d, SUM(creation_task_cnt) AS creation_task_cnt, SUM(creation_user_cnt) AS creation_user_cnt, SUM(success_task_cnt) AS success_task_cnt, SUM(success_output_cnt) AS success_output_cnt, SUM(adopted_task_cnt) AS adopted_task_cnt, SUM(adopted_output_cnt) AS adopted_output_cnt, CASE WHEN COUNT(d3_creation_user_cnt) = COUNT(*) THEN SUM(d3_creation_user_cnt) ELSE NULL END AS d3_creation_user_cnt, CASE WHEN COUNT(d7_creation_user_cnt) = COUNT(*) THEN SUM(d7_creation_user_cnt) ELSE NULL END AS d7_creation_user_cnt, CASE WHEN COUNT(d30_creation_user_cnt) = COUNT(*) THEN SUM(d30_creation_user_cnt) ELSE NULL END AS d30_creation_user_cnt, ${validTasksSql(1)} AS valid_creation_task_cnt, SUM(gmv_usd) AS gmv_usd FROM pollo_da_creation_function_daily WHERE period BETWEEN ? AND ?${platformCondition} GROUP BY period, week_start, platform_type, creation_mode, user_type, pay_gmv_usd_30d ORDER BY period`, startDate, endDate, ...platformBind);
+    const functionGroups = new Map<string, D1Row[]>();
+    for (const row of functionRows) {
+      const key = [asText(row.creation_mode) || '未知功能', asText(row.user_type) || '未知用户', asText(row.pay_gmv_usd_30d) || '未知回收'].join('|');
+      const group = functionGroups.get(key);
+      if (group) group.push(row);
+      else functionGroups.set(key, [row]);
+    }
+    const functions = [...functionGroups].map(([key, group]) => {
+      const [label, userType, payGmv30d] = key.split('|');
+      const current = creativeChainPoint(analysisPeriod, rowsOnCalendar(group,currentRows));
+      const baseline = creativeChainPoint(baselinePeriod, rowsOnCalendar(group,baselineRows));
+      const daily = [...new Set(group.map((row) => asText(row.period)))].sort().map((period) => creativeChainPoint(period, group.filter((row) => asText(row.period) === period)));
+      return { key, label, userType, payGmv30d, current, baseline, daily };
+    }).sort((a, b) => b.current.gmvUsd - a.current.gmvUsd);
+    return json({ ready: true, source: 'pollo_da_creation_chain', comparison: { baselinePeriod, analysisPeriod, periodDays: currentDays, baselinePeriodDays: baselineDays, analysisPeriodDays: currentDays }, trend, functions, observedThrough, comparisonDates: {analysis: [...new Set(currentRows.map(row=>asText(row.period)))], baseline: [...new Set(baselineRows.map(row=>asText(row.period)))]} } satisfies CreativeOverviewResponse);
+  } catch {
+    return json(unavailable());
+  }
 }
 
 async function attributions(env: Env, request: Request) {
@@ -1332,7 +1949,8 @@ async function attributions(env: Env, request: Request) {
     return json({ dimension, valueLabel: '续订GMV', comparison, metricLabels, items: [], sections: [], drivers, drill: { path: 'tier_to_chain', creationTier: 'all', userTag: '全部', chainType: 'renewal', planTier }, trend });
   }
 
-  const rows = await dailyRows(env, 'chain_daily', { platform, startDate, endDate, deviceType });
+  const rows = (await dailyRows(env, 'chain_daily', { platform, startDate, endDate, deviceType }))
+    .filter(row => [baselinePeriod, analysisPeriod].includes(asText(row.week_start)));
   const comparison = buildComparison(rows, startDate, endDate, baselinePeriod, analysisPeriod);
   const days = comparison?.dayCounts || weekDayCounts(rows);
   const periods = [...new Set(rows.map((row) => asText(row.week_start)))].filter((period) => dateInRange(period, startDate, endDate)).sort();
@@ -1519,7 +2137,7 @@ async function syncPlan(env: Env, mode: SyncMode, requestedDatasets?: SyncDatase
         WHEN analysis_level IS NOT NULL
           OR device_type IS NULL
           OR (LOWER(platform) = 'web' AND LOWER(device_type) <> 'web')
-          OR (LOWER(platform) = 'all' AND LOWER(device_type) <> 'all' AND COALESCE(metric_version,'legacy') <> 'ads_v1')
+          OR (LOWER(platform) = 'all' AND LOWER(device_type) <> 'all' AND attribution_type IS NULL)
           OR (LOWER(platform) = 'app' AND LOWER(device_type) NOT IN ('ios', 'android'))
         THEN 1 ELSE 0 END) AS invalid_shape_count
     FROM pollo_da_fact_rows
@@ -1608,6 +2226,7 @@ async function syncPlan(env: Env, mode: SyncMode, requestedDatasets?: SyncDatase
 
 const MAXCOMPUTE_NUMBER_FIELDS = new Set([
   'gmv_usd', 'pay_user_cnt', 'order_equivalent', 'model_cost_usd', 'creation_cnt_30d_level_id', 'active_uv', 'sub_expose_uv',
+  'paywall_expose_uv', 'paywall_submit_uv', 'pay_uv', 'expose_uv', 'submit_uv', 'pay_fail_order_cnt', 'pay_fail_amount_usd',
   'sub_submit_uv', 'chain_pay_uv', 'chain_gmv_usd', 'sub_expose_rate',
   'sub_submit_rate', 'chain_pay_success_rate', 'chain_arppu', 'creation_uv',
   'creation_task_cnt', 'creation_penetration_rate', 'avg_creation_task_cnt_per_creator',
@@ -1627,32 +2246,40 @@ function maxComputeConnection(env: Env) {
 }
 
 async function pullDailyFacts(env: Env, platform: string, dataset: DatasetKind, startDate: string, endDate: string): Promise<D1Row[]> {
-  if (dataset === 'pay_type') {
+  if (dataset === 'pay_type' || dataset === 'chain') {
     if (startDate !== endDate) {
       const rows: D1Row[] = [];
       for (let day = startDate; day <= endDate; day = shiftDate(day, 1)) rows.push(...await pullDailyFacts(env, platform, dataset, day, day));
       return rows;
     }
   }
-  const sql = buildDatasetSql(dataset, { platform, start: startDate, end: endDate, granularity: 'daily' });
+  const sql = dataset === 'chain' ? buildChainFunnelSql(platform, startDate, endDate) : buildDatasetSql(dataset, { platform, start: startDate, end: endDate, granularity: 'daily' });
   const payload = await new MaxComputeClient(maxComputeConnection(env)).executeSql(sql);
   const countIndex = payload.column_names.findIndex(column => column.toLowerCase() === 'source_row_count');
   if (countIndex >= 0 && payload.rows.length && asNumber(payload.rows[0][countIndex]) !== payload.rows.length) throw new Error('MaxCompute 结果被截断，已阻止写入不完整数据，请使用本地 Tunnel 回刷');
-  const rows = payload.rows.map((values) => {
+  const rows = payload.rows.map<D1Row>((values) => {
     const row: D1Row = {};
     payload.column_names.forEach((column, index) => {
       const key = column.toLowerCase();
       const value = values[index];
-      row[key] = value == null ? null : MAXCOMPUTE_NUMBER_FIELDS.has(key) ? asNumber(value) : asText(value);
+      row[key] = value == null ? null : MAXCOMPUTE_NUMBER_FIELDS.has(key) ? Number(value) : asText(value);
     });
     // The query aggregates by the requested scope; stamp that scope explicitly
     // so D1 reads can always select all / web / app without inference.
-    return { ...row, platform, dataset_kind: 'daily' };
+    return { ...row, platform: dataset === 'chain' ? row.platform : platform, dataset_kind: 'daily' };
   });
-  return dataset === 'pay_type' ? rows.filter((row) =>
+  if (dataset !== 'pay_type') return rows;
+  const parents = rows.filter((row) =>
     (['ACTIVE_PAYMENT', 'AUTO_RENEWAL', 'API'].includes(asText(row.pay_category)) && asText(row.pay_type) !== '汇总')
     || (['MODEL', 'ACTUAL_MODEL'].includes(asText(row.attribution_type)) && asText(row.pay_category) === '汇总' && asText(row.pay_type) === '汇总' && asNumber(row.model_cost_usd) !== 0)
-  ) : rows;
+  );
+  const registration = await new MaxComputeClient(maxComputeConnection(env)).executeSql(buildPaymentRegistrationSql(startDate,endDate));
+  const registrationCount = registration.column_names.findIndex(column => column.toLowerCase() === 'source_row_count');
+  if (registrationCount < 0 || (registration.rows.length && Number(registration.rows[0][registrationCount]) !== registration.rows.length)) throw new Error('注册维度结果不完整，已阻止付费同步');
+  const children = registration.rows.map(values => Object.fromEntries(registration.column_names.map((column,i)=>[column.toLowerCase(),values[i]])) as D1Row)
+    .filter(row => platform === 'all' || row.platform === platform)
+    .map(row => ({...row,gmv_usd:Number(row.gmv_usd),source_kind:'registration'}));
+  return [...parents,...children];
 }
 
 type DailySheet = 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily';
@@ -1692,16 +2319,12 @@ function newSyncJob(
 }
 
 async function stageSyncRows(env: Env, runId: string, stepKey: string, rows: D1Row[]) {
+  const chunks = serializeStagingChunks(rows);
   await env.DB!.prepare('DELETE FROM sync_job_staging_chunks WHERE run_id = ? AND step_key = ?')
     .bind(runId, stepKey).run();
-  for (let index = 0; index < rows.length; index += STAGING_CHUNK_SIZE) {
-    const chunk = rows.slice(index, index + STAGING_CHUNK_SIZE);
+  for (const [index, chunk] of chunks.entries()) {
     await env.DB!.prepare('INSERT INTO sync_job_staging_chunks (run_id, step_key, chunk_index, payload, row_count, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(runId, stepKey, index / STAGING_CHUNK_SIZE, JSON.stringify(chunk), chunk.length, Date.now()).run();
-  }
-  if (rows.length === 0) {
-    await env.DB!.prepare('INSERT INTO sync_job_staging_chunks (run_id, step_key, chunk_index, payload, row_count, created_at) VALUES (?, ?, 0, ?, 0, ?)')
-      .bind(runId, stepKey, '[]', Date.now()).run();
+      .bind(runId, stepKey, index, chunk.payload, chunk.rowCount, Date.now()).run();
   }
 }
 
@@ -2024,6 +2647,95 @@ async function scheduledAdsSync(env: Env): Promise<Response> {
   return json({ ok: true, task: 'daily-ads', dates: [...dates], rowsSynced });
 }
 
+const CREATION_METRICS = [
+  'creation_task_cnt', 'creation_user_cnt', 'success_task_cnt', 'success_output_cnt',
+  'adopted_task_cnt', 'adopted_output_cnt', 'd3_creation_user_cnt',
+  'd7_creation_user_cnt', 'd30_creation_user_cnt', 'gmv_usd', 'valid_creation_task_cnt',
+] as const;
+
+async function syncCreationChainDate(env: Env, date: string): Promise<{ overall: number; function: number }> {
+  if (!env.DB?.batch) throw new Error('创作链路同步需要 D1 批量事务');
+  const tables: Record<CreationChainKind, string> = {
+    overall: 'pollo_da_creation_overall_daily',
+    function: 'pollo_da_creation_function_daily',
+  };
+  const inserts: D1Statement[] = [];
+  const counts = { overall: 0, function: 0 };
+  for (const kind of ['overall', 'function'] as const) {
+    const payload = await new MaxComputeClient(maxComputeConnection(env)).executeSql(buildCreationChainSql(date, kind));
+    const columns = payload.column_names.map(name => name.toLowerCase());
+    const dimensions = kind === 'function' ? ['creation_mode', 'user_type', 'pay_gmv_usd_30d'] : [];
+    const fields = ['period', 'week_start', 'week_end', 'platform_type', ...dimensions, ...CREATION_METRICS, 'etl_time'];
+    if (fields.some(field => !columns.includes(field)) || !columns.includes('source_row_count') || !payload.rows.length) {
+      throw new Error(`创作链路 ${date} ${kind} 结果为空或字段不完整，已保留旧数据`);
+    }
+    const position = Object.fromEntries(columns.map((name, index) => [name, index]));
+    if (Number(payload.rows[0][position.source_row_count]) !== payload.rows.length) {
+      throw new Error(`创作链路 ${date} ${kind} 查询结果被截断，已阻止写入`);
+    }
+    const keys = new Set<string>();
+    const table = tables[kind];
+    await env.DB.prepare(`DELETE FROM ${table.replace('_daily', '_stage')} WHERE period = ?`).bind(date).run();
+    const insert = `INSERT INTO ${table.replace('_daily', '_stage')} (${[...fields, 'updated_at'].join(', ')}) VALUES (${[...fields, 'updated_at'].map(() => '?').join(', ')})`;
+    for (const source of payload.rows) {
+      const row = Object.fromEntries(fields.map(field => [field, source[position[field]]]));
+      const period = asText(row.period).slice(0, 10);
+      const key = [period, row.platform_type, ...dimensions.map(field => row[field])].join('|');
+      if (period !== date || keys.has(key) || !row.platform_type || dimensions.some(field => !row[field])) {
+        throw new Error(`创作链路 ${date} ${kind} 日期或维度异常，已阻止写入`);
+      }
+      keys.add(key);
+      const values = fields.map(field => {
+        const value = row[field];
+        if (['period', 'week_start', 'week_end'].includes(field)) return asText(value).slice(0, 10);
+        if (!CREATION_METRICS.includes(field as typeof CREATION_METRICS[number])) return value == null ? null : asText(value);
+        return value == null || value === '' ? null : Number(value);
+      });
+      if (values.slice(0, 3).some(value => !value) ||
+        CREATION_METRICS.slice(0, 6).some(field => row[field] == null) || row.gmv_usd == null ||
+        CREATION_METRICS.some(field => row[field] != null && !Number.isFinite(Number(row[field])))) {
+        throw new Error(`创作链路 ${date} ${kind} 含无效指标，已阻止写入`);
+      }
+      inserts.push(env.DB.prepare(insert).bind(...values, Date.now()));
+    }
+    counts[kind] = payload.rows.length;
+  }
+  for (let offset = 0; offset < inserts.length; offset += 80) {
+    await env.DB.batch(inserts.slice(offset, offset + 80));
+  }
+  await env.DB.batch((['overall', 'function'] as const).flatMap(kind => {
+    const table = tables[kind];
+    const stage = table.replace('_daily', '_stage');
+    return [
+      env.DB!.prepare(`DELETE FROM ${table} WHERE period = ?`).bind(date),
+      env.DB!.prepare(`INSERT INTO ${table} SELECT * FROM ${stage} WHERE period = ?`).bind(date),
+      env.DB!.prepare(`DELETE FROM ${stage} WHERE period = ?`).bind(date),
+    ];
+  }));
+  await invalidateDashboardCache(env);
+  return counts;
+}
+
+async function scheduledCreationChainSync(env: Env): Promise<Response> {
+  const yesterday = new Date(Date.now() + 8 * 3600000 - 86400000).toISOString().slice(0, 10);
+  const dates = new Set(Array.from({ length: 4 }, (_, offset) => shiftDate(yesterday, -offset)));
+  dates.add(shiftDate(yesterday, -7));
+  dates.add(shiftDate(yesterday, -30));
+  const results = [];
+  for (const date of [...dates].sort()) {
+    if (date < '2026-09-27') continue;
+    results.push({ date, ...await syncCreationChainDate(env, date) });
+  }
+  return json({ ok: true, task: 'daily-creation-chain', results });
+}
+
+async function syncCreationChainRequest(env: Env, request: Request): Promise<Response> {
+  const { date } = await request.json().catch(() => ({})) as { date?: string };
+  const yesterday = new Date(Date.now() + 8 * 3600000 - 86400000).toISOString().slice(0, 10);
+  if (!date || date > yesterday) return errorResponse('请选择已结束的创作统计日期');
+  return json({ date, ...await syncCreationChainDate(env, date) });
+}
+
 async function runScheduledReports(env: Env) {
   const localDate = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
   // Report requests include both the baseline week and the latest analysis week.
@@ -2064,6 +2776,10 @@ async function cronHandler(
     if (scheduledDataset === 'chain') {
       const ads = await scheduledAdsSync(env);
       return json({ ok: true, task: 'daily-chain-and-ads', status: result.status, runId: result.runId, ads: await ads.json() });
+    }
+    if (scheduledDataset === 'creative') {
+      const creation = await scheduledCreationChainSync(env);
+      return json({ ok: true, task: 'daily-creative-and-creation-chain', status: result.status, runId: result.runId, creation: await creation.json() });
     }
     return json({ ok: true, task: `daily-${scheduledDataset}`, status: result.status, runId: result.runId });
   }
@@ -2128,7 +2844,7 @@ async function collectReportEvidence(env: Env, request: ReportGenerationRequest,
     const scope = asText(row.platform || 'web').toLowerCase();
     return dateInRange(date, startDate, endDate) && ['新增功能', '优化'].includes(asText(row.action_type)) && (scope.includes(platform) || /全部|双端/.test(scope));
   });
-  const labels: Record<string, string> = Object.fromEntries(TIER_ORDER.map((tier, i) => [tier, ['分析期前30日无创作用户', '分析期前30日创作1-10次用户', '分析期前30日创作11-30次用户', '分析期前30日创作31-100次用户', '分析期前30日创作101次以上用户'][i]]));
+  const labels: Record<string, string> = Object.fromEntries(TIER_ORDER.map((tier, i) => [tier, ['近30日无创作用户', '近30日创作1-10次用户', '近30日创作11-30次用户', '近30日创作31-100次用户', '近30日创作101次以上用户'][i]]));
   const number = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 2 });
   const percent = (value: number | null) => value == null ? '—' : `${value >= 0 ? '+' : ''}${(value * 100).toFixed(2)}%`;
   const itemTable = (items: AttributionItem[]) => ['| 维度 | 基准期日均 | 分析期日均 | 周环比 | 贡献度 |', '| --- | ---: | ---: | ---: | ---: |', ...items.map(item => `| ${labels[item.key] || item.key} | $${number(item.baselineDailyAvg)} | $${number(item.analysisDailyAvg)} | ${percent(item.wowChange)} | ${percent(item.contribution)} |`)].join('\n');
@@ -2192,7 +2908,7 @@ async function collectReportEvidence(env: Env, request: ReportGenerationRequest,
     evidence: {
       platform, baselineWeek: `${startDate} ~ ${shiftDate(startDate, 6)}`, analysisWeek: `${analysisPeriod} ~ ${endDate}`,
       付费总收入: { 数据源: 'pay_type_daily', ...totalEvidence(pay.items), 一级构成: itemsEvidence(pay.items), 主动付费下钻: itemsEvidence(pay.sections?.[1]?.items || []) },
-      主动支付链路: { 数据源: 'chain_daily', ...totalEvidence(chain.items), 创作分层: itemsEvidence(chain.items), 核心分层: coreTier ? labels[coreTier.key] || coreTier.key : '全部', 核心分层过程因子: driversEvidence(coreChain.drivers || []), 同向因子排名: driversEvidence(rankedDrivers), 核心因子拐点: inflection },
+      主动支付链路: { 数据源: 'pollo_da_chain_funnel', ...totalEvidence(chain.items), 创作分层: itemsEvidence(chain.items), 核心分层: coreTier ? labels[coreTier.key] || coreTier.key : '全部', 核心分层过程因子: driversEvidence(coreChain.drivers || []), 同向因子排名: driversEvidence(rankedDrivers), 核心因子拐点: inflection },
       自动续订链路: { 数据源: 'renewal_daily', ...gmvEvidence(renewalGmv(startDate), renewalGmv(analysisPeriod)), 过程因子: driversEvidence(renewal.drivers || []) },
       创作侧证: { 整体: creativeOverall, 分层: creativeEvidence }, productActions: actions,
     },
@@ -2334,6 +3050,9 @@ export default {
       if (url.pathname === '/api/dashboard/gmv-coverage' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => gmvCoverage(env));
       if (url.pathname === '/api/dashboard/gmv-anomalies' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => gmvAnomalies(env));
       if (url.pathname === '/api/dashboard/attributions' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => attributions(env, request));
+      if (url.pathname === '/api/dashboard/chain-funnel' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => chainFunnel(env, request));
+      if (url.pathname === '/api/dashboard/ads-overview' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => adsOverview(env, request));
+      if (url.pathname === '/api/dashboard/creative-overview' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => creativeOverview(env, request));
       if (url.pathname === '/api/dashboard/payment-analysis' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => paymentAnalysis(env, request));
       if (url.pathname === '/api/dashboard/payment-trend' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => paymentTrend(env, request));
       if (url.pathname === '/api/workbook-preview' && request.method === 'GET') return workbookPreview(env, request);
@@ -2341,6 +3060,10 @@ export default {
       if (url.pathname === '/api/ads/sync' && request.method === 'POST') {
         const denial = await authorizeDashboardMutation(request);
         return denial || syncAdsRequest(env, request);
+      }
+      if (url.pathname === '/api/creation-chain/sync' && request.method === 'POST') {
+        const denial = await authorizeDashboardMutation(request);
+        return denial || syncCreationChainRequest(env, request);
       }
       if (url.pathname === '/api/sync-runs/latest-day-plan' && request.method === 'GET') return syncPlan(env, 'latest_day');
       if (url.pathname === '/api/sync-runs/latest-week-plan' && request.method === 'GET') return syncPlan(env, 'latest_week');

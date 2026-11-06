@@ -5,6 +5,7 @@ import {
   Zap,
   FileText,
   Database,
+  Megaphone,
 } from 'lucide-react';
 
 export const DASHBOARD_VIEWS = [
@@ -22,8 +23,8 @@ export const DASHBOARD_VIEWS = [
   },
   {
     id: 'chain',
-    label: '支付链路 × 分层',
-    description: '从创作分层下钻，识别支付链路的变化来源。',
+    label: '支付链路归因',
+    description: '从 GMV 驱动下钻到支付漏斗、国家结构与渠道效率。',
     icon: GitBranch,
   },
   {
@@ -31,6 +32,12 @@ export const DASHBOARD_VIEWS = [
     label: '创作积极性',
     description: '创作 UV、任务数按业务日均展示，渗透率为创作 UV ÷ 活跃 UV；分层按分析期开始前 30 日创作次数划分。',
     icon: Zap,
+  },
+  {
+    id: 'ads',
+    label: '广告侧看板',
+    description: '从国家结构继续查看广告点击变化。',
+    icon: Megaphone,
   },
   {
     id: 'report',
