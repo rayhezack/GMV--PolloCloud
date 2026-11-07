@@ -10,6 +10,16 @@ export function flowBarLayout(times: number[], width: number, maximum = 32) {
   return { inset:slotWidth/2, width:Math.min(maximum,slotWidth*.62) };
 }
 
+/** Measure height from zero before applying the baseline's visual inset.
+ * Tiny nonzero deltas need 3px to remain visible beside the GMV-scale lines;
+ * their real values stay untouched for tooltips and exports. Zero stays flat.
+ */
+export function flowBarTop(value: number, y: (value: number) => number, bottom: number) {
+  if (value === 0) return bottom;
+  const height = Math.max(3, Math.abs(y(Math.abs(value)) - y(0)));
+  return bottom - Math.min(bottom, height);
+}
+
 /** Keep both observed endpoints visible and reserve space between date labels. */
 export function endpointLabels<T extends { key: string; time: number; x: number; unit: string }>(
   candidates: T[], first: T, last: T, spacing = 76,

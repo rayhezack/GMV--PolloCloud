@@ -16,7 +16,7 @@ import { formatCompactCurrency, formatCurrency, formatPercent, formatTime } from
 import { alignPolylines, fittedDash, linePath, niceTicks, seededRandom, smoothTangents, valueAt } from "@/lib/chart-series"
 import { cn } from "@/lib/utils"
 import "./finance-chart/finance-chart.css"
-import { flowBarLayout, endpointLabels } from "./finance-chart/flow-bar-layout"
+import { flowBarLayout, flowBarTop, endpointLabels } from "./finance-chart/flow-bar-layout"
 
 type GlobalFinanceMarketComboPoint = {
   /** An ISO date ("2026-03-16") or date-time ("2026-03-16T08:00:00Z"), read as UTC. */
@@ -472,7 +472,7 @@ function layoutChart(data: GlobalFinanceMarketComboData, shown: Record<GlobalFin
     value: p.value,
     x: x(p.time) - barWidth / 2,
     width: barWidth,
-    top: Math.min(BAR_BOTTOM, y(Math.abs(p.value))),
+    top: flowBarTop(p.value, y, BAR_BOTTOM),
     bottom: BAR_BOTTOM,
     negative: p.value < 0,
   }))

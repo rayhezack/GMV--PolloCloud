@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
-import { flowBarLayout, endpointLabels } from './flow-bar-layout.ts';
+import { flowBarLayout, flowBarTop, endpointLabels } from './flow-bar-layout.ts';
 import { niceTicks } from './series.ts';
 
 // Exercise the actual private layout functions in both entry points without
@@ -19,11 +19,28 @@ function loadLayout(relativePath) {
   const code = ts.transpileModule(selected.map(node => node.getText(ast)).join('\n'), {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  return new Function('flowBarLayout', 'endpointLabels', 'niceTicks', `${code}\nreturn layoutChart;`)(flowBarLayout, endpointLabels, niceTicks);
+  return new Function('flowBarLayout', 'flowBarTop', 'endpointLabels', 'niceTicks', `${code}\nreturn layoutChart;`)(flowBarLayout, flowBarTop, endpointLabels, niceTicks);
 }
 
 for (const entry of ['../global-finance-market-combo-chart.tsx', './GlobalFinanceMarketComboChart.tsx']) {
   const layout = loadLayout(entry);
+  test(`${entry}: tiny nonzero differences remain visible without changing their amounts`, () => {
+    const values = [-82, 82, -0.01, 0.01, 0, -10000, 10000];
+    const actual = values.map((_, i) => ({ date: `2026-10-${String(20+i).padStart(2,'0')}`, value: 70000 }));
+    const flows = actual.map((p, i) => ({ ...p, value: values[i] }));
+    const result = layout({ actual, flows }, { actual:true, forecast:true }, 720);
+    assert.equal(result.bars.length, actual.length);
+    for (const [i, bar] of result.bars.entries()) {
+      assert.equal(bar.value, values[i], 'tooltip/export retain the real signed amount');
+      assert.equal(bar.negative, values[i] < 0);
+      const height = bar.bottom-bar.top;
+      if (values[i] === 0) assert.equal(height, 0, 'zero must not become an invented change');
+      else assert.ok(height >= 3, `${values[i]} must have a visible bar, got ${height}px`);
+      if (Math.abs(values[i]) === 10000) {
+        assert.ok(Math.abs(height-Math.abs(result.y(10000)-result.y(0))) < 1e-9, 'larger deltas retain their scale');
+      }
+    }
+  });
   test(`${entry}: observed endpoints and signed bars fit narrow/wide plots with comparison gaps`, () => {
     for (const count of [1, 7, 30, 90]) for (const width of [160, 280, 720, 1200]) {
       const actual = Array.from({length:count}, (_, i) => ({date:new Date(Date.UTC(2026,9,6+i)).toISOString().slice(0,10),value:100+i}));

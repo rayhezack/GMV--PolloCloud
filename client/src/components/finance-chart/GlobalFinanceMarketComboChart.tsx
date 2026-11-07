@@ -4,7 +4,7 @@
 
 import { animate, stagger, svg, utils, type JSAnimation } from "animejs";
 import * as React from "react";
-import { flowBarLayout, endpointLabels } from './flow-bar-layout';
+import { flowBarLayout, flowBarTop, endpointLabels } from './flow-bar-layout';
 import { ArrowUp, ArrowDown } from "lucide-react";
 
 import { ChartButton } from "./primitives";
@@ -400,7 +400,7 @@ function layoutChart(
     value: p.value,
     x: x(p.time) - barWidth / 2,
     width: barWidth,
-    top: Math.min(BAR_BOTTOM, y(Math.abs(p.value))),
+    top: flowBarTop(p.value, y, BAR_BOTTOM),
     bottom: BAR_BOTTOM,
     negative: p.value < 0,
   }));
