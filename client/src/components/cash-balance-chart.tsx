@@ -437,7 +437,8 @@ function CashBalanceChart({
   const transactionAt = (index: number, id?: string) =>
     (id !== undefined ? placed.find((entry) => entry.transaction.id === id && entry.index === index) : undefined) ?? placed.find((entry) => entry.index === index)
   const pinned = selected !== null && selected >= 0 && selected < n ? selected : null
-  const target: Target | null = hovered !== null && hovered.index >= 0 && hovered.index < n ? hovered : pinned !== null ? { index: pinned, id: pinnedId } : null
+  // Product-action previews end with the interaction, even after a point was clicked.
+  const target: Target | null = hovered !== null && hovered.index >= 0 && hovered.index < n ? hovered : !eventTimeline && pinned !== null ? { index: pinned, id: pinnedId } : null
   // the cursor fades out where it was: keep the last target
   const [lastTarget, setLastTarget] = React.useState<Target | null>(target)
   if (target !== null && (target.index !== lastTarget?.index || target.id !== lastTarget?.id)) setLastTarget(target)
@@ -934,7 +935,10 @@ function CashBalanceChart({
             onPointerUp={(event) => {
               if (event.button === 0) toggle(pick(pointerX(event), "plot"))
             }}
-            onFocus={() => setHovered((at) => at ?? (pinned !== null ? { index: pinned, id: pinnedId } : { index: Math.max(0, nowIndex) }))}
+            onFocus={(event) => {
+              if (!eventTimeline || event.currentTarget.matches(":focus-visible"))
+                setHovered((at) => at ?? (pinned !== null ? { index: pinned, id: pinnedId } : { index: Math.max(0, nowIndex) }))
+            }}
             onBlur={() => hover(null)}
             onKeyDown={onKeyDown}
             className="absolute inset-0 cursor-pointer touch-pan-y rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-primary-blue-500/40"
@@ -992,7 +996,9 @@ function CashBalanceChart({
                 data-slot="cash-balance-chart-transaction"
                 aria-label={`${transaction.label}${eventTimeline ? "" : `: ${signedMoney(transaction.amount)}`}, ${timeText(transaction.time, "tooltip")}${scheduled ? `, ${scheduledLabel.toLowerCase()}` : ""}`}
                 aria-pressed={pinnedTransaction === transaction}
-                onFocus={() => hover({ index, id: transaction.id })}
+                onFocus={(event) => {
+                  if (!eventTimeline || event.currentTarget.matches(":focus-visible")) hover({ index, id: transaction.id })
+                }}
                 onBlur={() => hover(null)}
                 onClick={() => {
                   toggle({ index, id: transaction.id })
