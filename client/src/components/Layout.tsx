@@ -268,8 +268,8 @@ const Layout = () => {
         >
           <X size={18} />
         </button>
-        <nav aria-label="分析看板">
-          <div className="sidebar-group-label">分析看板</div>
+        <nav aria-label="分析工作台">
+          <div className="sidebar-group-label">分析工作台</div>
           {DASHBOARD_VIEWS.map((view, i) => (
             <div key={view.id}>
               {view.id === 'report' && (
