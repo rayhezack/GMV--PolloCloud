@@ -1,5 +1,6 @@
-import { useMemo, useState, type CSSProperties } from 'react';
-import { WalletCards, BadgePercent, UserRoundPlus, Workflow, RotateCw, Info, Music2, NotebookPen, CalendarDays } from 'lucide-react';
+import { useId, useMemo, useState, type CSSProperties } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { WalletCards, BadgePercent, UserRoundPlus, Workflow, RotateCw, Info, Music2, NotebookPen, CalendarDays, Plus } from 'lucide-react';
 import { tightLineTicks } from '@/lib/chart-series';
 import { CashBalanceChart } from '@/components/cash-balance-chart';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -30,6 +31,9 @@ export function RevenueActionChart({ rows, visibleRows, metric, color, title, pl
   color: string; title: string; platform: string; source: ProductActionSource | null;
 }) {
   const [selectedEvent, setSelectedEvent] = useState<RevenueEvent | null>(null);
+  const [expandedAction, setExpandedAction] = useState<string | null>(null);
+  const detailId = useId();
+  const reducedMotion = useReducedMotion();
   const start = visibleRows[0]?.period ?? '', end = visibleRows.at(-1)?.period ?? '';
   const events = useMemo(() => revenueActionEvents(rows, source?.actions ?? [], metric, platform, start, end), [rows, source, metric, platform, start, end]);
   const data = useMemo(() => visibleRows.filter(row => row[metric] != null && Number.isFinite(row[metric])).map(row => ({time: timeOf(row.period), value: Number(row[metric])})), [visibleRows, metric]);
@@ -48,7 +52,10 @@ export function RevenueActionChart({ rows, visibleRows, metric, color, title, pl
     <CashBalanceChart chartOnly eventTimeline plotHeight={155} title={`${title} 日趋势`} data={data} range={range} ticks={ticks} summary={[]}
       transactions={transactions} locale="en-US" currency="USD"
       formatTime={(time, context) => context === 'axis' ? new Date(time).toISOString().slice(5, 10).replace('-', '/') : new Date(time).toISOString().slice(0, 10)}
-      onTransactionClick={transaction => setSelectedEvent(events.find(event => event.date === transaction.id) ?? null)}
+      onTransactionClick={transaction => {
+        setExpandedAction(null);
+        setSelectedEvent(events.find(event => event.date === transaction.id) ?? null);
+      }}
     />
     <Dialog open={selectedEvent !== null} onOpenChange={open => { if (!open) setSelectedEvent(null); }}>
       <DialogContent className="revenue-event-dialog">
@@ -57,9 +64,26 @@ export function RevenueActionChart({ rows, visibleRows, metric, color, title, pl
         </DialogHeader>
         <div className="revenue-event-list">{selectedEvent?.actions.map(action => {
           const Icon = actionIcon(action);
-          return <article key={action.id}><span className="revenue-event-list-icon"><Icon size={17} /></span><div><h3>{action.title}</h3><p>{action.description}</p><small>{action.platform === 'web' ? 'Web' : action.platform === 'app' ? 'App' : action.platform || '未标注端'}{action.version ? ` · ${action.version}` : ''}{action.actionType ? ` · ${action.actionType}` : ''}{action.source ? ` · ${action.source}` : ''}</small></div></article>;
+          const expanded = expandedAction === action.id;
+          const contentId = `${detailId}-${action.id}`;
+          return <article key={action.id} data-expanded={expanded || undefined}>
+            <h3><button type="button" className="revenue-event-trigger" aria-expanded={expanded} aria-controls={contentId}
+              onClick={() => setExpandedAction(expanded ? null : action.id)}>
+              <span className="revenue-event-list-icon"><Icon size={17} /></span>
+              <span className="revenue-event-title">{action.title}</span>
+              <motion.span className="revenue-event-toggle" aria-hidden animate={{rotate: expanded ? 45 : 0}}
+                transition={reducedMotion ? {duration: 0} : {type: 'spring', stiffness: 380, damping: 24}}><Plus size={16} /></motion.span>
+            </button></h3>
+            <AnimatePresence initial={false}>
+              {expanded && <motion.div key="detail" id={contentId} className="revenue-event-detail" role="region" aria-label={action.title}
+                initial={{height: 0, opacity: 0}} animate={{height: 'auto', opacity: 1}} exit={{height: 0, opacity: 0}}
+                transition={reducedMotion ? {duration: 0} : {height: {type: 'spring', stiffness: 340, damping: 27, mass: .8}, opacity: {duration: .18}}}>
+                <div><p>{action.description}</p><small>{action.platform === 'web' ? 'Web' : action.platform === 'app' ? 'App' : action.platform || '未标注端'}{action.version ? ` · ${action.version}` : ''}{action.actionType ? ` · ${action.actionType}` : ''}{action.source ? ` · ${action.source}` : ''}</small></div>
+              </motion.div>}
+            </AnimatePresence>
+          </article>;
         })}</div>
-        <p className="revenue-event-caveat">来源：产品动作明细 · 上线日期。此处是当日日志，不判断动作对 GMV 的影响大小或因果关系。</p>
+        <p className="revenue-event-caveat">来源：产品动作明细 · 上线日期</p>
       </DialogContent>
     </Dialog>
   </div>;

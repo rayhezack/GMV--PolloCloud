@@ -277,7 +277,6 @@ export function RevenueCards({
           >
             <div className="revenue-label">
               <span>{item.key}</span>
-              <RevenueActionInfo title={item.key} source={actionSource} />
             </div>
             <motion.div
               className="revenue-card-body"
@@ -295,8 +294,11 @@ export function RevenueCards({
                     transition={{ duration: 0.19 }}
                   >
                     <div>
-                      <div className="revenue-number">
-                        {loading || item.latestValue === null ? '—' : money(item.latestValue)}
+                      <div className="revenue-number-with-info">
+                        <div className="revenue-number">
+                          {loading || item.latestValue === null ? '—' : money(item.latestValue)}
+                        </div>
+                        <RevenueActionInfo title={item.key} source={actionSource} />
                       </div>
                       <div className="revenue-date">{item.latestPeriod}</div>
                       <div className="revenue-foot">
