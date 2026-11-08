@@ -298,7 +298,7 @@ export function RevenueCards({
                         <div className="revenue-number">
                           {loading || item.latestValue === null ? '—' : money(item.latestValue)}
                         </div>
-                        <RevenueActionInfo title={item.key} source={actionSource} />
+                        <RevenueActionInfo title={item.key} source={actionSource} period={item.latestPeriod} />
                       </div>
                       <div className="revenue-date">{item.latestPeriod}</div>
                       <div className="revenue-foot">

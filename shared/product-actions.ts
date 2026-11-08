@@ -6,7 +6,7 @@ export type ProductAction = {
   kind: 'pricing' | 'payment' | 'registration' | 'creation' | 'renewal' | 'other';
   actionType: string; source: string; version: string;
 };
-export type ProductActionSource = { actions: ProductAction[]; available: boolean; readAt: string };
+export type ProductActionSource = { actions: ProductAction[]; available: boolean; readAt: string; lastSyncError?: string | null };
 export type RevenueEvent = {
   date: string; change: number; threshold: number; comparison: 'day' | 'week';
   value: number; previous: number; actions: ProductAction[];

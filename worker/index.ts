@@ -1,4 +1,5 @@
 import { normalizeChartActions } from '../shared/product-actions';
+import { readProductActions, syncProductActions, type ActionPage } from './product-actions-store';
 import { BREAKDOWN_VALUE_SQL } from './breakdown-dimensions';
 import { chainDriverEffects, lmdiDriverEffects } from './chain-attribution';
 import { serializeStagingChunks } from './sync-staging';
@@ -272,11 +273,12 @@ const readBaseValue = (value: unknown): string | number | null => {
 const normalizeBaseFields = (fields: Record<string, unknown>): D1Row =>
   Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, readBaseValue(value)]));
 
-async function tenantAccessToken(env: Env): Promise<string> {
+async function tenantAccessToken(env: Env, signal?: AbortSignal): Promise<string> {
   if (feishuTokenCache && feishuTokenCache.expiresAt > Date.now()) return feishuTokenCache.token;
   if (!env.FEISHU_APP_ID || !env.FEISHU_APP_SECRET) throw new Error('飞书应用凭证未配置');
   const response = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
     method: 'POST',
+    signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ app_id: env.FEISHU_APP_ID, app_secret: env.FEISHU_APP_SECRET }),
   });
@@ -289,10 +291,10 @@ async function tenantAccessToken(env: Env): Promise<string> {
   return payload.tenant_access_token;
 }
 
-async function baseRequest<T>(env: Env, sheet: BaseSheet, path: string, body?: unknown, method = 'POST'): Promise<T> {
-  const token = await tenantAccessToken(env);
+async function baseRequest<T>(env: Env, sheet: BaseSheet, path: string, body?: unknown, method = 'POST', signal?: AbortSignal): Promise<T> {
+  const token = await tenantAccessToken(env, signal);
   const init: RequestInit = {
-    method,
+    method, signal,
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
   };
   if (body !== undefined && method !== 'GET') init.body = JSON.stringify(body);
@@ -2053,7 +2055,7 @@ const PREVIEW_FIELDS: Record<string, string[]> = {
   latest_report: ['platform', 'period_start', 'period_end', 'model_used', 'degraded', 'generated_at', 'report_md'],
   report_history: ['platform', 'period_start', 'period_end', 'model_used', 'degraded', 'generated_at', 'report_md'],
   report_generation_jobs: ['run_id', 'platform', 'granularity', 'period_start', 'period_end', 'status', 'stage', 'requested_at', 'started_at', 'heartbeat_at', 'finished_at', 'error_message', 'model_used'],
-  product_actions: ['统计日', '星期', '上线时间', '类型', '更新点', '说明', '板块', '版本', 'commit', '来源', '备注', '端'],
+  product_actions: ['更新点', '板块', '上线时间', '说明', '原消息链接', '类型', '来源', '版本', '端'],
 };
 
 const PREVIEW_TABLES: Record<string, string> = {
@@ -2071,18 +2073,15 @@ const PREVIEW_TABLES: Record<string, string> = {
 function previewRow(sheet: string, row: D1Row) {
   if (sheet !== 'product_actions') return row;
   return {
-    统计日: row.stat_date,
-    星期: row.weekday,
     上线时间: row.release_time,
     类型: row.action_type,
     更新点: row.update_point,
     说明: row.description,
     板块: row.board,
     版本: row.version,
-    commit: row.commit_id,
     来源: row.source,
-    备注: row.remark,
     端: row.platform,
+    原消息链接: row.original_message_link,
   };
 }
 
@@ -2106,11 +2105,13 @@ async function productActionRows(env: Env) {
       remark: row.remark ?? row['备注'], platform: row.platform ?? row['端类型'] ?? row['端'],
     };
   };
-  try {
-    return (await baseRecords(env, 'product_actions')).map(record => normalizeAction(record.fields));
-  } catch {
-    return (await queryRows(env, 'SELECT stat_date, weekday, release_time, action_type, update_point, description, board, version, commit_id, source, remark, platform FROM pollo_da_product_actions ORDER BY stat_date DESC')).map(normalizeAction);
-  }
+  if (!env.DB) throw new Error('D1 未配置');
+  const snapshot = await readProductActions(env.DB);
+  if (!snapshot.available) throw new Error('产品动作尚未完成入仓');
+  return snapshot.records.map(record => {
+    const link = record.fields['原消息链接'];
+    return { ...normalizeAction(normalizeBaseFields(record.fields)), original_message_link: readBaseValue(link && typeof link === 'object' && !Array.isArray(link) ? (link as Record<string, unknown>).link : link) };
+  });
 }
 
 async function workbookPreview(env: Env, request: Request) {
@@ -2776,7 +2777,21 @@ async function cronHandler(
           ? 'renewal'
           : null;
   if (scheduledDataset) {
+    // Reuse the renewal schedule: actions publish once per Shanghai day, retry on the next tick if unsuccessful.
+    // This runs independently of MaxCompute so its failures cannot block action ingestion.
+    let actions: unknown, actionError: unknown;
+    if (scheduledDataset === 'renewal') {
+      try {
+        if (!env.DB) throw new Error('D1 未配置');
+        actions = await syncProductActions(env.DB, (pageToken, signal) => {
+          const query = new URLSearchParams({ page_size: '500' });
+          if (pageToken) query.set('page_token', pageToken);
+          return baseRequest<ActionPage>(env, 'product_actions', `/records?${query}`, undefined, 'GET', signal);
+        }, { force: request.headers.get('x-pollocloud-cron-run') === 'manual' });
+      } catch (error) { actionError = error; }
+    }
     const result = await runScheduledSync(env, [scheduledDataset]);
+    if (actionError) throw actionError;
     if (scheduledDataset === 'chain' && (result.status === 'success' || result.skipped)) {
       const ads = await scheduledAdsSync(env);
       return json({ ok: true, task: 'daily-chain-and-ads', status: result.status, runId: result.runId, ads: await ads.json() });
@@ -2785,7 +2800,7 @@ async function cronHandler(
       const creation = await scheduledCreationChainSync(env);
       return json({ ok: true, task: 'daily-creative-and-creation-chain', status: result.status, runId: result.runId, creation: await creation.json() });
     }
-    return json({ ok: true, task: `daily-${scheduledDataset}`, status: result.status, runId: result.runId });
+    return json({ ok: true, task: `daily-${scheduledDataset}`, status: result.status, runId: result.runId, ...(actions ? { productActions: actions } : {}) });
   }
   if (path === '/api/cron/weekly-reports') {
     const platform = new Date(Date.now() + 8 * 3600000).getUTCMinutes() < 10 ? 'web' : 'app';
@@ -3053,10 +3068,11 @@ export default {
       if (url.pathname.startsWith('/api/cron/')) return cronHandler(env, request, context);
       if (url.pathname === '/api/dashboard/product-actions' && request.method === 'GET') {
         try {
-          const actions = normalizeChartActions(await baseRecords(env, 'product_actions'));
-          return json({ actions, available: true, readAt: new Date().toISOString() });
+          if (!env.DB) throw new Error('D1 未配置');
+          const snapshot = await readProductActions(env.DB);
+          return json({ actions: normalizeChartActions(snapshot.records), available: snapshot.available, readAt: snapshot.readAt, source: 'D1', lastSyncError: snapshot.lastError });
         } catch {
-          // An old D1 workbook snapshot must never masquerade as today's product releases.
+          // A missing warehouse must be visible; never fetch Base on an interactive read.
           return json({ actions: [], available: false, readAt: new Date().toISOString() });
         }
       }

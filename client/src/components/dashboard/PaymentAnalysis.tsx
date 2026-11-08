@@ -837,7 +837,12 @@ export default function PaymentAnalysis({
                         </TableCell>
                         <TableCell>{money(view.total.gmv)}</TableCell>
                         <TableCell>{money(view.total.baseline)}</TableCell>
-                        <TableCell>{signedMoney(view.total.change)}</TableCell>
+                        <TableCell>
+                          <div className="payment-delta">
+                            {signedMoney(view.total.change)}
+                            <Change value={view.total.baseline ? view.total.change / view.total.baseline : null} />
+                          </div>
+                        </TableCell>
                         <TableCell>
                           {view.total.change !== 0 ? "100%" : "—"}
                         </TableCell>

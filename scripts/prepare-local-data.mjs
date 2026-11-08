@@ -14,6 +14,7 @@ const tables = [
   'pollo_da_fact_rows', 'pollo_da_chain_funnel', 'pollo_da_chain_breakdown',
   'pollo_da_ads_daily', 'pollo_da_creation_overall_daily', 'pollo_da_creation_function_daily',
   'pollo_da_reports', 'pollo_da_product_actions',
+  'pollo_da_product_action_details', 'product_action_sync_state',
 ];
 const shift = (date, days) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
 async function query(sql) {
@@ -78,6 +79,10 @@ for (const table of tables) {
     }
     continue;
   }
+  if (table === 'pollo_da_product_action_details' || table === 'product_action_sync_state') {
+    jobs.push({ table, where: '1=1' });
+    continue;
+  }
   const field = table === 'pollo_da_reports' ? 'period_end' : table === 'pollo_da_product_actions' ? 'stat_date' : 'period';
   jobs.push({ table, where: `${field} BETWEEN '${startDate}' AND '${endDate}'` });
 }
@@ -128,6 +133,7 @@ try {
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   db.exec('ANALYZE');
   const coverage = Object.fromEntries(tables.map((table) => {
+    if (table === 'pollo_da_product_action_details' || table === 'product_action_sync_state') return [table, db.prepare(`SELECT COUNT(*) AS rows FROM ${table}`).get()];
     const field = table === 'pollo_da_reports' ? 'period_end' : table === 'pollo_da_product_actions' ? 'stat_date' : 'period';
     return [table, db.prepare(`SELECT COUNT(*) AS rows, MIN(${field}) AS firstDate, MAX(${field}) AS lastDate FROM ${table}`).get()];
   }));
