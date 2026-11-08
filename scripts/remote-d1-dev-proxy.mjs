@@ -67,6 +67,10 @@ function remoteDatabase() {
         return { results: await executeRemoteSql(boundSql) };
       },
       async first() {
+        // Development uses the Worker's memory cache. This read-only proxy
+        // cannot populate the shared response cache, so don't pay a remote
+        // round trip for a cache entry produced by a different code version.
+        if (/\bFROM\s+dashboard_response_cache\b/i.test(boundSql)) return null;
         const results = await executeRemoteSql(boundSql);
         return results[0] ?? null;
       },

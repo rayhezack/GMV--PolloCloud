@@ -207,15 +207,21 @@ html { scroll-padding-top: calc(var(--dashboard-sticky-height, 100px) + 16px); }
   background: transparent;
   box-shadow: none;
 }
-.dashboard-shell .cw-diagnostic,
 .dashboard-shell .cw-effect-summary article,
 .dashboard-shell .cw-traffic-summary article {
   background: linear-gradient(135deg, rgba(255,255,255,.65), rgba(245,248,252,.38));
   box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 4px 12px -9px rgba(48,61,85,.2);
 }
-.dashboard-shell .cw-diagnostic[aria-expanded=true] {
-  background: rgba(226,230,239,.72);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.9);
+.dashboard-shell .cw-diagnostics .cw-diagnostic {
+  background: var(--v23-glass);
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  border: 0;
+  box-shadow: var(--v23-shadow);
+}
+.dashboard-shell .cw-diagnostics .cw-diagnostic:is(:hover,[aria-expanded=true]) {
+  background: linear-gradient(135deg,rgba(255,255,255,.96),rgba(237,241,250,.76));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.98),0 12px 28px -16px rgba(48,61,85,.28);
 }
 .dashboard-shell .cw-total { background: rgba(235,239,246,.6); font-weight:550; }
 @supports not (backdrop-filter: blur(1px)) {

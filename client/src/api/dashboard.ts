@@ -41,6 +41,7 @@ export async function getAdsOverview(params: {
   endDate: string;
   baselinePeriod: string;
   analysisPeriod: string;
+  country?: string;
   cacheBust?: number;
 }): Promise<AdsOverviewResponse> {
   const response = await readDashboard<AdsOverviewResponse>(`/api/dashboard/ads-overview${buildQueryString(params)}`);

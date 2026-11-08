@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto';
+import { executeCompleteResult } from './complete-result';
 
 export interface MaxComputeConnection {
   endpoint: string;
@@ -20,15 +21,20 @@ const REQUEST_MAX_ATTEMPTS = 2;
 const RETRYABLE_HTTP_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 
 export class MaxComputeClient {
-  constructor(private readonly connection: MaxComputeConnection) {}
+  constructor(private readonly connection: MaxComputeConnection, private readonly timeoutMs?: number) {}
 
   async executeSql(sql: string): Promise<MaxComputeQueryResult> {
-    const instanceUrl = await this.submit(sql);
-    await this.waitForSuccess(instanceUrl);
-    return this.readResult(instanceUrl);
+    const deadline = Date.now() + this.readQueryTimeout();
+    const instanceUrl = await this.submit(sql, deadline);
+    await this.waitForSuccess(instanceUrl, deadline);
+    return this.readResult(instanceUrl, deadline);
   }
 
-  private async submit(sql: string): Promise<string> {
+  async executeCompleteSql(sql: string): Promise<MaxComputeQueryResult> {
+    return executeCompleteResult(sql, query => this.executeSql(query));
+  }
+
+  private async submit(sql: string, deadline: number): Promise<string> {
     const collectionUrl = this.buildUrl(
       `/projects/${encodeURIComponent(this.connection.project)}/instances`,
     );
@@ -36,7 +42,7 @@ export class MaxComputeClient {
       method: 'POST',
       body: this.buildJobXml(sql),
       headers: { 'Content-Type': CONTENT_TYPE },
-    });
+    }, deadline);
     const location = response.headers.get('location');
     if (!location) {
       throw new Error('MaxCompute 提交成功但响应缺少 Location 实例地址');
@@ -44,9 +50,7 @@ export class MaxComputeClient {
     return new URL(location, collectionUrl).toString();
   }
 
-  private async waitForSuccess(instanceUrl: string): Promise<void> {
-    const timeoutMs = this.readQueryTimeout();
-    const deadline = Date.now() + timeoutMs;
+  private async waitForSuccess(instanceUrl: string, deadline: number): Promise<void> {
     let pollCount = 0;
 
     while (Date.now() < deadline) {
@@ -55,6 +59,7 @@ export class MaxComputeClient {
         {
           method: 'GET',
         },
+        deadline,
       );
       const xml = await response.text();
       const status = this.readTag(xml, 'Status');
@@ -72,19 +77,20 @@ export class MaxComputeClient {
       }
       const interval = POLL_INTERVALS_MS[Math.min(pollCount, POLL_INTERVALS_MS.length - 1)];
       pollCount += 1;
-      await this.sleep(interval);
+      await this.sleep(Math.min(interval, Math.max(0, deadline - Date.now())));
     }
 
     throw new Error(
-      `MaxCompute SQL 执行超时（${Math.round(timeoutMs / 1000)} 秒）`,
+      `MaxCompute SQL 执行超时（${Math.round(this.readQueryTimeout() / 1000)} 秒）`,
     );
   }
 
   private async readResult(
     instanceUrl: string,
+    deadline: number,
   ): Promise<MaxComputeQueryResult> {
     const resultUrl = this.withCurrentProject(`${instanceUrl}?result`);
-    const response = await this.request(resultUrl, { method: 'GET' });
+    const response = await this.request(resultUrl, { method: 'GET' }, deadline);
     const xml = await response.text();
     const taskStatus = this.readTaskStatus(xml);
     const rawResult = this.readResultNode(xml);
@@ -114,7 +120,7 @@ export class MaxComputeClient {
     return { column_names: columns, rows };
   }
 
-  private async request(url: string, init: RequestInit): Promise<Response> {
+  private async request(url: string, init: RequestInit, deadline: number): Promise<Response> {
     const requestUrl = new URL(url);
     const date = new Date().toUTCString();
     const headers = new Headers(init.headers);
@@ -127,11 +133,12 @@ export class MaxComputeClient {
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= REQUEST_MAX_ATTEMPTS; attempt += 1) {
+      if (Date.now() >= deadline) throw new Error('MaxCompute SQL 执行超时');
       try {
         const response = await fetch(requestUrl, {
           ...init,
           headers,
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          signal: AbortSignal.timeout(Math.min(REQUEST_TIMEOUT_MS, Math.max(1, deadline - Date.now()))),
         });
 
         if (response.ok) return response;
@@ -151,7 +158,7 @@ export class MaxComputeClient {
       }
 
       if (attempt < REQUEST_MAX_ATTEMPTS) {
-        await this.sleep(this.retryDelayMs(attempt));
+        await this.sleep(Math.min(this.retryDelayMs(attempt), Math.max(0, deadline - Date.now())));
       }
     }
 
@@ -422,9 +429,10 @@ export class MaxComputeClient {
 
   private readQueryTimeout(): number {
     const configured = Number(process.env.MAXCOMPUTE_QUERY_TIMEOUT_MS);
-    return Number.isFinite(configured) && configured > 0
+    const timeout = Number.isFinite(configured) && configured > 0
       ? configured
       : DEFAULT_QUERY_TIMEOUT_MS;
+    return this.timeoutMs ? Math.min(timeout, this.timeoutMs) : timeout;
   }
 
   private escapeXml(value: string): string {

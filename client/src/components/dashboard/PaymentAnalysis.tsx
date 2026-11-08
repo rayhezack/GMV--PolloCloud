@@ -58,6 +58,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { downloadCsv } from "./AnalysisWidgets";
 import {
   attributionModes,
@@ -232,7 +233,7 @@ function RevenueTrend({
           </Select>
         )}
       </div>
-      <p className="payment-history-caption">近一个月 · {observed.length} 日数据<span title="上方周均及增量按分析周与基准周的相同星期计算；下方展示独立的月度走势。">周对比口径 ⓘ</span></p>
+      <div className="payment-history-caption"><span>近一个月 · {observed.length} 日数据</span><Popover><PopoverTrigger asChild><button type="button" className="payment-history-method" aria-label="查看周对比口径">周对比口径 <Info size={14} aria-hidden="true" /></button></PopoverTrigger><PopoverContent className="payment-cost-tooltip payment-history-popover" side="bottom" align="end"><strong>周对比口径</strong><p>上方周均与增量只比较分析周和基准周相同的已观测星期；GMV 按对应日期合计后除以可比天数。</p><p>下方是最近 30 日独立走势，浅色线为对应基准周期的同日数据，不参与上方周均计算。</p></PopoverContent></Popover></div>
       <CashFlowAreaChart
         key={`${selectedMetric}:${values.map(p => p.label).join(',')}`}
         className={`payment-detail-cash-flow${paired.length ? '' : ' has-no-comparison'}`} data-days={observed.length}
@@ -634,7 +635,7 @@ export default function PaymentAnalysis({
             >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="payment-income-menu" align="start">
               {revenueScopes.map((s) => (
                 <SelectItem key={s.value} value={s.value}>
                   {s.label}
@@ -643,7 +644,7 @@ export default function PaymentAnalysis({
             </SelectContent>
           </Select>
         </div>
-        <TabsContent value={mode} className="payment-bento-content">
+        <TabsContent key={mode} value={mode} className="payment-bento-content">
           {loading ? (
             <div
               className="payment-loading payment-loading-wave"
@@ -723,7 +724,6 @@ export default function PaymentAnalysis({
                 <CardHeader className="payment-table-head">
                   <div className="payment-table-title">
                     <CardTitle>归因明细</CardTitle>
-                    <span>{filtered.length} 项</span>
                   </div>
                   <div className="payment-table-actions">
                     <Button variant="ghost" size="sm" className="payment-insight-trigger no-default-hover-elevate no-default-active-elevate" aria-expanded={showInsight} aria-controls="payment-insight" onClick={() => setShowInsight((value) => !value)}>

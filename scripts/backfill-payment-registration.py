@@ -21,6 +21,7 @@ def main():
     parser.add_argument('--apply-local', action='store_true')
     parser.add_argument('--database', type=pathlib.Path, default=ROOT/'.local-data/dashboard.sqlite')
     parser.add_argument('--from-file', type=pathlib.Path, help='Reconcile a previously exported aggregate without querying the warehouse again')
+    parser.add_argument('--export-only', action='store_true', help='Export source aggregates for remote reconciliation')
     args = parser.parse_args()
     if args.start > args.end:
         raise ValueError('start must precede end')
@@ -54,6 +55,9 @@ def main():
     directory = ROOT / '.local-data'
     output = directory / f'payment-registration-{args.start}-{args.end}.json'
     output.write_text(json.dumps(rows, ensure_ascii=False), encoding='utf8')
+    if args.export_only:
+        print(json.dumps({'rows': len(rows), 'aggregateFile': str(output)}, ensure_ascii=False))
+        return
     db = sqlite3.connect(args.database)
     expected = dict(((p, platform, device or '', kind), amount) for p, platform, device, kind, amount in db.execute("""
         SELECT period,platform,COALESCE(device_type,''),pay_type,SUM(gmv_usd)

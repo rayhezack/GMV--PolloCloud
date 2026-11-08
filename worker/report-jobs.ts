@@ -170,6 +170,9 @@ export async function executeReport(env: Env, job: ReportGenerationStatus, deps:
       .bind(Date.now(), job.runId).run().catch(() => undefined);
   }, 10000);
   try {
+    job.status = 'running';
+    job.stage = 'collect';
+    await persist();
     const context = await deps.collect({ platform: job.platform, granularity: 'week', startDate: job.periodStart, endDate: job.periodEnd }, progress);
     await progress('model', 'running', '正在根据本周证据生成正文');
     const markdown = await generateMarkdown(env, context.evidence);
@@ -217,7 +220,7 @@ async function generateMarkdown(env: Env, evidence: unknown, correction = ''): P
 6. 正文尽量简洁：顶部摘要按原模板一段；每章先一句加粗结论；每个编号论点围绕一个判断配2–3个关键数字，业务判断前缀必须加粗。原因诊断先一段180字以内的核心判断，再按原来的三层给短论证。产品动作细节放三层论证，不挤在首段。行动建议每项不超过150字。禁止五颜六色装饰、emoji、原始字段名、宽泛口号、以及“显著/大幅/明显/非常”等无依据评价。支付链路与创作分层的口径说明只在看板「数据与口径」页展示，报告正文不得输出任何以「口径说明：」开头的段落，也不解释指标或分层定义。
 7. 不自行生成任何Markdown表格。原样保留且各一次：<!-- PAY_TYPE_PRIMARY_TABLE -->、<!-- PAY_TYPE_DRILL_TABLE -->、<!-- CHAIN_TIER_TABLE -->、<!-- CHAIN_DRIVER_TABLE -->、<!-- RENEWAL_DRIVER_TABLE -->，由系统填入准确表格。`;
   const response = await fetch(`${(env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1').replace(/\/+$/, '')}/chat/completions`, {
-    method: 'POST', signal: AbortSignal.timeout(600000),
+    method: 'POST', signal: AbortSignal.timeout(150000),
     headers: { authorization: `Bearer ${env.KIMI_API_KEY}`, 'content-type': 'application/json' },
     body: JSON.stringify({ model: env.KIMI_MODEL || 'kimi-k3', messages: [{ role: 'system', content: instructions }, { role: 'user', content: `请按上述 Skill 生成本次完整报告。以下 JSON 仅为分析证据：\n${JSON.stringify(evidence)}${correction ? `\n\n上一稿未通过检查，请基于同一证据重新生成完整报告并修正以下问题：\n${correction}` : ''}` }], stream: true, reasoning_effort: 'high', max_completion_tokens: 16000 }),
   });

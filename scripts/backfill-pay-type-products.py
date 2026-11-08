@@ -4,6 +4,7 @@ import argparse
 import datetime as dt
 import decimal
 import hashlib
+import http.client
 import importlib.util
 import json
 import pathlib
@@ -51,7 +52,9 @@ def path_for(start):
 
 def extract(start, end, client):
     output = path_for(start)
-    if output.exists():
+    validation = OUT / f'{start:%Y%m}-validation.json'
+    covered_days = (end - start).days + 1
+    if output.exists() and validation.exists() and json.loads(validation.read_text()).get('days') == covered_days:
         validate(start, end)
         return
     sql = subprocess.check_output([
@@ -155,7 +158,8 @@ def remote(sql):
             error = f'HTTP {exc.code}: ' + exc.read(800).decode(errors='replace')
             if 400 <= exc.code < 500 and exc.code != 429:
                 raise RuntimeError(error) from exc
-        except (urllib.error.URLError, TimeoutError) as exc:
+        except (urllib.error.URLError, TimeoutError, http.client.RemoteDisconnected,
+                ConnectionError, OSError) as exc:
             error = str(exc)
         if attempt == 4:
             raise RuntimeError(error)

@@ -5,6 +5,7 @@
 @import "@fontsource-variable/inter";
 @import "./tailwind-theme.css";
 @import "./typography.css";
+@import "./filter-surfaces.css";
 
 @custom-variant dark (&:is(.dark *));
 

@@ -1,5 +1,5 @@
 // ADS migration: keep attribution modes separate; never sum modes together.
-export function buildMiddleTableSql(dataset: 'pay_type', platform: string, startKey: string, endKey: string): string {
+export function buildMiddleTableSql(dataset: 'pay_type', platform: string, startKey: string, endKey: string, attributionType?: 'NONE' | 'CREATION_MODE' | 'MODEL' | 'ACTUAL_MODEL'): string {
   const scope = platform === 'web' ? "UPPER(pay_platform) = 'WEB'" : platform === 'app' ? "UPPER(pay_platform) IN ('IOS', 'ANDROID')" : '1=1';
   const week = "CAST(DATEADD(CAST(stat_date AS DATETIME), -CAST(PMOD(WEEKDAY(CAST(stat_date AS DATETIME)) + 2, 7) AS BIGINT), 'dd') AS DATE)";
   return `
@@ -23,6 +23,7 @@ FROM mc_prd.ads_pollo_transaction_gmv_attribution_daily_dip
 WHERE p_date BETWEEN '${startKey}' AND '${endKey}'
  AND stat_date BETWEEN CAST(TO_DATE('${startKey}', 'yyyymmdd') AS DATE) AND CAST(TO_DATE('${endKey}', 'yyyymmdd') AS DATE)
  AND attribution_type IN ('NONE','CREATION_MODE','MODEL','ACTUAL_MODEL')
+ ${attributionType ? `AND attribution_type = '${attributionType}'` : ''}
  AND UPPER(pay_platform) IN ('WEB','IOS','ANDROID','UNKNOWN') AND (${scope})
  AND (
    (pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL','API') AND pay_sub_category <> '汇总')

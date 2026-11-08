@@ -193,3 +193,9 @@ The output must be Markdown and must use this exact structure:
 ```
 
 The model must not output evidence tables, modify table markers, add external background, output optimization suggestions, mention raw schema field names, write literal labels such as `事实论点：` or `推测：`, output paragraphs beginning with `口径说明：`, explain metric or creative-tier definitions, or spend narrative space explaining dimensional-boundary rules. Metric and tier definitions belong to the dashboard's data-definition tab.
+
+## 注册 Cohort 回收解读
+
+先判断观察窗口是否成熟且回收数据可用，再用同一注册 cohort 的原子金额、人数计算 LTV = 窗口累计 GMV / 注册 UV，CAC = 获客成本 / 注册 UV。不得比较不同人群或不同观察窗口，也不得从展示的舍入金额判断是否回本。
+
+结构化顺序：核心结论（本窗口 LTV 是否覆盖 CAC）→ 回收证据（覆盖比例、每注册用户及总金额缺口／盈余）→ LTV（累计 GMV、观察窗口）→ CAC（成本与注册 UV）→ 成本、规模。覆盖获客成本不等于净利润回本，不把尚未成熟窗口写成最终失败。注册 UV 为零、成本为零或原子数据缺失时明确比较边界，不虚构 CAC、覆盖率或回本结论。

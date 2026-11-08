@@ -1,9 +1,7 @@
 /* ══ Toast stack ══════════════════════════════════════════
    Three toasts stacked, fanning into a list on hover. Tones are the
-   reference's: the front one white, the tucked ones a barely-there
-   2% grey — both the same, so they read as paper behind paper rather
-   than a darkening ramp. Where the reference separates them with a
-   soft shadow, this uses a faint hairline (no drop shadows on the bench).
+   reference's: opaque white surfaces, separated with soft shadows.
+   Expanded details replace the stack until the details are closed.
    Status icons are their own solid colours, never faded. */
 .tst {
   position: fixed;
@@ -13,7 +11,7 @@
   font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
   color: var(--ui-ink, #25243d);
   --fill-on: var(--ui-ink, #25243d);
-  --fill-slab: var(--ui-surface, #ffffff);
+  --fill-slab: #ffffff;
   --font-ui: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
   --ink: var(--ui-ink, #25243d);
   --pane-edge: var(--ui-line, #e7e7ef);
@@ -21,8 +19,9 @@
   --tst-mute: color-mix(in srgb, var(--fill-on) 52%, var(--fill-slab));
   --tst-wash: color-mix(in srgb, var(--fill-on) 6%, var(--fill-slab));
 }
-.tst-toast { position: absolute; left: 0; top: 0; width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px; border-radius: var(--tst-r); background: var(--fill-slab); transform-origin: 50% 0; transition: background-color 220ms ease, box-shadow 220ms ease; cursor: pointer; }
-.tst:not([data-open]) .tst-toast:not([data-front]) { background: color-mix(in srgb, var(--fill-on) 6%, var(--fill-slab)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--fill-on) 6%, transparent); }
+.tst-list { position: absolute; inset: 0; }
+.tst-toast { position: absolute; left: 0; top: 0; width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px; border-radius: var(--tst-r); background: #ffffff; box-shadow: 0 8px 24px rgb(13 37 61 / 10%); transform-origin: 50% 0; transition: background-color 220ms ease, box-shadow 220ms ease; cursor: pointer; }
+.tst:not([data-open]) .tst-toast:not([data-front]) { background: #ffffff; }
 .tst-toast > * { transition: opacity 220ms ease; }
 .tst:not([data-open]) .tst-toast:not([data-front]) > * { opacity: 0; }
 .tst-icon { flex: none; display: grid; place-items: center; }
@@ -38,7 +37,7 @@
 .tst-x { display: grid; width: 28px; height: 28px; flex: none; place-items: center; border-radius: 999px; background: none; color: var(--tst-mute); }
 .tst-x:hover, .tst-act:hover { background: var(--tst-wash); color: var(--fill-on); }
 .tst-act:focus-visible, .tst-x:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--signal); }
-.tst-detail { position: absolute; right: 0; bottom: 0; z-index: 10; width: min(360px, calc(100vw - 32px)); box-sizing: border-box; padding: 16px 16px 14px; border: 1px solid var(--pane-edge); border-radius: 20px; background: var(--fill-slab); color: var(--fill-on); box-shadow: 0 18px 42px rgb(37 36 61 / 18%); }
+.tst-detail { position: absolute; right: 0; bottom: 0; z-index: 10; width: min(360px, calc(100vw - 32px)); max-height: calc(100dvh - 120px); overflow-y: auto; box-sizing: border-box; padding: 16px 16px 14px; border: 0; border-radius: 20px; background: #ffffff; color: var(--fill-on); box-shadow: 0 18px 42px rgb(37 36 61 / 18%); }
 .tst-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .tst-detail-head strong { font-size: 15px; font-weight: 650; line-height: 20px; }
 .tst-detail-head .tst-x { margin: -4px -4px 0 0; }

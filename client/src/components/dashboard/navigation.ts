@@ -35,7 +35,7 @@ export const DASHBOARD_VIEWS = [
   },
   {
     id: 'ads',
-    label: '广告侧看板',
+    label: '付费广告',
     description: '从国家结构继续查看广告点击变化。',
     icon: Megaphone,
   },

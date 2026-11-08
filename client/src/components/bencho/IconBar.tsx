@@ -44,7 +44,7 @@ export function IconBar<T extends string>({ items, value, onChange, label, colla
             {itemIcon(value)}<span>{items[selectedIndex]?.label ?? label}</span>
             <ChevronDown size={14} className={open ? 'is-open' : undefined}/>
           </Button>
-          <Popover.Content placement="bottom end" offset={10} shouldFlip={false} className="chain-fold-popover" shouldSkipAnimation>
+          <Popover.Content placement="bottom end" offset={10} shouldFlip className="chain-fold-popover" shouldSkipAnimation>
             <motion.div className="chain-fold-surface" initial={reducedMotion ? false : {opacity:0,y:-8,scale:.94}} animate={{opacity:1,y:0,scale:1}} transition={{type:'spring',stiffness:520,damping:32,mass:.7}}>
               <Popover.Dialog aria-label={label}>
                 <div role="group" aria-label={`${label}选项`} className="chain-fold-options" onKeyDownCapture={onKeyDown}>

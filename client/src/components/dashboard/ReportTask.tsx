@@ -8,6 +8,7 @@ import { pauseSyncRun, resumeSyncRun, retrySyncRun } from '@/api/sync';
 import { getGmvAnomalies } from '@/api/dashboard';
 import { toast } from 'sonner';
 import { pushToast } from '@/components/bencho/ToastStack';
+import { claimFailureNotification } from './task-failure-notifications';
 
 type Step = { key: string; label: string; status: 'waiting' | 'running' | 'success' | 'failed'; detail?: string };
 type Task = {
@@ -21,6 +22,7 @@ type Task = {
   steps: Step[];
   errorMessage?: string;
   href: string;
+  recoveryScopes?: string[];
 };
 
 const DISMISSED_TASKS_KEY = 'pollo-dismissed-task-runs';
@@ -115,7 +117,9 @@ function notifyTaskCompletion(task: Task) {
     window.localStorage.setItem(NOTIFIED_TASKS_KEY, JSON.stringify([...notified.slice(-49), task.id]));
   } catch { /* optional */ }
   const failed = task.status === 'failed';
+  if (failed && !claimFailureNotification(task, window.localStorage)) return false;
   pushToast({
+    id: failed ? `task-error:${task.kind}:${task.errorMessage || '任务执行失败'}` : `task-complete:${task.id}`,
     kind: failed ? 'error' : 'success',
     title: task.kind === 'sync' ? (failed ? '数据同步失败' : '数据同步完成') : (failed ? '诊断报告生成失败' : '诊断报告已生成'),
     body: failed ? (task.errorMessage || '任务执行失败，请打开任务详情查看') : task.context,
@@ -162,6 +166,7 @@ export function ReportTask({
       context: `${job.platform === 'web' ? 'Web' : 'App'} · ${formatAnalysisWeekLabel(job.periodStart, job.periodEnd)}`,
       status: job.status, startedAt: job.startedAt, updatedAt: job.heartbeatAt || job.finishedAt || job.startedAt,
       steps: job.steps ?? [], errorMessage: job.errorMessage,
+      recoveryScopes: [job.platform],
       href: `/report?platform=${job.platform}&period=${getReportPeriodKey(job.periodStart, job.periodEnd)}`,
     })),
     ...(syncJob ? [{
@@ -169,6 +174,7 @@ export function ReportTask({
       context: `${syncJob.platforms.map(item => item === 'web' ? 'Web' : 'App').join(' + ')} · ${syncJob.startDate} ~ ${syncJob.endDate}`,
       status: syncJob.status, startedAt: syncJob.startedAt, updatedAt: syncJob.heartbeatAt || syncJob.finishedAt || syncJob.startedAt,
       steps: syncJob.steps ?? [], errorMessage: syncJob.errorMessage, href: '/?tab=data',
+      recoveryScopes: syncJob.datasets ?? ['pay_type', 'chain', 'creative', 'renewal'],
     }] : []),
   ];
   const active = (task: Task) => ['queued', 'running', 'pausing', 'paused'].includes(task.status);
@@ -182,6 +188,7 @@ export function ReportTask({
   useEffect(() => {
     const nextStatuses = new Map(tasks.map(task => [task.id, task.status]));
     for (const task of tasks) {
+      if (task.status === 'success') claimFailureNotification(task, window.localStorage);
       const previous = previousStatuses.current.get(task.id);
       if (!previous && !isActiveStatus(task.status)) {
         if (task.kind !== 'sync' || task.status !== 'success') notifyTaskCompletion(task);

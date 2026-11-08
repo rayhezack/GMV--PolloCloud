@@ -3,7 +3,7 @@ const targets: Record<string, { title: string; selector: string }> = {
   trend: { title: 'GMV 趋势', selector: '.revenue-card-ready' },
   payment: { title: '付费类型', selector: '.payment-table-content tbody tr' },
   chain: { title: '支付链路归因', selector: '.cw-workbench .cw-table tbody td' },
-  ads: { title: '广告侧看板', selector: '.op-ads-dashboard .op-stats' },
+  ads: { title: '付费广告', selector: '.op-ads-dashboard .op-stats' },
   creative: { title: '创作积极性', selector: '.op-creative-grid' },
 };
 const output = document.createElement('output');

@@ -62,7 +62,10 @@ export default function DashboardDateRangePicker({ selectedRange, onRangeChange 
         isOpen={open}
         onOpenChange={setOpen}
       >
-        <DateField.Group className="dashboard-date-picker__group">
+        <DateField.Group className="dashboard-date-picker__group" onClickCapture={event=>{
+          if (!(event.target instanceof Element) || event.target.closest('[data-slot="date-range-picker-trigger"]')) return;
+          setOpen(true);
+        }}>
           <DateField.Input slot="start" aria-label="开始日期" className="dashboard-date-picker__input">
             {(segment) => <DateField.Segment segment={segment.type === 'literal' ? { ...segment, text: '/' } : segment} />}
           </DateField.Input>

@@ -10,6 +10,7 @@ export interface PickerProps {
   label: string;
   className?: string;
   searchable?: boolean;
+  disabled?: boolean;
 }
 
 // Adapted from Bencho Assignees / Picker (MIT, bencho.dev/licence).
@@ -19,7 +20,7 @@ const unfold = { type: 'spring' as const, stiffness: 460, damping: 23, mass: 0.9
 const filterItem = (text: string, query: string) =>
   text.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
 
-export function Picker({ value, onChange, items, label, className, searchable = false }: PickerProps) {
+export function Picker({ value, onChange, items, label, className, searchable = false, disabled = false }: PickerProps) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const [portalContainer, setPortalContainer] = useState<Element | undefined>();
@@ -86,7 +87,7 @@ export function Picker({ value, onChange, items, label, className, searchable = 
           aria-label={label}
           aria-controls={open ? listId : undefined}
           data-open={open || undefined}
-          isDisabled={!items.length}
+          isDisabled={disabled || !items.length}
         >
           <span className="bencho-picker-value">{selected?.label ?? label}</span>
         </Button>
@@ -96,7 +97,7 @@ export function Picker({ value, onChange, items, label, className, searchable = 
           placement="bottom end"
           offset={6}
           containerPadding={12}
-          shouldFlip={false}
+          shouldFlip
           shouldSkipAnimation={Boolean(reducedMotion)}
         >
           <motion.div

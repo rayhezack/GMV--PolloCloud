@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
-import { flowBarLayout, flowBarTop, endpointLabels } from './flow-bar-layout.ts';
+import { flowBarLayout, flowBarTop, endpointLabels, bucketLabels } from './flow-bar-layout.ts';
 import { niceTicks } from './series.ts';
 
 // Exercise the actual private layout functions in both entry points without
@@ -19,7 +19,7 @@ function loadLayout(relativePath) {
   const code = ts.transpileModule(selected.map(node => node.getText(ast)).join('\n'), {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  return new Function('flowBarLayout', 'flowBarTop', 'endpointLabels', 'niceTicks', `${code}\nreturn layoutChart;`)(flowBarLayout, flowBarTop, endpointLabels, niceTicks);
+  return new Function('flowBarLayout', 'flowBarTop', 'endpointLabels', 'bucketLabels', 'niceTicks', `${code}\nreturn layoutChart;`)(flowBarLayout, flowBarTop, endpointLabels, bucketLabels, niceTicks);
 }
 
 for (const entry of ['../global-finance-market-combo-chart.tsx', './GlobalFinanceMarketComboChart.tsx']) {

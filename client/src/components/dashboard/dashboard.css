@@ -798,9 +798,6 @@
 }
 .week-picker-popover .date-range-summary strong { color: #4f5958; }
 .trend-summary-tools { display: inline-flex; align-items: flex-start; gap: 18px; }
-.dashboard-enter {
-  animation: dashboard-enter 0.2s ease-out;
-}
 .dashboard-shell .font-mono {
   font-family: inherit;
   font-variant-numeric: tabular-nums;
@@ -2001,33 +1998,6 @@
 }
 .sidebar-scrim {
   display: none;
-}
-@keyframes dashboard-enter {
-  from {
-    opacity: 0.5;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-::view-transition-old(root) {
-  animation: dashboard-view-old 180ms ease-in both;
-}
-::view-transition-new(root) {
-  animation: dashboard-view-new 260ms cubic-bezier(.22, 1, .36, 1) both;
-}
-@keyframes dashboard-view-old {
-  to { opacity: 0; transform: translateX(-8px); }
-}
-@keyframes dashboard-view-new {
-  from { opacity: 0; transform: translateX(12px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-old(root),
-  ::view-transition-new(root) { animation-duration: 1ms; }
 }
 @media (min-width: 1100px) {
   .dashboard-shell table th,
@@ -3313,3 +3283,7 @@
 
 @media(max-width:1000px){.dashboard-content>.dashboard-heading{margin:-20px -20px 0;padding:12px 20px 10px}}
 @media(max-width:700px){.dashboard-content>.dashboard-heading{min-width:0;margin:-16px -12px 0;padding:12px 12px 10px;width:auto;max-width:calc(100% + 24px)}}
+
+.platform-filter-menu { min-width: 184px; padding: 9px; }
+.platform-filter-menu .icon-control-option { cursor: pointer; }
+.platform-filter-menu .icon-control-option.is-active { color: var(--ui-ink); background: #f0f1f4; }

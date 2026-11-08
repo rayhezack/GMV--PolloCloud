@@ -33,3 +33,10 @@ export function endpointLabels<T extends { key: string; time: number; x: number;
   }
   return [...labels, { ...last, align: 'end' }];
 }
+
+/** Label actual daily dates or bucket starts, using only the selected grain. */
+export function bucketLabels(times: number[], x: (time: number) => number, period: string) {
+  const unit = period === 'month' || period === 'monthly' ? 'month' : period === 'week' || period === 'weekly' ? 'week' : 'day';
+  const candidates = times.map(time => ({key:String(time),time,x:x(time),unit}));
+  return candidates.length ? endpointLabels(candidates,candidates[0],candidates[candidates.length-1],90) : [];
+}

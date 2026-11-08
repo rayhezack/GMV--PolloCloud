@@ -211,7 +211,6 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
         toast.info(response.skipReason ?? '最新日期已更新，已跳过拉取');
       } else if (response.status !== 'success') {
         setErrorMsg(response.errorMessage ?? '同步失败，请稍后重试');
-        toast.error('同步失败');
       }
     } catch (error) {
       stopPolling();

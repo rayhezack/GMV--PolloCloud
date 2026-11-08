@@ -1,4 +1,4 @@
-import { createScope, createTimeline, type JSAnimation, type Scope, type Timeline } from "animejs"
+import { animate, createScope, createTimeline, type JSAnimation, type Scope, type Timeline } from "animejs"
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 
 const REDUCED_MOTION = "(prefers-reduced-motion: reduce)"
@@ -51,12 +51,13 @@ export function useAnimeScope(root: RefObject<HTMLElement | null>) {
   return scope
 }
 
-/** Render a complete chart before paint; business figures never count up from zero. */
+/** Keep figures exact, then reveal each plot from left to right when it enters view. */
 export function useChartEntrance(
   root: RefObject<HTMLElement | null>,
   build: (timeline: Timeline) => void | (() => void),
   _options: { amount?: number } = {},
 ) {
+  const reduced = useReducedMotion()
   const buildRef = useRef(build)
   buildRef.current = build
   useIsomorphicLayoutEffect(() => {
@@ -67,7 +68,20 @@ export function useChartEntrance(
     timeline.revert()
     // Builders restore their final SVG geometry and exact text after reverting styles.
     if (typeof cleanup === "function") cleanup()
-  }, [root])
+    if (reduced) return
+    const plots = Array.from(root.current.querySelectorAll<SVGSVGElement | HTMLElement>('svg, .income-overview-bar'))
+      .filter(el => el.matches('.income-overview-bar') || el.getBoundingClientRect().width > 80 && el.getBoundingClientRect().height > 40)
+    if (!plots.length) return
+    plots.forEach(el => { el.style.clipPath = 'inset(0 100% 0 0)' })
+    let reveal: JSAnimation | undefined
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return
+      observer.disconnect()
+      reveal = animate(plots, {clipPath:['inset(0 100% 0 0)','inset(0 0% 0 0)'],duration:1500,delay:400,ease:'inOutSine',onComplete:releaseStyles('clip-path')})
+    }, {threshold:0.15})
+    observer.observe(root.current)
+    return () => { observer.disconnect(); reveal?.cancel(); plots.forEach(el => el.style.removeProperty('clip-path')) }
+  }, [root,reduced])
 }
 
 /**

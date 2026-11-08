@@ -1,3 +1,4 @@
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuPortal } from '@/components/ui/dropdown-menu';
 import { WeekComparisonPicker } from '@/components/dashboard/WeekComparisonPicker';
 import DateRangePicker from '@/components/dashboard/DashboardDateRangePicker';
 import { formatChartTooltipValue, formatChartTooltipChange } from "@/lib/chart-tooltip-format";
@@ -336,7 +337,7 @@ const LOAD_ERROR_LABELS: Record<DashboardLoadKey, string> = {
   payType: '付费类型',
   chain: '支付链路',
   creative: '创作积极性',
-  ads: '广告侧',
+  ads: '付费广告',
   sync: '同步状态',
 };
 
@@ -366,7 +367,7 @@ function buildViewWindow(): {
   startDate: string;
   endDate: string;
 } {
-  if (LOCAL_DATA_WINDOW) return LOCAL_DATA_WINDOW;
+  if (LOCAL_DATA_WINDOW) return { startDate: dayjs(LOCAL_DATA_WINDOW.endDate).subtract(29, 'day').format('YYYY-MM-DD'), endDate: LOCAL_DATA_WINDOW.endDate };
   const endDate = dayjs().subtract(1, 'day').format('YYYY-MM-DD');
   const startDate = dayjs(endDate).subtract(29, 'day').format('YYYY-MM-DD');
   return { startDate, endDate };
@@ -1295,79 +1296,33 @@ function GlobalDashboardControls({
   availableWeeks: string[];
   onWeekChange: (updates: { baselineWeek?: string; analysisWeek?: string }) => void;
 }) {
-  const [platformOpen, setPlatformOpen] = useState(false);
-  const [pendingPlatform, setPendingPlatform] = useState<DashboardPlatform>(platform);
-  const controlsRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => setPendingPlatform(platform), [platform]);
-  useEffect(() => {
-    if (!platformOpen) return;
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!controlsRef.current?.contains(event.target as Node)) {
-        setPlatformOpen(false);
-      }
-    };
-    document.addEventListener('pointerdown', closeOnOutsidePointer);
-    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
-  }, [platformOpen]);
 
   return (
-    <div ref={controlsRef} className="icon-control-bar" aria-label="看板工具">
+    <div className="icon-control-bar" aria-label="看板工具">
       {showWeekControls && <WeekComparisonPicker baselineWeek={baselineWeek} analysisWeek={analysisWeek} availableWeeks={availableWeeks} onWeekChange={onWeekChange}/>}
-      <div className="icon-control-wrap">
-        <button
-          type="button"
-          className="icon-control"
-          aria-expanded={platformOpen}
-          aria-label={`端类型：${PLATFORM_LABELS[pendingPlatform]}`}
-          title="端类型"
-          onClick={() => setPlatformOpen((open) => !open)}
-        >
-          {pendingPlatform === 'all' ? <LayoutDashboard size={17} /> : pendingPlatform === 'web' ? <Monitor size={17} /> : <Smartphone size={17} />}
-          <span className="icon-control-tooltip">端类型</span>
-        </button>
-        {platformOpen ? (
-          <div className="icon-control-popover" role="menu" aria-label="端类型选择">
-            <div className="icon-control-popover-title">端类型</div>
-            {(['all', 'web', 'app'] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                role="menuitemradio"
-                aria-checked={pendingPlatform === value}
-                className={cn('icon-control-option', pendingPlatform === value && 'is-active')}
-                onClick={() => {
-                  setPendingPlatform(value);
-                  if (value !== 'app') {
-                    onPlatformChange(value);
-                    setPlatformOpen(false);
-                  }
-                }}
-              >
-                {value === 'all' ? <LayoutDashboard size={15} /> : value === 'web' ? <Monitor size={15} /> : <Smartphone size={15} />}
-                {PLATFORM_LABELS[value]}
-              </button>
-            ))}
-            {pendingPlatform === 'app' ? (
-              <div className="icon-control-submenu">
-                <span>设备</span>
-                {DEVICE_FILTER_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={cn('icon-control-option', deviceType === option.value && 'is-active')}
-                    onClick={() => {
-                      onAppDeviceChange(option.value);
-                      setPlatformOpen(false);
-                    }}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" className="icon-control" aria-label={`端类型：${PLATFORM_LABELS[platform]}`} title="端类型">
+            {platform === 'all' ? <LayoutDashboard size={17} /> : platform === 'web' ? <Monitor size={17} /> : <Smartphone size={17} />}
+            <span className="icon-control-tooltip">端类型</span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="platform-filter-menu" align="end" sideOffset={10}>
+          <div className="icon-control-popover-title">端类型</div>
+          {(['all', 'web'] as const).map(value => <DropdownMenuItem key={value} className={cn('icon-control-option', platform === value && 'is-active')} onSelect={() => onPlatformChange(value)}>
+            {value === 'all' ? <LayoutDashboard size={15} /> : <Monitor size={15} />}{PLATFORM_LABELS[value]}
+          </DropdownMenuItem>)}
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className={cn('icon-control-option', platform === 'app' && 'is-active')}><Smartphone size={15} />App 端</DropdownMenuSubTrigger>
+            <DropdownMenuPortal>
+              <DropdownMenuSubContent className="platform-filter-menu" sideOffset={6} collisionPadding={12}>
+                <div className="icon-control-popover-title">设备</div>
+                {DEVICE_FILTER_OPTIONS.map(option => <DropdownMenuItem key={option.value} className={cn('icon-control-option', platform === 'app' && deviceType === option.value && 'is-active')} onSelect={() => onAppDeviceChange(option.value)}>{option.label}</DropdownMenuItem>)}
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <button
         type="button"
         className="icon-control"
@@ -2269,7 +2224,7 @@ function PaymentDrillExplorer({
       <div className={cn(dimension === 'payType' ? 'payment-explorer-layout' : 'payment-explorer-layout--table-only')}>
         {dimension === 'payType' && <PaymentTrendPanel type="active" section={section} comparison={comparison} breakdown={breakdown} />}
         <div className="payment-explorer-table-column">
-      {dimension === 'function' && <div className="payment-explorer-search"><Search value={query} onChange={(value) => { setQuery(value); closeDetail(); }} placeholder="搜索功能" /><span>{visibleItems.length} 项功能</span></div>}
+      {dimension === 'function' && <div className="payment-explorer-search"><Search value={query} onChange={(value) => { setQuery(value); closeDetail(); }} placeholder="搜索功能" /></div>}
       {breakdown.length === 0 && <div className="payment-explorer-notice">当前比较窗口暂无注册新老与功能明细。</div>}
       <div className={cn('payment-explorer-body', 'is-table', (selected || detailExiting) && 'has-detail')}>
         <div
@@ -2835,7 +2790,6 @@ function buildChainFunnelFallback(data: DashboardAttributionsResponse): ChainFun
 function SectionHeaderLine({
   title,
   description,
-  count,
   hint,
   action,
 }: {
@@ -2863,11 +2817,7 @@ function SectionHeaderLine({
         ) : null}
       </div>
       {action}
-      {typeof count === 'number' ? (
-        <Badge variant="outline" className="rounded-full bg-gray-50">
-          {count} 项
-        </Badge>
-      ) : null}
+
     </div>
   );
 }
@@ -2894,6 +2844,7 @@ const DashboardPage = () => {
   });
   const [chainFunnel, setChainFunnel] = useState<ChainFunnelResponse | null>(null);
   const [adsOverview, setAdsOverview] = useState<AdsOverviewResponse | null>(null);
+  const [adsComparisonOverview, setAdsComparisonOverview] = useState<AdsOverviewResponse | null>(null);
   const [creativeOverview, setCreativeOverview] = useState<CreativeOverviewResponse | null>(null);
   const [syncRun, setSyncRun] = useState<SyncRunStatus | null>(null);
   const [selectedPaymentType, setSelectedPaymentType] = useState<PaymentChainType>('active');
@@ -3097,14 +3048,19 @@ const DashboardPage = () => {
     [granularity, selectedTrendWindow],
   );
   const selectedAdsWindow = useMemo(() => {
-    const first = LOCAL_DATA_WINDOW?.startDate ?? trendWindow.startDate;
-    const last = LOCAL_DATA_WINDOW?.endDate ?? trendWindow.endDate;
+    const first = LOCAL_DATA_WINDOW?.startDate ?? TREND_DATA_START_DATE;
+    const last = LOCAL_DATA_WINDOW?.endDate ?? dayjs().subtract(1, 'day').format('YYYY-MM-DD');
     const requestedStart = searchParams.get('adsStartDate');
     const requestedEnd = searchParams.get('adsEndDate');
-    const start = isValidDateParam(requestedStart) ? requestedStart : first;
+    const start = isValidDateParam(requestedStart) ? requestedStart : trendWindow.startDate;
     const end = isValidDateParam(requestedEnd) ? requestedEnd : last;
     return {startDate: [first, start < end ? start : end].sort().at(-1)!, endDate: [last, start < end ? end : start].sort()[0]};
   }, [searchParams, trendWindow.startDate, trendWindow.endDate]);
+  const adsTopStart = [dayjs(selectedAdsWindow.startDate).subtract(7, 'day').format('YYYY-MM-DD'), defaultWeeks.baselineWeek, defaultWeeks.analysisWeek].sort()[0];
+  const adsTopEnd = buildViewWindow().endDate;
+  const adsBaselineWeek = isSelectableWeekParam(searchParams.get('adsBaselineWeek')) ? searchParams.get('adsBaselineWeek')! : baselineWeek;
+  const adsAnalysisWeek = isSelectableWeekParam(searchParams.get('adsAnalysisWeek')) ? searchParams.get('adsAnalysisWeek')! : analysisWeek;
+  const adsTableUsesTop = adsBaselineWeek === defaultWeeks.baselineWeek && adsAnalysisWeek === defaultWeeks.analysisWeek;
   const creativeWeeks = {
     baselineWeek: isSelectableWeekParam(searchParams.get('creativeBaselineWeek')) ? searchParams.get('creativeBaselineWeek')! : baselineWeek,
     analysisWeek: isSelectableWeekParam(searchParams.get('creativeAnalysisWeek')) ? searchParams.get('creativeAnalysisWeek')! : analysisWeek,
@@ -3179,14 +3135,7 @@ const DashboardPage = () => {
       const commitNavigation = () => {
         flushSync(() => setSearchParams(next, { replace: true }));
       };
-      const transitionDocument = document as Document & {
-        startViewTransition?: (callback: () => void) => unknown;
-      };
-      if (transitionDocument.startViewTransition) {
-        transitionDocument.startViewTransition(commitNavigation);
-      } else {
-        commitNavigation();
-      }
+      commitNavigation();
     },
     [searchParams, setSearchParams],
   );
@@ -3507,16 +3456,16 @@ const DashboardPage = () => {
     setSectionLoading('ads', true);
     setSectionError('ads');
     const cacheKey = [
-      'ads', platform, effectiveDeviceType ?? 'all', attributionWindow.startDate,
-      attributionWindow.endDate, baselineWeek, analysisWeek,
+      'ads-range', platform, effectiveDeviceType ?? 'all', adsTopStart,
+      adsTopEnd, defaultWeeks.baselineWeek, defaultWeeks.analysisWeek, refreshToken,
     ].join('|');
     void getCachedRequest(requestCacheRef.current, cacheKey, () => dashboardApi.getAdsOverview({
       platform,
       deviceType: effectiveDeviceType,
-      startDate: attributionWindow.startDate,
-      endDate: attributionWindow.endDate,
-      baselinePeriod: baselineWeek,
-      analysisPeriod: analysisWeek,
+      startDate: adsTopStart,
+      endDate: adsTopEnd,
+      baselinePeriod: defaultWeeks.baselineWeek,
+      analysisPeriod: defaultWeeks.analysisWeek,
       cacheBust: refreshToken || undefined,
     }))
       .then((response) => {
@@ -3533,9 +3482,24 @@ const DashboardPage = () => {
       });
     return () => { cancelled = true; };
   }, [
-    activeTab, analysisWeek, attributionWindow.endDate, attributionWindow.startDate,
-    baselineWeek, effectiveDeviceType, platform, refreshToken, setSectionError, setSectionLoading,
+    activeTab, adsTopEnd, adsTopStart, defaultWeeks.analysisWeek, defaultWeeks.baselineWeek,
+    effectiveDeviceType, platform, refreshToken, setSectionError, setSectionLoading,
   ]);
+
+  useEffect(() => {
+    if (activeTab !== 'ads' || adsTableUsesTop) return;
+    let cancelled = false;
+    setAdsComparisonOverview(null);
+    setSectionError('ads');
+    const startDate = [adsBaselineWeek,adsAnalysisWeek].sort()[0];
+    const endDate = dayjs([adsBaselineWeek,adsAnalysisWeek].sort()[1]).add(6,'day').format('YYYY-MM-DD');
+    const cacheKey = ['ads-table',platform,effectiveDeviceType ?? 'all',startDate,endDate,adsBaselineWeek,adsAnalysisWeek,refreshToken].join('|');
+    void getCachedRequest(requestCacheRef.current,cacheKey,()=>dashboardApi.getAdsOverview({
+      platform,deviceType:effectiveDeviceType,startDate,endDate,baselinePeriod:adsBaselineWeek,analysisPeriod:adsAnalysisWeek,cacheBust:refreshToken || undefined,
+    })).then(response=>{if(!cancelled)setAdsComparisonOverview(response);})
+      .catch(cause=>{if(!cancelled){setAdsComparisonOverview(null);setSectionError('ads',getErrorMessage(cause));}});
+    return ()=>{cancelled=true;};
+  },[activeTab,adsTableUsesTop,adsBaselineWeek,adsAnalysisWeek,effectiveDeviceType,platform,refreshToken,setSectionError]);
 
   useEffect(() => {
     if (activeTab !== 'trend') {
@@ -3807,7 +3771,7 @@ const DashboardPage = () => {
   );
 
   return (
-    <div className="dashboard-content" data-tab={activeTab}>
+    <div key={activeTab} className="dashboard-content" data-tab={activeTab}>
       <div className="dashboard-heading">
         <div>
           <h1>{view.label}</h1>
@@ -3891,7 +3855,7 @@ const DashboardPage = () => {
       ) : null}
 
       {activeTab === 'trend' && (
-        <div className="dashboard-enter" key="trend">
+        <div className="dashboard-view" key="trend">
           <PageSection
             title="收入趋势"
           >
@@ -3938,7 +3902,7 @@ const DashboardPage = () => {
       )}
 
       {activeTab === 'chain' && (
-        <div className="dashboard-enter" key="chain">
+        <div className="dashboard-view" key="chain">
           <PageSection
             className="cw-shell"
             title={isRenewalChain ? '自动续订归因' : undefined}
@@ -4041,15 +4005,15 @@ const DashboardPage = () => {
       )}
 
       {activeTab === 'ads' && (
-        <div className="dashboard-enter" key="ads">
+        <div className="dashboard-view" key="ads">
           <PageSection className="op-shell" fullBleed>
-            {loadingBySection.ads && !adsOverview ? <LoadingBlock title="广告数据加载中" /> : <AdsDashboard data={adsOverview} dateRange={selectedAdsWindow} availableWeeks={availableWeeks} onComparisonChange={(baseline,analysis)=>updateSearchParams({baselineWeek:baseline,analysisWeek:analysis})} />}
+            {loadingBySection.ads && !adsOverview ? <LoadingBlock title="广告数据加载中" /> : <AdsDashboard detailRequest={{platform,deviceType:effectiveDeviceType,startDate:adsTableUsesTop?adsTopStart:[adsBaselineWeek,adsAnalysisWeek].sort()[0],endDate:adsTableUsesTop?adsTopEnd:dayjs([adsBaselineWeek,adsAnalysisWeek].sort()[1]).add(6,'day').format('YYYY-MM-DD'),baselinePeriod:adsBaselineWeek,analysisPeriod:adsAnalysisWeek,cacheBust:refreshToken||undefined}} data={adsOverview} tableData={adsTableUsesTop ? adsOverview : adsComparisonOverview?.comparison?.baselinePeriod===adsBaselineWeek && adsComparisonOverview.comparison.analysisPeriod===adsAnalysisWeek ? adsComparisonOverview : null} tableWeeks={{baselineWeek:adsBaselineWeek,analysisWeek:adsAnalysisWeek}} dateRange={selectedAdsWindow} availableWeeks={availableWeeks} onComparisonChange={(baseline,analysis)=>updateSearchParams({adsBaselineWeek:baseline,adsAnalysisWeek:analysis})} />}
           </PageSection>
         </div>
       )}
 
       {activeTab === 'creative' && (
-        <div className="dashboard-enter" key="creative">
+        <div className="dashboard-view" key="creative">
           <PageSection className="op-shell" fullBleed>
             {loadingBySection.creative && !attributions.creative ? <LoadingBlock title="创作数据加载中" /> : <CreativeDashboard data={attributions.creative} chain={creativeOverview} dateRange={selectedTrendWindow} availableWeeks={availableWeeks}
               featureWeeks={creativeWeeks} tierWeeks={creativeTierWeeks}

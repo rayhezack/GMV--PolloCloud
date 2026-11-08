@@ -47,3 +47,20 @@ test('a single observed date has one centered label', () => {
   const point={key:'one',time:0,x:100,unit:'day'};
   assert.deepEqual(endpointLabels([],point,point),[{...point,align:'center'}]);
 });
+
+const {bucketLabels} = await import('./flow-bar-layout.ts');
+test('quarterly daily and business-week ticks stay on actual dates and never become months', () => {
+  for(const [period,step] of [['day',1],['week',7]]) {
+    const times=Array.from({length:period==='day'?90:13},(_,i)=>Date.UTC(2026,7,period==='day'?9:8)+i*step*86400000);
+    const x=t=>(t-times[0])/(times.at(-1)-times[0])*1100;
+    const labels=bucketLabels(times,x,period);
+    assert.equal(labels[0].time,times[0]);assert.equal(labels.at(-1).time,times.at(-1));
+    for(const label of labels){assert.ok(times.includes(label.time));assert.equal(label.x,x(label.time));assert.equal(label.unit,period);}
+    if(period==='week')assert.ok(labels.every(label=>new Date(label.time).getUTCDay()===6));
+  }
+});
+test('every monthly tick including endpoints uses the month format',()=>{
+  const times=[7,8,9,10].map(m=>Date.UTC(2026,m,1));
+  const labels=bucketLabels(times,t=>times.indexOf(t)*200,'month');
+  assert.equal(labels.length,4);assert.ok(labels.every(label=>label.unit==='month'));
+});

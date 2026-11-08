@@ -84,7 +84,8 @@ SELECT
     plan_cycle,
     SUM(expire_user_cnt) AS expire_user_cnt,
     SUM(renew_same_day_user_cnt) AS renew_user_cnt,
-    SUM(renew_same_day_amount_usd) AS renew_amount_usd
+    SUM(renew_same_day_amount_usd) AS renew_amount_usd,
+    COUNT(*) OVER() AS source_row_count
 FROM mc_prd.ads_pollo_renewal_cohort_dip
 WHERE p_date BETWEEN '${startKey}' AND '${endKey}'
   AND platform_type <> '汇总'
@@ -285,7 +286,8 @@ SELECT
     creation_uv,
     creation_task_cnt,
     creation_uv * 1.0000 / NULLIF(active_uv, 0) AS creation_penetration_rate,
-    creation_task_cnt * 1.0000 / NULLIF(active_uv, 0) AS avg_creation_task_cnt_per_creator
+    creation_task_cnt * 1.0000 / NULLIF(active_uv, 0) AS avg_creation_task_cnt_per_creator,
+    COUNT(*) OVER() AS source_row_count
 FROM daily_metric
 ORDER BY
     period,

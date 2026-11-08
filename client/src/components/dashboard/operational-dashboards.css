@@ -164,3 +164,15 @@ body:has(.op-ads-dialog[data-state=open]) .bencho-picker-popover { pointer-event
 .op-text-week-picker .week-control-trigger:hover { background:#f0f1f4; color:#0d253d; }
 .op-inline-week-picker .week-control-popover,
 .op-text-week-picker .week-control-popover { z-index:50; }
+
+.op-cohort-diagnosis { margin-bottom:16px; padding:16px; border-radius:14px; background:linear-gradient(135deg,rgba(255,255,255,.72),rgba(238,243,251,.46)); box-shadow:inset 0 1px rgba(255,255,255,.9); color:#0d253d; font-size:12px; font-variant-numeric:tabular-nums; }
+.op-cohort-diagnosis p { margin:0; }
+.op-cohort-context { color:#61718a; font-size:11px; }
+.op-cohort-conclusion { margin-top:8px !important; line-height:1.7; }
+.op-cohort-evidence { margin-top:4px !important; line-height:1.7; }
+.op-cohort-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; margin:14px 0 0; }
+.op-cohort-metrics > div { min-width:0; }
+.op-cohort-metrics dt,.op-cohort-metrics span,.op-cohort-boundary { color:#61718a; font-size:11px; }
+.op-cohort-metrics dd { margin:5px 0; font-size:20px; font-weight:550; }
+.op-cohort-boundary { margin-top:12px !important; }
+@media(max-width:640px) { .op-cohort-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }

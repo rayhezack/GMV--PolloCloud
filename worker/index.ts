@@ -1,6 +1,9 @@
+import { BREAKDOWN_VALUE_SQL } from './breakdown-dimensions';
 import { chainDriverEffects, lmdiDriverEffects } from './chain-attribution';
 import { serializeStagingChunks } from './sync-staging';
-import { assertChainConservation, assertPaymentModeConservation } from './source-conservation';
+import { reserveSyncJob } from './sync-job-reservation';
+import { sumMicroDollars } from './monetary-sum';
+import { assertChainConservation, assertCreationConservation, assertPaymentModeConservation } from './source-conservation';
 import { getBusinessWeekStart } from '../shared/business-week';
 import { paymentAnalysisSql } from './payment-analysis-sql';
 import { GMV_ATTRIBUTION_TYPES, type GmvAttributionType, type PaymentAnalysisResponse, type PaymentTrendResponse } from '../shared/api.interface';
@@ -12,6 +15,7 @@ import { buildAdsSql } from '../server/modules/maxcompute/ads-sql';
 import { buildCreationChainSql, type CreationChainKind } from '../server/modules/maxcompute/creation-chain-sql';
 import { buildChainFunnelSql } from '../server/modules/maxcompute/chain-funnel-sql';
 import { buildPaymentRegistrationSql } from '../server/modules/maxcompute/payment-registration-sql';
+import { buildMiddleTableSql } from '../server/modules/maxcompute/middle-table-sql';
 import { POLLOCLOUD_APP_OWNER_ID } from '../shared/auth.constants';
 import { executeReport, reportGenerations } from './report-jobs';
 import type { AdsAggregate, AdsOverviewResponse, DashboardAttributionsResponse, ReportGenerationRequest, ReportGenerationStatus, ReportSummary, AttributionItem, AttributionDriverItem, SyncDataset, SyncMode, SyncRunStatus, SyncRunResponse, CreativeChainTrendPoint, CreativeOverviewResponse } from '../shared/api.interface';
@@ -135,10 +139,10 @@ async function cachedDashboardResponse(env: Env, request: Request, context: { wa
   const url = new URL(request.url);
   url.searchParams.delete('cacheBust');
   url.searchParams.sort();
-  const version = ['/api/dashboard/chain-funnel', '/api/dashboard/attributions'].includes(url.pathname) ? 'v9-lmdi' : url.pathname === '/api/dashboard/payment-analysis' ? 'v4' : ['/api/dashboard/creative-overview', '/api/dashboard/overview'].includes(url.pathname) ? 'v8' : url.pathname === '/api/dashboard/ads-overview' ? 'v5' : 'v3';
+  const version = url.pathname === '/api/dashboard/chain-funnel' ? 'v12-chain-enums' : url.pathname === '/api/dashboard/attributions' ? 'v9-lmdi' : url.pathname === '/api/dashboard/payment-analysis' ? 'v4' : url.pathname === '/api/dashboard/creative-overview' ? 'v9-creative-history' : url.pathname === '/api/dashboard/overview' ? 'v8' : url.pathname === '/api/dashboard/ads-overview' ? 'v6-ads-lazy' : 'v3';
   const key = `${version}:${url.pathname}?${url.searchParams}`;
   const isCacheablePayload = (payload: string) => {
-    if (!url.pathname.endsWith('/chain-funnel')) return true;
+    if (!['/api/dashboard/chain-funnel','/api/dashboard/creative-overview','/api/dashboard/ads-overview'].includes(url.pathname)) return true;
     try {
       return JSON.parse(payload)?.ready !== false;
     } catch {
@@ -152,10 +156,12 @@ async function cachedDashboardResponse(env: Env, request: Request, context: { wa
       const response = await load();
       if (response.ok) {
         const payload = await response.clone().text();
-        if (isCacheablePayload(payload)) {
+        // Do not retain full-year function payloads in a long-lived Worker
+        // isolate or attempt to persist them as a single oversized D1 row.
+        if (isCacheablePayload(payload) && !(url.pathname.endsWith('/creative-overview') && payload.length > 8 * 1024 * 1024)) {
           const expiresAt = Date.now() + DASHBOARD_CACHE_TTL_MS;
           dashboardMemoryCache.set(key, { payload, expiresAt });
-          if (env.DB) {
+          if (env.DB && payload.length < 1024 * 1024) {
             await env.DB.prepare('INSERT OR REPLACE INTO dashboard_response_cache (cache_key, payload, expires_at) VALUES (?, ?, ?)')
               .bind(key, payload, expiresAt).run().catch(() => undefined);
           }
@@ -535,7 +541,7 @@ async function replacePaymentRange(env: Env, platform: string, startDate: string
   };
   const expected = totals(parents.filter(row => row.attribution_type === 'NONE' && row.pay_type !== '汇总'));
   const actual = totals(children);
-  if (!parents.length || !children.length || [...new Set([...expected.keys(),...actual.keys()])].some(key => Math.abs((expected.get(key) ?? 0)-(actual.get(key) ?? 0)) > .005)) throw new Error('付费结果与注册维度未对齐，已保留原数据');
+  if (!parents.length || !children.length || [...new Set([...expected.keys(),...actual.keys()])].some(key => Math.round((expected.get(key) ?? 0)*100) !== Math.round((actual.get(key) ?? 0)*100))) throw new Error('付费结果与注册维度未对齐，已保留原数据');
   const identities = new Set<string>();
   for (const row of parents) {
     const key = factSourceId('pay_type',row);
@@ -882,7 +888,6 @@ function payTrend(
   rows: D1Row[],
   periods: string[],
   days: Map<string, number>,
-  renewalGmvForPeriod?: (period: string) => number,
 ) {
   return periods.map((period) => {
     const group = rows.filter((row) => asText(row.period) === period);
@@ -900,7 +905,7 @@ function payTrend(
       const key = normalizePayType(asText(row.pay_type));
       totalPayTypeGmv[key] = (totalPayTypeGmv[key] || 0) + asNumber(row.gmv_usd) / divisor;
       if (key === '自动续订') {
-        const tier = asText(row.subscription_tier);
+        const tier = asText(row.product_type) || asText(row.subscription_tier);
         const renewalKey = tier ? `${key} · ${tier}` : key;
         renewalPayTypeGmv[renewalKey] = (renewalPayTypeGmv[renewalKey] || 0) + asNumber(row.gmv_usd) / divisor;
       }
@@ -918,7 +923,7 @@ function payTrend(
       period,
       totalGmv: total / divisor,
       activeGmv: active / divisor,
-      renewalGmv: renewalGmvForPeriod ? renewalGmvForPeriod(period) : renewal / divisor,
+      renewalGmv: renewal / divisor,
       activePayTypeGmv,
       totalPayTypeGmv,
       renewalPayTypeGmv,
@@ -993,10 +998,6 @@ async function overview(env: Env, request: Request) {
   const payForTrend = pay.map((row) => ({ ...row, period: trendPeriod(row, granularity) }));
   const renewal = renewalPlatformRows(renewalRecords, platform, deviceType)
     .filter((row) => !planTier || asText(row.plan_tier).toUpperCase() === planTier);
-  const renewalForTrend = renewal.map((row) => ({
-    ...row,
-    period: trendPeriod(row, granularity),
-  }));
   const chain = funnel.map<D1Row>(row => ({...row,
     user_tag: asText(row.user_lifecycle) === 'NEW' ? '新用户' : asText(row.user_lifecycle) === 'OLD' ? '老用户' : '未知',
     sub_expose_uv: row.paywall_expose_uv, sub_submit_uv: row.paywall_submit_uv,
@@ -1012,11 +1013,7 @@ async function overview(env: Env, request: Request) {
   const renewalDays = trendPeriodDivisors(renewal, granularity);
   const firstPeriod = trendPeriod({ period: startDate, week_start: getBusinessWeekStart(startDate) }, granularity);
   const periods = groupByPeriod([...filteredChain, ...pay, ...renewal], granularity).filter((period) => dateInRange(period, firstPeriod, endDate));
-  const renewalGmvForPeriod = (period: string) => {
-    const divisor = renewalDays.get(period) || 1;
-    return sum(periodRows(renewalForTrend, period, granularity).map((row) => asNumber(row.renew_amount_usd))) / divisor;
-  };
-  const payTrendRows = payTrend(payForTrend, periods, payDays, renewalGmvForPeriod);
+  const payTrendRows = payTrend(payForTrend, periods, payDays);
   const payPeriods = groupByPeriod(pay, granularity).filter((period) => dateInRange(period, firstPeriod, endDate));
   // Cards and the main trend share payment-result activeGmv. Chain-attributed
   // revenue remains in gmv alongside the diagnostic funnel metrics below.
@@ -1360,7 +1357,7 @@ async function paymentAnalysis(env: Env, request: Request) {
         children.set(key, (children.get(key) ?? 0) + asNumber(row.gmv_usd));
       }
       const verifiedPayTypes = [...new Set(response.revenues.map(row => row.payType))].filter(type =>
-        rows.some(row => asText(row.pay_type) === type) && dates.every(date => Math.abs((parent.get(`${date}|${type}`) ?? 0) - (children.get(`${date}|${type}`) ?? 0)) < .005));
+        rows.some(row => asText(row.pay_type) === type) && dates.every(date => Math.round((parent.get(`${date}|${type}`) ?? 0)*100) === Math.round((children.get(`${date}|${type}`) ?? 0)*100)));
       response.registration = {
         verifiedPayTypes,
         rows: rows.filter(row => verifiedPayTypes.includes(asText(row.pay_type))).map(row => ({period:asText(row.period),weekStart:asText(row.week_start),payType:asText(row.pay_type),userLifecycle:asText(row.user_lifecycle),regCountry:asText(row.reg_country),gmvUsd:asNumber(row.gmv_usd)})),
@@ -1488,14 +1485,14 @@ async function chainFunnel(env: Env, request: Request) {
           period,
           week_start,
           breakdown_type,
-          COALESCE(breakdown_value, '未知') AS breakdown_value,
+          ${BREAKDOWN_VALUE_SQL} AS breakdown_value,
           SUM(expose_uv) AS expose_uv,
           SUM(submit_uv) AS submit_uv,
           SUM(pay_uv) AS pay_uv,
           SUM(gmv_usd) AS gmv_usd
         FROM pollo_da_chain_breakdown
         WHERE ${where}
-        GROUP BY period, week_start, breakdown_type, COALESCE(breakdown_value, '未知')
+        GROUP BY period, week_start, breakdown_type, ${BREAKDOWN_VALUE_SQL}
       `, ...binds),
     ]);
     const funnelRows = rowsOnCalendar(rawFunnelRows, calendar);
@@ -1585,16 +1582,17 @@ async function chainFunnel(env: Env, request: Request) {
 const ADS_HORIZONS = ['D0', 'D14', 'D30', 'D60', 'D90', 'D180'] as const;
 
 function adsAggregate(rows: D1Row[], observedThrough?: string): AdsAggregate {
-  const costUsd = sum(rows.map((row) => asNumber(row.cost_usd)));
+  const moneyTotal = (field: string) => sumMicroDollars(rows.map(row => asNumber(row[field])));
+  const costUsd = moneyTotal('cost_usd');
   const impressions = sum(rows.map((row) => asNumber(row.impressions)));
   const clicks = sum(rows.map((row) => asNumber(row.clicks)));
   const registerUsers = sum(rows.map((row) => asNumber(row.register_user_cnt)));
-  const gmvD0 = sum(rows.map((row) => asNumber(row.gmv_d0)));
-  const gmvD14 = sum(rows.map((row) => asNumber(row.gmv_d14)));
-  const gmvD30 = sum(rows.map((row) => asNumber(row.gmv_d30)));
-  const gmvD60 = sum(rows.map((row) => asNumber(row.gmv_d60)));
-  const gmvD90 = sum(rows.map((row) => asNumber(row.gmv_d90)));
-  const gmvD180 = sum(rows.map((row) => asNumber(row.gmv_d180)));
+  const gmvD0 = moneyTotal('gmv_d0');
+  const gmvD14 = moneyTotal('gmv_d14');
+  const gmvD30 = moneyTotal('gmv_d30');
+  const gmvD60 = moneyTotal('gmv_d60');
+  const gmvD90 = moneyTotal('gmv_d90');
+  const gmvD180 = moneyTotal('gmv_d180');
   return {
     costUsd, impressions, clicks, registerUsers, gmvD0, gmvD7: null, gmvD14, gmvD30, gmvD60, gmvD90, gmvD180,
     ctr: impressions ? clicks / impressions : 0,
@@ -1604,7 +1602,7 @@ function adsAggregate(rows: D1Row[], observedThrough?: string): AdsAggregate {
     roasByHorizon: Object.fromEntries([0,7,30].map(horizon => {
       const field = `gmv_d${horizon}`;
       const available = rows.length > 0 && observedThrough && rows.every(row => (Date.parse(observedThrough) - Date.parse(asText(row.period))) / 86400000 >= horizon && row[field] != null);
-      return [`D${horizon}`, available && costUsd > 0 ? sum(rows.map(row => asNumber(row[field]))) / costUsd : null];
+      return [`D${horizon}`, available && costUsd > 0 ? moneyTotal(field) / costUsd : null];
     })) as AdsAggregate['roasByHorizon'],
   };
 }
@@ -1627,6 +1625,7 @@ function adsDailyPoint(period: string, rows: D1Row[], observedThrough: string) {
 async function adsOverview(env: Env, request: Request): Promise<Response> {
   const url = new URL(request.url);
   const platform = url.searchParams.get('platform') || 'web';
+  const detailCountry = url.searchParams.get('country');
   const startDate = url.searchParams.get('startDate') || '';
   const endDate = url.searchParams.get('endDate') || '';
   const baselinePeriod = url.searchParams.get('baselinePeriod') || '';
@@ -1638,9 +1637,11 @@ async function adsOverview(env: Env, request: Request): Promise<Response> {
     const conditions = ['period BETWEEN ? AND ?'];
     const binds: unknown[] = [startDate, endDate];
     if (platform !== 'all') { conditions.push('LOWER(platform) = ?'); binds.push(platform); }
-    const rows = await queryRows(env, `SELECT period, week_start, channel, country, platform, SUM(cost_usd) AS cost_usd, SUM(impressions) AS impressions, SUM(clicks) AS clicks, SUM(register_user_cnt) AS register_user_cnt, CASE WHEN COUNT(gmv_d0) = COUNT(*) THEN SUM(gmv_d0) ELSE NULL END AS gmv_d0, CASE WHEN COUNT(gmv_d14) = COUNT(*) THEN SUM(gmv_d14) ELSE NULL END AS gmv_d14, CASE WHEN COUNT(gmv_d30) = COUNT(*) THEN SUM(gmv_d30) ELSE NULL END AS gmv_d30, CASE WHEN COUNT(gmv_d60) = COUNT(*) THEN SUM(gmv_d60) ELSE NULL END AS gmv_d60, CASE WHEN COUNT(gmv_d90) = COUNT(*) THEN SUM(gmv_d90) ELSE NULL END AS gmv_d90, CASE WHEN COUNT(gmv_d180) = COUNT(*) THEN SUM(gmv_d180) ELSE NULL END AS gmv_d180 FROM pollo_da_ads_daily WHERE ${conditions.join(' AND ')} GROUP BY period, week_start, channel, country, platform ORDER BY period`, ...binds);
+    const [rows, watermark] = await Promise.all([
+      queryRows(env, `SELECT period, week_start, channel, country, platform, cost_usd, impressions, clicks, register_user_cnt, gmv_d0, gmv_d14, gmv_d30, gmv_d60, gmv_d90, gmv_d180 FROM pollo_da_ads_daily WHERE ${conditions.join(' AND ')} ORDER BY period`, ...binds),
+      queryRows(env, `SELECT MAX(period) AS observed_through FROM pollo_da_ads_daily${platform !== 'all' ? ' WHERE LOWER(platform) = ?' : ''}`, ...(platform !== 'all' ? [platform] : [])),
+    ]);
     if (!rows.length) return json(unavailable());
-    const watermark = await queryRows(env, `SELECT MAX(period) AS observed_through FROM pollo_da_ads_daily${platform !== 'all' ? ' WHERE LOWER(platform) = ?' : ''}`, ...(platform !== 'all' ? [platform] : []));
     const asOf = asText(watermark[0]?.observed_through);
     const comparisonRows = matchedComparisonCalendar(rows.filter(row => [analysisPeriod,baselinePeriod].includes(asText(row.week_start))), baselinePeriod, analysisPeriod);
     const currentRows = comparisonRows.filter((row) => asText(row.week_start) === analysisPeriod);
@@ -1649,21 +1650,30 @@ async function adsOverview(env: Env, request: Request): Promise<Response> {
     const dayCounts = weekDayCounts(comparisonRows);
     const currentDays = dayCounts.get(analysisPeriod) || WEEK_DAYS;
     const baselineDays = dayCounts.get(baselinePeriod) || WEEK_DAYS;
+    const groupRows = (values: D1Row[], field: string) => {
+      const groups = new Map<string, D1Row[]>();
+      for (const row of values) {
+        const key = asText(row[field]) || '未知';
+        const group = groups.get(key);
+        if (group) group.push(row); else groups.set(key, [row]);
+      }
+      return groups;
+    };
     const aggregateBy = (field: string) => {
-      const keys = [...new Set(rows.map((row) => asText(row[field]) || '未知'))];
-      return keys.map((key) => {
-        const current = currentRows.filter((row) => (asText(row[field]) || '未知') === key);
-        const baseline = baselineRows.filter((row) => (asText(row[field]) || '未知') === key);
-        return { key, label: key, current: adsAggregate(current, asOf), baseline: adsAggregate(baseline, asOf) };
-      }).filter((row) => [row.current, row.baseline].some(value => value.costUsd || value.gmvD30 || value.clicks || value.impressions || value.registerUsers))
+      const current = groupRows(currentRows, field);
+      const baseline = groupRows(baselineRows, field);
+      return [...new Set([...current.keys(), ...baseline.keys()])].map(key => ({
+        key, label: key, current: adsAggregate(current.get(key) ?? [], asOf), baseline: adsAggregate(baseline.get(key) ?? [], asOf),
+      })).filter(row => [row.current, row.baseline].some(value => value.costUsd || value.gmvD30 || value.clicks || value.impressions || value.registerUsers))
         .sort((a, b) => b.current.gmvD30 - a.current.gmvD30);
     };
     const countries = aggregateBy('country');
     const channels = aggregateBy('channel');
-    const periodKeys = [...new Set(rows.map((row) => asText(row.period)))].sort();
-    const trend = periodKeys.map((period) => adsDailyPoint(period, rows.filter((row) => asText(row.period) === period), asOf));
+    const byPeriod = groupRows(rows, 'period');
+    const periodKeys = [...byPeriod.keys()].sort();
+    const trend = periodKeys.map(period => adsDailyPoint(period, byPeriod.get(period)!, asOf));
     const matrixRows = periodKeys.slice().reverse().map((period) => {
-      const cohortRows = rows.filter((row) => asText(row.period) === period);
+      const cohortRows = byPeriod.get(period)!;
       const cohort = adsAggregate(cohortRows);
       const age = Math.floor((Date.parse(asOf) - Date.parse(period)) / 86400000);
       const values = ADS_HORIZONS.map((horizon) => {
@@ -1674,11 +1684,13 @@ async function adsOverview(env: Env, request: Request): Promise<Response> {
       });
       return { key: period, label: period, values };
     });
-    const countryDetails = countries.map(country => {
+    // Channel time series are requested only when the country dialog opens.
+    // Keep the shared comparison calendar, including dates with zero country activity.
+    const countryDetails = detailCountry == null ? undefined : countries.filter(country => country.key === detailCountry).map(country => {
       const countryRows = rows.filter(row => (asText(row.country) || '未知') === country.key);
-      return { key: country.key, channels: [...new Set(countryRows.map(row => asText(row.channel)))].map(key => {
-        const channelRows = countryRows.filter(row => asText(row.channel) === key);
-        return { key, label: key, current: adsAggregate(rowsOnCalendar(channelRows, currentRows), asOf), baseline: adsAggregate(rowsOnCalendar(channelRows, baselineRows), asOf), trend: periodKeys.map(period => adsDailyPoint(period, channelRows.filter(row => asText(row.period) === period), asOf)) };
+      return { key: country.key, channels: [...groupRows(countryRows, 'channel')].map(([key, channelRows]) => {
+        const daily = groupRows(channelRows, 'period');
+        return { key, label: key, current: adsAggregate(rowsOnCalendar(channelRows, currentRows), asOf), baseline: adsAggregate(rowsOnCalendar(channelRows, baselineRows), asOf), trend: periodKeys.map(period => adsDailyPoint(period, daily.get(period) ?? [], asOf)) };
       }) };
     });
     return json({
@@ -1736,32 +1748,43 @@ async function creativeOverview(env: Env, request: Request): Promise<Response> {
     const currentDays = dayCounts.get(analysisPeriod) || WEEK_DAYS;
     const baselineDays = dayCounts.get(baselinePeriod) || WEEK_DAYS;
     const periodKeys = [...new Set(overallRows.map((row) => asText(row.period)))].sort();
-    const activityRows = await dailyRows(env, 'creative_daily', { platform, startDate, endDate });
+    const activityRows = await queryRows(env, "SELECT period,SUM(active_uv) active_uv,SUM(creation_uv) creation_uv,SUM(creation_task_cnt) creation_task_cnt FROM pollo_da_fact_rows WHERE dataset='creative' AND dataset_kind='daily' AND platform=? AND period BETWEEN ? AND ? GROUP BY period",platform,startDate,endDate);
     const trend = periodKeys.map((period) => {
       const point = creativeChainPoint(period, overallRows.filter(row => asText(row.period) === period));
       const activity = activityRows.filter(row => asText(row.period) === period);
-      // Active UV has no replacement in the creation middle table. Creator
-      // and task counts do, and must follow that table's current definition.
-      if (activity.length) point.activity = { activeUv: sum(activity.map(row => asNumber(row.active_uv))), creationUv: point.creationUserCnt, creationTaskCnt: point.creationTaskCnt };
+      // Penetration and tasks per active user must use the same active cohort
+      // as the activity-tier drilldown, rather than all creation-chain users.
+      if (activity.length) point.activity = {
+        activeUv: sum(activity.map(row => asNumber(row.active_uv))),
+        creationUv: sum(activity.map(row => asNumber(row.creation_uv))),
+        creationTaskCnt: sum(activity.map(row => asNumber(row.creation_task_cnt))),
+      };
       return point;
     });
-    const functionRows = await queryRows(env, `SELECT period, week_start, platform_type, creation_mode, user_type, pay_gmv_usd_30d, SUM(creation_task_cnt) AS creation_task_cnt, SUM(creation_user_cnt) AS creation_user_cnt, SUM(success_task_cnt) AS success_task_cnt, SUM(success_output_cnt) AS success_output_cnt, SUM(adopted_task_cnt) AS adopted_task_cnt, SUM(adopted_output_cnt) AS adopted_output_cnt, CASE WHEN COUNT(d3_creation_user_cnt) = COUNT(*) THEN SUM(d3_creation_user_cnt) ELSE NULL END AS d3_creation_user_cnt, CASE WHEN COUNT(d7_creation_user_cnt) = COUNT(*) THEN SUM(d7_creation_user_cnt) ELSE NULL END AS d7_creation_user_cnt, CASE WHEN COUNT(d30_creation_user_cnt) = COUNT(*) THEN SUM(d30_creation_user_cnt) ELSE NULL END AS d30_creation_user_cnt, ${validTasksSql(1)} AS valid_creation_task_cnt, SUM(gmv_usd) AS gmv_usd FROM pollo_da_creation_function_daily WHERE period BETWEEN ? AND ?${platformCondition} GROUP BY period, week_start, platform_type, creation_mode, user_type, pay_gmv_usd_30d ORDER BY period`, startDate, endDate, ...platformBind);
     const functionGroups = new Map<string, D1Row[]>();
-    for (const row of functionRows) {
-      const key = [asText(row.creation_mode) || '未知功能', asText(row.user_type) || '未知用户', asText(row.pay_gmv_usd_30d) || '未知回收'].join('|');
-      const group = functionGroups.get(key);
-      if (group) group.push(row);
-      else functionGroups.set(key, [row]);
+    // Bound each database result: an annual function query exceeds D1's result
+    // size limit even though all of its daily partitions are present.
+    for (let first = startDate; first <= endDate; first = shiftDate(first,14)) {
+      const last = [shiftDate(first,13),endDate].sort()[0];
+      const rows = await queryRows(env, `SELECT period, week_start, creation_mode, user_type, pay_gmv_usd_30d, SUM(creation_task_cnt) AS creation_task_cnt, SUM(creation_user_cnt) AS creation_user_cnt, SUM(success_task_cnt) AS success_task_cnt, SUM(success_output_cnt) AS success_output_cnt, SUM(adopted_task_cnt) AS adopted_task_cnt, SUM(adopted_output_cnt) AS adopted_output_cnt, CASE WHEN COUNT(d3_creation_user_cnt) = COUNT(*) THEN SUM(d3_creation_user_cnt) ELSE NULL END AS d3_creation_user_cnt, CASE WHEN COUNT(d7_creation_user_cnt) = COUNT(*) THEN SUM(d7_creation_user_cnt) ELSE NULL END AS d7_creation_user_cnt, CASE WHEN COUNT(d30_creation_user_cnt) = COUNT(*) THEN SUM(d30_creation_user_cnt) ELSE NULL END AS d30_creation_user_cnt, ${validTasksSql(1)} AS valid_creation_task_cnt, SUM(gmv_usd) AS gmv_usd FROM pollo_da_creation_function_daily WHERE period BETWEEN ? AND ?${platformCondition} GROUP BY period, week_start, creation_mode, user_type, pay_gmv_usd_30d ORDER BY period`, first, last, ...platformBind);
+      for (const row of rows) {
+        const key = [asText(row.creation_mode) || '未知功能', asText(row.user_type) || '未知用户', asText(row.pay_gmv_usd_30d) || '未知回收'].join('|');
+        const group = functionGroups.get(key);
+        if (group) group.push(row);
+        else functionGroups.set(key, [row]);
+      }
     }
     const functions = [...functionGroups].map(([key, group]) => {
       const [label, userType, payGmv30d] = key.split('|');
       const current = creativeChainPoint(analysisPeriod, rowsOnCalendar(group,currentRows));
       const baseline = creativeChainPoint(baselinePeriod, rowsOnCalendar(group,baselineRows));
-      const daily = [...new Set(group.map((row) => asText(row.period)))].sort().map((period) => creativeChainPoint(period, group.filter((row) => asText(row.period) === period)));
+      // SQL already combines the selected platforms at this exact daily grain.
+      const daily = group.map(row => creativeChainPoint(asText(row.period),[row]));
       return { key, label, userType, payGmv30d, current, baseline, daily };
     }).sort((a, b) => b.current.gmvUsd - a.current.gmvUsd);
     return json({ ready: true, source: 'pollo_da_creation_chain', comparison: { baselinePeriod, analysisPeriod, periodDays: currentDays, baselinePeriodDays: baselineDays, analysisPeriodDays: currentDays }, trend, functions, observedThrough, comparisonDates: {analysis: [...new Set(currentRows.map(row=>asText(row.period)))], baseline: [...new Set(baselineRows.map(row=>asText(row.period)))]} } satisfies CreativeOverviewResponse);
-  } catch {
+  } catch (error) {
+    console.error('Creation overview read failed',error);
     return json(unavailable());
   }
 }
@@ -1817,7 +1840,7 @@ async function attributions(env: Env, request: Request) {
       return { ...row, pay_type: groupedPayType };
     });
     const makeRenewalPlanSection = () => {
-      const renewalRows = rows.filter((row) => normalizePayType(asText(row.pay_type)) === RENEWAL_PAY_TYPE && asText(row.subscription_tier));
+      const renewalRows = rows.filter((row) => normalizePayType(asText(row.pay_type)) === RENEWAL_PAY_TYPE);
       const currentRows = renewalRows.filter((row) => asText(row.week_start) === comparison.analysisPeriod);
       const previousRows = renewalRows.filter((row) => asText(row.week_start) === comparison.baselinePeriod);
       const current = new Map<string, number>();
@@ -1829,11 +1852,11 @@ async function attributions(env: Env, request: Request) {
         return '其他';
       };
       for (const row of currentRows) {
-        const key = normalizeRenewalTier(asText(row.subscription_tier));
+        const key = normalizeRenewalTier(asText(row.product_type) || asText(row.subscription_tier));
         if (key) current.set(key, (current.get(key) || 0) + asNumber(row.gmv_usd));
       }
       for (const row of previousRows) {
-        const key = normalizeRenewalTier(asText(row.subscription_tier));
+        const key = normalizeRenewalTier(asText(row.product_type) || asText(row.subscription_tier));
         if (key) previous.set(key, (previous.get(key) || 0) + asNumber(row.gmv_usd));
       }
       const order = ['Lite', 'Pro', 'Ultra', '其他'];
@@ -1866,7 +1889,7 @@ async function attributions(env: Env, request: Request) {
     ).map((row) => asText(row.period)))];
     const conditions = [
       "dataset = 'pay_type'",
-      `((attribution_type IS NULL AND ((pay_type != '自动续订' AND function_name IS NOT NULL AND user_tag IS NOT NULL) OR (pay_type = '自动续订' AND subscription_tier IS NOT NULL))) OR (attribution_type = '${attributionType}' AND pay_category = 'ACTIVE_PAYMENT' AND pay_type <> '汇总'))`,
+      `((attribution_type IS NULL AND ((pay_type != '自动续订' AND function_name IS NOT NULL AND user_tag IS NOT NULL) OR (pay_type = '自动续订' AND subscription_tier IS NOT NULL))) OR (attribution_type = '${attributionType}' AND pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL') AND pay_type <> '汇总'))`,
       `period IN (${breakdownDates.map(() => '?').join(', ')})`,
       'week_start IN (?, ?)',
     ];
@@ -1878,7 +1901,7 @@ async function attributions(env: Env, request: Request) {
       binds.push(deviceType);
     }
     const breakdownRows = breakdownDates.length
-      ? await queryRows(env, `SELECT period, week_start, pay_type, subscription_tier, COALESCE(attribution_name, function_name) AS function_name, user_tag, actual_supplier, actual_provider, SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows WHERE ${conditions.join(' AND ')} GROUP BY period, week_start, pay_type, subscription_tier, COALESCE(attribution_name, function_name), user_tag, actual_supplier, actual_provider`, ...binds)
+      ? await queryRows(env, `SELECT period, week_start, pay_type, COALESCE(product_type, subscription_tier) AS subscription_tier, COALESCE(attribution_name, function_name) AS function_name, user_tag, actual_supplier, actual_provider, SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows WHERE ${conditions.join(' AND ')} GROUP BY period, week_start, pay_type, COALESCE(product_type, subscription_tier), COALESCE(attribution_name, function_name), user_tag, actual_supplier, actual_provider`, ...binds)
       : [];
     const paymentBreakdown = breakdownRows.map((row) => ({
       period: asText(row.period),
@@ -2111,42 +2134,26 @@ async function workbookPreview(env: Env, request: Request) {
 
 async function latestSync(env: Env) {
   if (!env.DB) return json(null);
-  const latest = await env.DB.prepare('SELECT payload, updated_at FROM sync_jobs ORDER BY created_at DESC LIMIT 1').first<{ payload: string; updated_at: number }>();
-  if (!latest) return json(null);
-  const job = JSON.parse(latest.payload) as SyncRunStatus;
-  if (['queued', 'running', 'pausing'].includes(job.status) && latest.updated_at < Date.now() - 180000) {
+  const interrupted = await env.DB.prepare("SELECT payload FROM sync_jobs WHERE status IN ('running', 'pausing') AND updated_at < ? ORDER BY updated_at LIMIT 1")
+    .bind(Date.now() - 180000).first<{ payload: string }>();
+  if (interrupted) {
+    const job = JSON.parse(interrupted.payload) as SyncRunStatus;
     job.status = 'failed';
     job.errorMessage = '同步任务已中断，请重新同步。';
     job.finishedAt = new Date().toISOString();
     job.steps?.forEach(step => { if (step.status === 'running') step.status = 'failed'; });
-    await env.DB.prepare("UPDATE sync_jobs SET status = 'failed', payload = ?, updated_at = ? WHERE run_id = ? AND status IN ('queued', 'running', 'pausing') AND updated_at < ?")
+    await env.DB.prepare("UPDATE sync_jobs SET status = 'failed', payload = ?, updated_at = ? WHERE run_id = ? AND status IN ('running', 'pausing') AND updated_at < ?")
       .bind(JSON.stringify(job), Date.now(), job.runId, Date.now() - 180000).run();
   }
-  return json(job);
+  const latest = await env.DB.prepare('SELECT payload FROM sync_jobs ORDER BY created_at DESC LIMIT 1').first<{ payload: string }>();
+  return json(latest ? JSON.parse(latest.payload) : null);
 }
 
 async function syncPlan(env: Env, mode: SyncMode, requestedDatasets?: SyncDataset[]) {
   const datasetsToCheck = requestedDatasets?.length ? requestedDatasets : [...SYNC_DATASETS];
   const sheets = datasetsToCheck.map((dataset) => `${dataset}_daily`) as Array<'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily'>;
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() + 8 * 3600000 - 86400000).toISOString().slice(0, 10);
   const platforms = ['all', 'web', 'app'];
-  const payTypeShape = sheets.includes('pay_type_daily') ? await env.DB!.prepare(`
-    SELECT
-      COUNT(*) AS row_count,
-      SUM(CASE
-        WHEN analysis_level IS NOT NULL
-          OR device_type IS NULL
-          OR (LOWER(platform) = 'web' AND LOWER(device_type) <> 'web')
-          OR (LOWER(platform) = 'all' AND LOWER(device_type) <> 'all' AND attribution_type IS NULL)
-          OR (LOWER(platform) = 'app' AND LOWER(device_type) NOT IN ('ios', 'android'))
-        THEN 1 ELSE 0 END) AS invalid_shape_count
-    FROM pollo_da_fact_rows
-    WHERE dataset = 'pay_type'
-  `).first<{ row_count: number | string; invalid_shape_count: number | string }>() : null;
-  const payTypeNeedsFullRefresh = Boolean(payTypeShape) && (
-    Number(payTypeShape?.row_count || 0) === 0
-    || Number(payTypeShape?.invalid_shape_count || 0) > 0
-  );
   if (mode === 'full_refresh') {
     return json({
       mode,
@@ -2161,28 +2168,8 @@ async function syncPlan(env: Env, mode: SyncMode, requestedDatasets?: SyncDatase
       datasets: [...SYNC_DATASETS],
     });
   }
-  if (payTypeNeedsFullRefresh) {
-    return json({
-      mode,
-      startDate: FULL_REFRESH_START_DATE,
-      endDate: yesterday,
-      latestStoredDate: null,
-      platforms,
-      alreadySynced: false,
-      canSync: true,
-      running: false,
-      datasets: ['pay_type'],
-      fullRefreshRequired: true,
-      missingItems: platforms.map((platform) => ({
-        sheet: 'pay_type_daily' as const,
-        platform: platform as 'all' | 'web' | 'app',
-        datasetKind: 'daily' as const,
-        expectedPeriod: `${FULL_REFRESH_START_DATE} ~ ${yesterday}`,
-        recordCount: 0,
-      })),
-    });
-  }
-  const latestStoredDate = (await latestDailyPeriod(env, 'chain_daily')) || null;
+  const latestDates = await Promise.all(sheets.map(sheet => latestDailyPeriod(env, sheet)));
+  const latestStoredDate = latestDates.filter(Boolean).sort()[0] || null;
   if (mode === 'latest_day') {
     const startDate = latestStoredDate && latestStoredDate < yesterday
       ? shiftDate(latestStoredDate, 1)
@@ -2201,7 +2188,7 @@ async function syncPlan(env: Env, mode: SyncMode, requestedDatasets?: SyncDatase
       })
       .map((sheet) => ({ sheet, platform, datasetKind: 'daily', expectedPeriod: startDate, recordCount: 0 })));
     const alreadySynced = startDate === yesterday && missingItems.length === 0;
-    return json({ mode, startDate, endDate: yesterday, latestStoredDate, platforms, alreadySynced, canSync: !alreadySynced, running: false, missingItems, datasets: datasetsToCheck });
+    return json({ mode, startDate, endDate: startDate, latestStoredDate, platforms, alreadySynced, canSync: !alreadySynced, running: false, missingItems, datasets: datasetsToCheck });
   }
   const date = new Date(`${yesterday}T00:00:00Z`);
   const day = date.getUTCDay();
@@ -2246,18 +2233,18 @@ function maxComputeConnection(env: Env) {
 }
 
 async function pullDailyFacts(env: Env, platform: string, dataset: DatasetKind, startDate: string, endDate: string): Promise<D1Row[]> {
-  if (dataset === 'pay_type' || dataset === 'chain') {
-    if (startDate !== endDate) {
-      const rows: D1Row[] = [];
-      for (let day = startDate; day <= endDate; day = shiftDate(day, 1)) rows.push(...await pullDailyFacts(env, platform, dataset, day, day));
-      return rows;
-    }
+  if ((dataset === 'pay_type' || dataset === 'chain') && startDate !== endDate) {
+    const rows: D1Row[] = [];
+    for (let day = startDate; day <= endDate; day = shiftDate(day, 1)) rows.push(...await pullDailyFacts(env, platform, dataset, day, day));
+    return rows;
   }
-  const sql = dataset === 'chain' ? buildChainFunnelSql(platform, startDate, endDate) : buildDatasetSql(dataset, { platform, start: startDate, end: endDate, granularity: 'daily' });
-  const payload = await new MaxComputeClient(maxComputeConnection(env)).executeSql(sql);
-  const countIndex = payload.column_names.findIndex(column => column.toLowerCase() === 'source_row_count');
-  if (countIndex >= 0 && payload.rows.length && asNumber(payload.rows[0][countIndex]) !== payload.rows.length) throw new Error('MaxCompute 结果被截断，已阻止写入不完整数据，请使用本地 Tunnel 回刷');
-  const rows = payload.rows.map<D1Row>((values) => {
+  const connection = maxComputeConnection(env);
+  const queries = dataset === 'pay_type'
+    ? (['NONE', 'CREATION_MODE', 'MODEL', 'ACTUAL_MODEL'] as const).map(mode => buildMiddleTableSql('pay_type', platform, startDate.replaceAll('-', ''), endDate.replaceAll('-', ''), mode))
+    : [dataset === 'chain' ? buildChainFunnelSql(platform, startDate, endDate) : buildDatasetSql(dataset, { platform, start: startDate, end: endDate, granularity: 'daily' })];
+  const payloads = await Promise.all(queries.map(sql => new MaxComputeClient(connection, 90000).executeCompleteSql(sql)));
+  const rows = payloads.flatMap((payload) => {
+    return payload.rows.map<D1Row>((values) => {
     const row: D1Row = {};
     payload.column_names.forEach((column, index) => {
       const key = column.toLowerCase();
@@ -2267,15 +2254,14 @@ async function pullDailyFacts(env: Env, platform: string, dataset: DatasetKind, 
     // The query aggregates by the requested scope; stamp that scope explicitly
     // so D1 reads can always select all / web / app without inference.
     return { ...row, platform: dataset === 'chain' ? row.platform : platform, dataset_kind: 'daily' };
+    });
   });
   if (dataset !== 'pay_type') return rows;
   const parents = rows.filter((row) =>
     (['ACTIVE_PAYMENT', 'AUTO_RENEWAL', 'API'].includes(asText(row.pay_category)) && asText(row.pay_type) !== '汇总')
     || (['MODEL', 'ACTUAL_MODEL'].includes(asText(row.attribution_type)) && asText(row.pay_category) === '汇总' && asText(row.pay_type) === '汇总' && asNumber(row.model_cost_usd) !== 0)
   );
-  const registration = await new MaxComputeClient(maxComputeConnection(env)).executeSql(buildPaymentRegistrationSql(startDate,endDate));
-  const registrationCount = registration.column_names.findIndex(column => column.toLowerCase() === 'source_row_count');
-  if (registrationCount < 0 || (registration.rows.length && Number(registration.rows[0][registrationCount]) !== registration.rows.length)) throw new Error('注册维度结果不完整，已阻止付费同步');
+  const registration = await new MaxComputeClient(connection, 60000).executeCompleteSql(buildPaymentRegistrationSql(startDate,endDate));
   const children = registration.rows.map(values => Object.fromEntries(registration.column_names.map((column,i)=>[column.toLowerCase(),values[i]])) as D1Row)
     .filter(row => platform === 'all' || row.platform === platform)
     .map(row => ({...row,gmv_usd:Number(row.gmv_usd),source_kind:'registration'}));
@@ -2284,7 +2270,7 @@ async function pullDailyFacts(env: Env, platform: string, dataset: DatasetKind, 
 
 type DailySheet = 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily';
 
-type SyncJobState = SyncRunStatus & { runLogId?: string };
+type SyncJobState = SyncRunStatus & { runLogId?: string; writtenSteps?: string[] };
 const SYNC_DATASETS = ['pay_type', 'chain', 'creative', 'renewal'] as const;
 const SYNC_DATASET_LABELS = { pay_type: '付费类型', chain: '支付链路', creative: '创作积极性', renewal: '自动续订' };
 
@@ -2363,21 +2349,24 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
     const finish = job.steps?.find(item => item.key === 'finish');
     if (finish) {
       finish.status = 'running';
-      finish.detail = `${staged.results.length} 份查询结果已就绪 · 正在统一写入数据库`;
+      finish.detail = `${staged.results.length} 份查询结果已就绪 · 正在逐端写入数据库`;
       job.stage = 'write';
       await saveSyncJob(env, job);
-      const runLogId = await ensureSyncRunLog(env, job);
-      job.rowsSynced = 0;
-      for (const item of dataSteps) {
+      const item = dataSteps.find(step => !job.writtenSteps?.includes(step.key));
+      if (item) {
         const separator = item.key.indexOf('-');
         const platform = item.key.slice(0, separator);
         const dataset = item.key.slice(separator + 1) as DatasetKind;
         const rows = await loadStagedRows(env, job.runId, item.key);
         if (!FACT_DATASETS.has(dataset)) throw new Error(`同步数据集无效：${dataset}`);
         job.rowsSynced += await replaceFactRange(env, dataset, platform, job.startDate, job.endDate, rows);
-        finish.detail = `正在统一写入数据库 · ${job.rowsSynced.toLocaleString('en-US')} 条分析记录`;
+        job.writtenSteps = [...(job.writtenSteps ?? []), item.key];
+        finish.detail = `已写入 ${job.writtenSteps.length}/${dataSteps.length} 端 · ${job.rowsSynced.toLocaleString('en-US')} 条分析记录`;
+        job.status = 'queued';
         await saveSyncJob(env, job);
+        return;
       }
+      const runLogId = await ensureSyncRunLog(env, job);
       await baseRequest(env, 'run_log', `/records/${runLogId}`, {
         fields: { status: 'success', stage: 'write', rows_synced: job.rowsSynced, finished_at: new Date().toISOString() },
       }, 'PUT');
@@ -2396,7 +2385,7 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
   const separator = firstWaitingStep.key.indexOf('-');
   const dataset = firstWaitingStep.key.slice(separator + 1) as DatasetKind;
   if (!SYNC_DATASETS.includes(dataset)) throw new Error(`同步步骤无效：${firstWaitingStep.key}`);
-  const batchSteps = job.steps?.filter(item => item.status === 'waiting' && item.key.endsWith(`-${dataset}`)) ?? [];
+  const batchSteps = [firstWaitingStep];
   for (const step of batchSteps) {
     const platform = step.key.slice(0, step.key.indexOf('-'));
     if (!DASHBOARD_PLATFORMS.has(platform)) throw new Error(`同步步骤无效：${step.key}`);
@@ -2436,6 +2425,11 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
 async function createSyncRun(env: Env, request: Request) {
   if (!env.DB) return errorResponse('同步任务数据库未配置', 503);
   await latestSync(env);
+  const activeJob = () => env.DB!.prepare("SELECT payload FROM sync_jobs WHERE status IN ('queued', 'running', 'pausing', 'paused') ORDER BY created_at DESC LIMIT 1").first<{ payload: string }>();
+  // Resume the durable job even if its data writes have already satisfied the
+  // plan: it still needs to complete its run log and release the active slot.
+  const active = await activeJob();
+  if (active) return json(JSON.parse(active.payload));
   const body = await request.json().catch(() => ({})) as { mode?: SyncMode; platforms?: string[]; datasets?: string[] };
   const mode: SyncMode = body.mode === 'full_refresh' ? 'full_refresh' : body.mode === 'latest_week' ? 'latest_week' : 'latest_day';
   const requestedDatasets = body.datasets?.filter((dataset): dataset is SyncDataset => SYNC_DATASETS.includes(dataset as SyncDataset)) ?? [];
@@ -2456,14 +2450,15 @@ async function createSyncRun(env: Env, request: Request) {
   if (!platforms.length) return errorResponse('请选择同步端口', 400);
   if (!datasets.length) return errorResponse('请选择同步数据集', 400);
   if (plan.alreadySynced) return json({ runId: `base-${Date.now()}`, mode, ...plan, status: 'success', rowsSynced: 0, skipped: true, skipReason: 'Base 已包含目标日期数据' });
-  const active = await env.DB.prepare("SELECT payload FROM sync_jobs WHERE status IN ('queued', 'running', 'pausing', 'paused') ORDER BY created_at DESC LIMIT 1").first<{ payload: string }>();
-  if (active) return json(JSON.parse(active.payload));
   const effectiveMode = plan.fullRefreshRequired ? 'full_refresh' : mode;
   const job = newSyncJob(effectiveMode, plan.startDate, plan.endDate, platforms as SyncRunStatus['platforms'], datasets);
   const { runId } = job;
-  await env.DB.prepare("INSERT OR IGNORE INTO sync_jobs (run_id, status, payload, created_at, updated_at) VALUES (?, 'queued', ?, ?, ?)")
-    .bind(runId, JSON.stringify(job), Date.now(), Date.now()).run();
-  return json(job);
+  const persisted = await reserveSyncJob(
+    () => env.DB!.prepare("INSERT OR IGNORE INTO sync_jobs (run_id, status, payload, created_at, updated_at) VALUES (?, 'queued', ?, ?, ?) RETURNING payload")
+      .bind(runId, JSON.stringify(job), Date.now(), Date.now()).first<{ payload: string }>(),
+    activeJob,
+  );
+  return json(JSON.parse(persisted.payload));
 }
 
 async function retrySyncRun(env: Env, request: Request) {
@@ -2567,48 +2562,36 @@ function reportDependencies(env: Env) {
 }
 
 async function runScheduledSync(env: Env, datasets: SyncDataset[]) {
-  let lastError: unknown;
-  for (let retry = 0; retry < 3; retry += 1) {
-    try {
-      const response = await createSyncRun(env, new Request('https://schedule.internal/api/sync-runs', {
-        method: 'POST', body: JSON.stringify({ mode: 'latest_day', platforms: ['all', 'web', 'app'], datasets }),
-        headers: { 'content-type': 'application/json' },
-      }));
-      const job = await response.json() as SyncRunResponse;
-      if (!response.ok || job.status === 'failed') throw new Error(job.errorMessage || '定时同步任务创建失败');
-      if (job.skipped || job.status === 'success') return job;
-      for (let attempt = 0; attempt < 20; attempt += 1) {
-        const executionResponse = await executeSyncRun(env, new Request('https://schedule.internal/api/sync-runs/run', {
-          method: 'POST', body: JSON.stringify({ runId: job.runId }), headers: { 'content-type': 'application/json' },
-        }));
-        const executionBody = await executionResponse.text();
-        const executionStatus = executionBody.match(/\{"status":"(success|failed|paused)"\}/)?.[1];
-        if (executionStatus === 'success') return { ...job, status: 'success' };
-        if (executionStatus === 'failed') throw new Error('定时同步失败');
-        const current = await env.DB!.prepare('SELECT payload FROM sync_jobs WHERE run_id = ?').bind(job.runId).first<{ payload: string }>();
-        if (!current) throw new Error('定时同步任务状态丢失');
-        const status = JSON.parse(current.payload) as SyncRunStatus;
-        if (status.status === 'success') return status;
-        if (status.status === 'failed') throw new Error(status.errorMessage || '定时同步失败');
-      }
-      throw new Error('定时同步超过最大执行步骤');
-    } catch (error) {
-      lastError = error;
-      if (retry < 2) await new Promise(resolve => setTimeout(resolve, 2000 * (retry + 1)));
-    }
+  const response = await createSyncRun(env, new Request('https://schedule.internal/api/sync-runs', {
+    method: 'POST', body: JSON.stringify({ mode: 'latest_day', platforms: ['all', 'web', 'app'], datasets }),
+    headers: { 'content-type': 'application/json' },
+  }));
+  const job = await response.json() as SyncRunResponse;
+  if (!response.ok || job.status === 'failed') throw new Error(job.errorMessage || '定时同步任务创建失败');
+  if (job.skipped || job.status === 'success' || job.status === 'paused') return job;
+  if (!datasets.every(dataset => job.datasets?.includes(dataset))) return { ...job, skipped: true, skipReason: '另一数据集正在同步' };
+  const executionResponse = await executeSyncRun(env, new Request('https://schedule.internal/api/sync-runs/run', {
+    method: 'POST', body: JSON.stringify({ runId: job.runId }), headers: { 'content-type': 'application/json' },
+  }));
+  await executionResponse.text();
+  const current = await env.DB!.prepare('SELECT payload FROM sync_jobs WHERE run_id = ?').bind(job.runId).first<{ payload: string }>();
+  if (!current) throw new Error('定时同步任务状态丢失');
+  const status = JSON.parse(current.payload) as SyncRunStatus;
+  if (status.status === 'failed') {
+    if (status.errorMessage?.includes('中间表返回空结果')) return { ...status, skipped: true, skipReason: '源数据尚未产出，等待下次同步' };
+    throw new Error(status.errorMessage || '定时同步失败');
   }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError || '定时同步失败'));
+  return status;
 }
 
 async function syncAdsDate(env: Env, date: string): Promise<number> {
   if (!env.DB?.batch) throw new Error('广告同步需要 D1 批量事务');
-  const payload = await new MaxComputeClient(maxComputeConnection(env)).executeSql(buildAdsSql(date));
+  const payload = await new MaxComputeClient(maxComputeConnection(env), 120000).executeCompleteSql(buildAdsSql(date));
   const columns = payload.column_names.map(column => column.toLowerCase());
   const required = ['period', 'week_start', 'week_end', 'channel', 'country', 'platform', 'cost_usd', 'impressions', 'clicks', 'register_user_cnt', 'gmv_d0', 'gmv_d14', 'gmv_d30', 'gmv_d60', 'gmv_d90', 'gmv_d180', 'source_row_count'];
   if (required.some(column => !columns.includes(column))) throw new Error('广告查询结果缺少必要列');
   if (!payload.rows.length) throw new Error(`广告 ${date} 返回空结果，已保留远程旧数据`);
   const records = payload.rows.map(values => Object.fromEntries(columns.map((column, index) => [column, values[index]])));
-  if (Number(records[0].source_row_count) !== records.length) throw new Error('广告查询结果可能被截断，已阻止写入');
   const keys = new Set<string>();
   const statements = [env.DB.prepare('DELETE FROM pollo_da_ads_daily WHERE period = ?').bind(date)];
   const insert = `INSERT INTO pollo_da_ads_daily (${required.slice(0, -1).join(', ')}, updated_at) VALUES (${required.map(() => '?').join(', ')})`;
@@ -2640,11 +2623,17 @@ async function syncAdsRequest(env: Env, request: Request): Promise<Response> {
 
 async function scheduledAdsSync(env: Env): Promise<Response> {
   const yesterday = new Date(Date.now() + 8 * 3600000 - 86400000).toISOString().slice(0, 10);
-  const dates = new Set(Array.from({ length: 7 }, (_, offset) => shiftDate(yesterday, -offset)));
-  for (const age of [14, 30, 60, 90, 180]) dates.add(shiftDate(yesterday, -age));
-  let rowsSynced = 0;
-  for (const date of dates) rowsSynced += await syncAdsDate(env, date);
-  return json({ ok: true, task: 'daily-ads', dates: [...dates], rowsSynced });
+  const dates = [...new Set([...Array.from({ length: 7 }, (_, offset) => shiftDate(yesterday, -offset)), ...[14, 30, 60, 90, 180].map(age => shiftDate(yesterday, -age))])];
+  const slot = Math.floor((Date.now() + 8 * 3600000) / 300000) % dates.length;
+  const last = await queryRows(env, 'SELECT MAX(period) AS period FROM pollo_da_ads_daily');
+  const next = shiftDate(asText(last[0]?.period) || shiftDate(yesterday, -1), 1);
+  const date = next <= yesterday ? next : dates[slot];
+  try {
+    return json({ ok: true, task: 'daily-ads', date, rowsSynced: await syncAdsDate(env, date) });
+  } catch (error) {
+    if (String(error).includes('返回空结果')) return json({ ok: true, task: 'daily-ads', date, status: 'waiting_source' });
+    throw error;
+  }
 }
 
 const CREATION_METRICS = [
@@ -2661,8 +2650,12 @@ async function syncCreationChainDate(env: Env, date: string): Promise<{ overall:
   };
   const inserts: D1Statement[] = [];
   const counts = { overall: 0, function: 0 };
-  for (const kind of ['overall', 'function'] as const) {
-    const payload = await new MaxComputeClient(maxComputeConnection(env)).executeSql(buildCreationChainSql(date, kind));
+  const sourceRows: Record<CreationChainKind,D1Row[]> = { overall: [], function: [] };
+  const kinds = ['overall', 'function'] as const;
+  const client = new MaxComputeClient(maxComputeConnection(env), 90000);
+  const payloads = await Promise.all(kinds.map(kind => client.executeCompleteSql(buildCreationChainSql(date, kind))));
+  for (const [index, kind] of kinds.entries()) {
+    const payload = payloads[index];
     const columns = payload.column_names.map(name => name.toLowerCase());
     const dimensions = kind === 'function' ? ['creation_mode', 'user_type', 'pay_gmv_usd_30d'] : [];
     const fields = ['period', 'week_start', 'week_end', 'platform_type', ...dimensions, ...CREATION_METRICS, 'etl_time'];
@@ -2670,15 +2663,13 @@ async function syncCreationChainDate(env: Env, date: string): Promise<{ overall:
       throw new Error(`创作链路 ${date} ${kind} 结果为空或字段不完整，已保留旧数据`);
     }
     const position = Object.fromEntries(columns.map((name, index) => [name, index]));
-    if (Number(payload.rows[0][position.source_row_count]) !== payload.rows.length) {
-      throw new Error(`创作链路 ${date} ${kind} 查询结果被截断，已阻止写入`);
-    }
     const keys = new Set<string>();
     const table = tables[kind];
     await env.DB.prepare(`DELETE FROM ${table.replace('_daily', '_stage')} WHERE period = ?`).bind(date).run();
     const insert = `INSERT INTO ${table.replace('_daily', '_stage')} (${[...fields, 'updated_at'].join(', ')}) VALUES (${[...fields, 'updated_at'].map(() => '?').join(', ')})`;
     for (const source of payload.rows) {
       const row = Object.fromEntries(fields.map(field => [field, source[position[field]]]));
+      sourceRows[kind].push(row);
       const period = asText(row.period).slice(0, 10);
       const key = [period, row.platform_type, ...dimensions.map(field => row[field])].join('|');
       if (period !== date || keys.has(key) || !row.platform_type || dimensions.some(field => !row[field])) {
@@ -2700,6 +2691,7 @@ async function syncCreationChainDate(env: Env, date: string): Promise<{ overall:
     }
     counts[kind] = payload.rows.length;
   }
+  assertCreationConservation(sourceRows.overall,sourceRows.function);
   for (let offset = 0; offset < inserts.length; offset += 80) {
     await env.DB.batch(inserts.slice(offset, offset + 80));
   }
@@ -2721,12 +2713,17 @@ async function scheduledCreationChainSync(env: Env): Promise<Response> {
   const dates = new Set(Array.from({ length: 4 }, (_, offset) => shiftDate(yesterday, -offset)));
   dates.add(shiftDate(yesterday, -7));
   dates.add(shiftDate(yesterday, -30));
-  const results = [];
-  for (const date of [...dates].sort()) {
-    if (date < '2026-09-27') continue;
-    results.push({ date, ...await syncCreationChainDate(env, date) });
+  const eligible = [...dates].filter(date => date >= '2026-01-01').sort().reverse();
+  const slot = Math.floor((Date.now() + 8 * 3600000) / 300000) % eligible.length;
+  const last = await queryRows(env, 'SELECT MAX(period) AS period FROM pollo_da_creation_overall_daily');
+  const next = shiftDate(asText(last[0]?.period) || shiftDate(yesterday, -1), 1);
+  const date = next <= yesterday ? next : eligible[slot];
+  try {
+    return json({ ok: true, task: 'daily-creation-chain', date, ...await syncCreationChainDate(env, date) });
+  } catch (error) {
+    if (String(error).includes('结果为空')) return json({ ok: true, task: 'daily-creation-chain', date, status: 'waiting_source' });
+    throw error;
   }
-  return json({ ok: true, task: 'daily-creation-chain', results });
 }
 
 async function syncCreationChainRequest(env: Env, request: Request): Promise<Response> {
@@ -2736,29 +2733,35 @@ async function syncCreationChainRequest(env: Env, request: Request): Promise<Res
   return json({ date, ...await syncCreationChainDate(env, date) });
 }
 
-async function runScheduledReports(env: Env) {
+async function runScheduledReports(env: Env, platform: 'web' | 'app', context: { waitUntil(promise: Promise<unknown>): void }) {
   const localDate = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
   // Report requests include both the baseline week and the latest analysis week.
   const startDate = shiftDate(localDate, -14);
   const endDate = shiftDate(localDate, -1);
+  const completed = await env.DB!.prepare("SELECT run_id FROM report_jobs WHERE platform = ? AND status = 'success' AND json_extract(payload, '$.periodStart') = ? AND json_extract(payload, '$.periodEnd') = ? LIMIT 1")
+    .bind(platform, startDate, endDate).first<{ run_id: string }>();
+  if (completed) return { status: 'success' as const };
   const deps = reportDependencies(env);
-  await Promise.all((['web', 'app'] as const).map(async platform => {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const response = await reportGenerations(env, new Request('https://schedule.internal/api/report-generations', {
-        method: 'POST', body: JSON.stringify({ platform, granularity: 'week', startDate, endDate }),
-        headers: { 'content-type': 'application/json' },
-      }), deps);
-      const job = await response.json() as ReportGenerationStatus & { message?: string };
-      if (!response.ok && response.status !== 202) throw new Error(job.message || `${platform} 定时报告任务创建失败`);
-      if (job.status === 'queued') await executeReport(env, job, deps);
-      if (job.status !== 'failed') return;
-    }
-  }));
+  const response = await reportGenerations(env, new Request('https://schedule.internal/api/report-generations', {
+    method: 'POST', body: JSON.stringify({ platform, granularity: 'week', startDate, endDate }),
+    headers: { 'content-type': 'application/json' },
+  }), deps);
+  const job = await response.json() as ReportGenerationStatus & { message?: string };
+  if (!response.ok && response.status !== 202) throw new Error(job.message || `${platform} 定时报告任务创建失败`);
+  if (job.status === 'queued') context.waitUntil(executeReport(env, job, deps));
+  const current = await env.DB!.prepare('SELECT payload FROM report_jobs WHERE run_id = ?').bind(job.runId).first<{ payload: string }>();
+  const status = current ? JSON.parse(current.payload) as ReportGenerationStatus : job;
+  if (status.status === 'failed') {
+    if (status.errorMessage?.includes('缺少') && status.errorMessage.includes('数据')) return { status: 'queued' as const };
+    throw new Error(status.errorMessage || `${platform} 定时报告生成失败`);
+  }
+  return status;
 }
 
 async function cronHandler(
   env: Env,
   request: Request,
+  context: { waitUntil(promise: Promise<unknown>): void },
 ): Promise<Response> {
   if (request.headers.get('x-pollocloud-trigger') !== 'cron') return errorResponse('仅允许 Pollo Cloud 定时任务触发', 403);
   const path = new URL(request.url).pathname;
@@ -2773,19 +2776,20 @@ async function cronHandler(
           : null;
   if (scheduledDataset) {
     const result = await runScheduledSync(env, [scheduledDataset]);
-    if (scheduledDataset === 'chain') {
+    if (scheduledDataset === 'chain' && (result.status === 'success' || result.skipped)) {
       const ads = await scheduledAdsSync(env);
       return json({ ok: true, task: 'daily-chain-and-ads', status: result.status, runId: result.runId, ads: await ads.json() });
     }
-    if (scheduledDataset === 'creative') {
+    if (scheduledDataset === 'creative' && (result.status === 'success' || result.skipped)) {
       const creation = await scheduledCreationChainSync(env);
       return json({ ok: true, task: 'daily-creative-and-creation-chain', status: result.status, runId: result.runId, creation: await creation.json() });
     }
     return json({ ok: true, task: `daily-${scheduledDataset}`, status: result.status, runId: result.runId });
   }
   if (path === '/api/cron/weekly-reports') {
-    await runScheduledReports(env);
-    return json({ ok: true, task: 'weekly-reports' });
+    const platform = new Date(Date.now() + 8 * 3600000).getUTCMinutes() < 10 ? 'web' : 'app';
+    const report = await runScheduledReports(env, platform, context);
+    return json({ ok: true, task: 'weekly-reports', platform, status: report.status });
   }
   return errorResponse('定时任务不存在', 404);
 }
@@ -3045,7 +3049,7 @@ export default {
   async fetch(request: Request, env: Env, context: { waitUntil(promise: Promise<unknown>): void }): Promise<Response> {
     try {
       const url = new URL(request.url);
-      if (url.pathname.startsWith('/api/cron/')) return cronHandler(env, request);
+      if (url.pathname.startsWith('/api/cron/')) return cronHandler(env, request, context);
       if (url.pathname === '/api/dashboard/overview' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => overview(env, request));
       if (url.pathname === '/api/dashboard/gmv-coverage' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => gmvCoverage(env));
       if (url.pathname === '/api/dashboard/gmv-anomalies' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => gmvAnomalies(env));

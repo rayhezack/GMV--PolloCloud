@@ -16,7 +16,7 @@ import { formatCompactCurrency, formatCurrency, formatPercent, formatTime } from
 import { alignPolylines, fittedDash, linePath, niceTicks, seededRandom, smoothTangents, valueAt } from "@/lib/chart-series"
 import { cn } from "@/lib/utils"
 import "./finance-chart/finance-chart.css"
-import { flowBarLayout, flowBarTop, endpointLabels } from "./finance-chart/flow-bar-layout"
+import { flowBarLayout, flowBarTop, bucketLabels } from "./finance-chart/flow-bar-layout"
 
 type GlobalFinanceMarketComboPoint = {
   /** An ISO date ("2026-03-16") or date-time ("2026-03-16T08:00:00Z"), read as UTC. */
@@ -443,10 +443,10 @@ const sorted = (points: GlobalFinanceMarketComboPoint[] | undefined) =>
 
 /**
  * Where everything sits at a plot width. The actual line's first and last points are the plot's edges (the forecast may
- * start before them); the values sit on round ticks from zero, the lowest on the axis' bottom edge and the highest 312px
- * up. A bar is 32px wide, centred on its date at a whole pixel, and as tall as its flow's size.
+ * start before them); bars use a zero-based axis while line-only views use a padded data range.
+ * A bar is 32px wide, centred on its date at a whole pixel, and as tall as its flow's size.
  */
-function layoutChart(data: GlobalFinanceMarketComboData, shown: Record<GlobalFinanceMarketComboSeries, boolean>, width: number) {
+function layoutChart(data: GlobalFinanceMarketComboData, shown: Record<GlobalFinanceMarketComboSeries, boolean>, width: number, zeroBased = true, period = "day") {
   const actual = sorted(data.actual)
   const forecast = sorted(data.forecast)
   const flows = sorted(data.flows)
@@ -456,11 +456,12 @@ function layoutChart(data: GlobalFinanceMarketComboData, shown: Record<GlobalFin
   const slots = flowBarLayout(actual.map(point => point.time), width, BAR_WIDTH)
   const inset = Math.min(width / 2, Math.max(MARKER / 2 + 2, flows.length ? slots.inset : 0))
   const scale = timeScale(start, end, Math.max(0, width - 2 * inset))
-  const monthly = scale.monthly
   const x = (time: number) => inset + scale.x(time)
-  const values = [...(shown.actual ? actual : []), ...(shown.forecast ? forecast : []), ...flows.map((p) => ({ value: Math.abs(p.value) }))].map((p) => p.value)
+  const values = [...(shown.actual ? actual : []), ...(shown.forecast ? forecast : []), ...(zeroBased ? flows.map((p) => ({ value: Math.abs(p.value) })) : [])].map((p) => p.value)
   const max = Math.max(0, ...values)
-  const ticks = niceTicks(0, max > 0 ? max : 1, TICK_COUNT)
+  const min = values.length ? Math.min(...values) : 0
+  const pad = Math.max((max - min) * 0.15, Math.abs(max) * 0.03, 0.001)
+  const ticks = zeroBased ? niceTicks(0, max > 0 ? max : 1, TICK_COUNT) : niceTicks(Math.max(0, min - pad), max + pad, TICK_COUNT)
   const lo = ticks[0]
   const hi = ticks[ticks.length - 1]
   const y = (value: number) => (hi > lo ? BASE - ((value - lo) / (hi - lo)) * SPAN : BASE)
@@ -481,25 +482,9 @@ function layoutChart(data: GlobalFinanceMarketComboData, shown: Record<GlobalFin
     const row = { key: `t${tick}`, y: y(tick) - 0.5, kind: i === 0 ? "axis" : "tick" }
     return i < ticks.length - 1 ? [row, { key: `m${tick}`, y: y((tick + ticks[i + 1]) / 2) - 0.5, kind: "half" }] : [row]
   })
-  // the axis names the months (their first days), or the Mondays, or the days
-  const labels: { key: string; time: number; x: number; unit: "month" | "week" | "day" }[] = []
-  if (actual.length) {
-    if (monthly) {
-      for (let d = new Date(start); d.getTime() <= end; d = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1))) {
-        const first = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)
-        if (first >= start) labels.push({ key: `m${first}`, time: first, x: x(first), unit: "month" })
-      }
-    } else {
-      const weekly = end - start > 10 * DAY
-      for (let t = Math.ceil(start / DAY) * DAY; t <= end; t += DAY) {
-        if (weekly && new Date(t).getUTCDay() !== 1) continue
-        labels.push({ key: `d${t}`, time: t, x: x(t), unit: weekly ? "week" : "day" })
-      }
-    }
-  }
-  const axisLabels = actual.length ? endpointLabels(labels,
-    { key: `edge${start}`, time: start, x: x(start), unit: 'day' as const },
-    { key: `edge${end}`, time: end, x: x(end), unit: 'day' as const }) : []
+  // Every tick is an observed bucket start; never infer grain from the date span.
+  const axisLabels = bucketLabels(actual.map(p => p.time), x, period);
+
   return { actual: line(actual), forecast: line(forecast), flows, bars, start, end, ticks, y, grid, labels: axisLabels, x }
 }
 
@@ -744,7 +729,7 @@ function GlobalFinanceMarketComboChart({
 
   const [plotRef, plot] = useChartSize<HTMLDivElement>({ width: PLOT_WIDTH, height: PLOT_HEIGHT })
   const width = plot.width || PLOT_WIDTH
-  const layout = React.useMemo(() => layoutChart(shownData, shown, width), [shownData, shown, width])
+  const layout = React.useMemo(() => layoutChart(shownData, shown, width, variant === "combo" && period === "day", period), [shownData, shown, width, variant, period])
   const { actual, forecast, bars, ticks, grid, labels } = layout
   const n = actual.length
   // Content keys: parents may pass new arrays on every render, so changes are detected by value.

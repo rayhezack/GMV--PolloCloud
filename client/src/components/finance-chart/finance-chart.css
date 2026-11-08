@@ -180,8 +180,8 @@
   height: 18px;
 }
 .finance-combo [data-slot='global-finance-market-combo-chart-label'][data-align='start'] > span {
-  translate: 0;
+  translate: -50% 0;
 }
 .finance-combo [data-slot='global-finance-market-combo-chart-label'][data-align='end'] > span {
-  translate: -100% 0;
+  translate: -50% 0;
 }

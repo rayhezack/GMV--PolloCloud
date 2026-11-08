@@ -1,5 +1,5 @@
 import { type CSSProperties, useEffect, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowUpRight, CircleCheck, CircleX, Info, TriangleAlert, X, type LucideIcon } from 'lucide-react';
 import './bencho.css';
 
@@ -141,6 +141,8 @@ export function ToastStack({ peek = 14, gap = 10, corner = 20 }: { peek?: number
       onFocus={() => setOpen(true)}
       onBlur={event => { if (!root.current?.contains(event.relatedTarget as Node | null)) setOpen(false); }}
     >
+      <AnimatePresence mode="wait" initial={false}>
+      {!expandedToast && <motion.div key="toast-list" className="tst-list" exit={{ opacity: 0 }} transition={{ duration: .12 }}>
       {stack.map((toast, index) => {
         const Icon = ICON[toast.kind];
         const position = place(index);
@@ -162,6 +164,7 @@ export function ToastStack({ peek = 14, gap = 10, corner = 20 }: { peek?: number
             aria-expanded={expandedId === toast.id}
             onClick={() => setExpandedId(current => current === toast.id ? null : toast.id)}
             onKeyDown={event => {
+              if (event.target !== event.currentTarget) return;
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
                 setExpandedId(current => current === toast.id ? null : toast.id);
@@ -175,14 +178,17 @@ export function ToastStack({ peek = 14, gap = 10, corner = 20 }: { peek?: number
           </motion.div>
         );
       })}
+      </motion.div>}
       {expandedToast && (
         <motion.div
+          key="toast-detail"
           className="tst-detail"
           role="dialog"
           aria-label={`${expandedToast.title}详情`}
           initial={{ opacity: 0, y: 8, scale: .97 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 8, scale: .97 }}
+          transition={{ duration: .16 }}
           onClick={event => event.stopPropagation()}
         >
           <div className="tst-detail-head"><strong>{expandedToast.title}</strong><button type="button" className="tst-x" aria-label="关闭详情" onClick={() => setExpandedId(null)}><X size={16} strokeWidth={2} aria-hidden="true" /></button></div>
@@ -190,6 +196,7 @@ export function ToastStack({ peek = 14, gap = 10, corner = 20 }: { peek?: number
           {expandedToast.href && <a href={expandedToast.href} onClick={event => followToastLink(event, expandedToast.href!)}>{expandedToast.linkLabel || '前往相关看板'}<ArrowUpRight size={14} strokeWidth={2} aria-hidden="true" /></a>}
         </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }

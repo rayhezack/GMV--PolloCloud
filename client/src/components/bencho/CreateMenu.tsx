@@ -80,7 +80,7 @@ export function CreateMenu({
         <Plus size={16} strokeWidth={2.2} />
         <span>{busy ? '生成中' : '创建'}</span>
       </button>
-      <div className="create-menu-panel" role="menu" aria-label="选择报告生成范围">
+      <div className="create-menu-panel" role="menu" aria-label="选择报告生成范围" aria-hidden={!open} inert={!open}>
         {ITEMS.map(({ scope, label, Icon }, index) => (
           <button
             key={scope}

@@ -38,10 +38,11 @@
   background: transparent;
   box-shadow: none;
   backdrop-filter: blur(16px);
+  cursor: pointer;
 }
 
 .dashboard-date-picker .dashboard-date-picker__group:focus-within {
-  box-shadow: 0 0 0 2px rgb(83 58 253 / 18%);
+  box-shadow: none;
 }
 
 .dashboard-date-picker .dashboard-date-picker__input {
