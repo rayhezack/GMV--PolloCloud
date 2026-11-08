@@ -85,18 +85,27 @@ Set `VITE_DATA_MODE=demo` only for a local visual preview. Production uses the s
 
 ## 定时任务
 
-`pollocloud.json` 已声明两个定时任务，时间使用北京时间：
+线上实际时区为 `Asia/Shanghai`（北京时间）。2026-11-09 核对 `pollocloud cron list --name pollo-ai --json` 与 `pollocloud.json` 一致，当前为全天轮询，**不是每天仅 09:00 执行一次**：
 
-- 每天 09:00 起按数据集执行最新 T+1 日同步：09:00 付费类型、09:05 支付链路、09:10 自动续订、09:15 创作积极性。前三类任务通常较快，创作积极性放在最后以隔离其可能的长查询；目标日期已存在时幂等跳过。定时任务按数据集独立判断和重试。
-- 每周六 12:00（`0 12 * * 6` → `/api/cron/weekly-reports`）：选择上一完整周六至周五业务周，依次生成 Web 和 App 诊断报告。
+| 任务 | 实际触发时间 | 每日触发次数 |
+| --- | --- | --- |
+| 付费类型 | 每小时 00、05、10…55 分 | 288 |
+| 支付链路 | 每小时 01、06、11…56 分 | 288 |
+| 自动续订 | 每小时 02、07、12…57 分 | 288 |
+| 创作积极性 | 每小时 03、08、13…58 分 | 288 |
+| 周报告 | 周六每小时 00 分 Web、10 分 App | 仅周六，48 次 |
 
-广告归因聚合保存在 `pollo_da_ads_daily`，粒度为注册日、广告渠道、国家和 Web/App 端，业务周为周六至周五。广告表同步只读取 `product_type='ALL'` 与 `is_first_purchase='汇总'`，避免叠加拆分行。09:05 支付链路任务完成后，会同时回刷广告最近 7 天及距今 14/30/60/90/180 天的 cohort 分区；该表会动态更新最近 181 天分区，但历史分区从 2026-01-01 起仍可读取。历史全量回刷在本地运行 `python3 scripts/backfill-ads.py --start 2026-01-01 --end 2026-11-03`，脚本通过 Tunnel 完整读取、校验后暂存并切换远程 D1。`POST /api/ads/sync` 可由已授权账号指定 `date` 补刷单日。
+产品动作复用自动续订回调，每个北京时间自然日成功同步一次，通常首次在 00:02；失败后下个轮询重试。以上是回调时间，不保证该分钟开始或完成一个完整数据任务；任务共享执行槽，每次回调可能只推进一个阶段，也可能因为目标数据已存在或其他任务占用而跳过。周报告已有成功结果时幂等跳过。
 
-创作链路使用 `pollo_da_creation_overall_daily`（日×源端，源表 `creation_mode='汇总'`，跨功能去重 UV）和 `pollo_da_creation_function_daily`（日×源端×功能×新老用户×近 30 天付费分层，仅保留两个分层维度的明细行）。两个表均不使用发起、提交埋点或预存比率。功能 UV、每日 UV、各端 UV 不能跨相应粒度相加；`platform_type='汇总'` 是源表跨端去重行。业务周为周六至周五，周去重 UV 无法从日聚合推导；`user_type=NEW` 指当日注册，不是本业务周注册。`未归因` 功能仅作 GMV 对账。源表历史覆盖自 2026-09-27 起；本地运行 `python3 scripts/backfill-creation-chain.py extract`、`estimate`、`backfill` 导出聚合行、校验并回刷。现有 09:15 创作任务完成后补刷昨日及之前 3 日，并更新距昨日 7/30 天的留存分区；`POST /api/creation-chain/sync` 可指定 `date` 补刷单日。未成熟的 D3/D7/D30 留存人数保持 NULL。
+旧文档中的 09:00 / 09:05 / 09:10 / 09:15 和周六 12:00 与线上不符，已更正。本次核查不修改调度表达式。风险、记录与改进方案见 [SYNC_RELIABILITY_AUDIT.md](SYNC_RELIABILITY_AUDIT.md)。
+
+广告归因聚合保存在 `pollo_da_ads_daily`，粒度为注册日、广告渠道、国家和 Web/App 端，业务周为周六至周五。广告表同步只读取 `product_type='ALL'` 与 `is_first_purchase='汇总'`，避免叠加拆分行。支付链路回调返回成功或跳过时，会轮转回刷广告最近 7 天及距今 14/30/60/90/180 天的 cohort 分区（每次选择一个分区）；该表会动态更新最近 181 天分区，但历史分区从 2026-01-01 起仍可读取。历史全量回刷在本地运行 `python3 scripts/backfill-ads.py --start 2026-01-01 --end 2026-11-03`，脚本通过 Tunnel 完整读取、校验后暂存并切换远程 D1。`POST /api/ads/sync` 可由已授权账号指定 `date` 补刷单日。
+
+创作链路使用 `pollo_da_creation_overall_daily`（日×源端，源表 `creation_mode='汇总'`，跨功能去重 UV）和 `pollo_da_creation_function_daily`（日×源端×功能×新老用户×近 30 天付费分层，仅保留两个分层维度的明细行）。两个表均不使用发起、提交埋点或预存比率。功能 UV、每日 UV、各端 UV 不能跨相应粒度相加；`platform_type='汇总'` 是源表跨端去重行。业务周为周六至周五，周去重 UV 无法从日聚合推导；`user_type=NEW` 指当日注册，不是本业务周注册。`未归因` 功能仅作 GMV 对账。源表历史覆盖自 2026-09-27 起；本地运行 `python3 scripts/backfill-creation-chain.py extract`、`estimate`、`backfill` 导出聚合行、校验并回刷。现有创作回调返回成功或跳过时，轮转补刷昨日及之前 3 日、距昨日 7/30 天的留存分区（每次选择一个分区）；`POST /api/creation-chain/sync` 可指定 `date` 补刷单日。未成熟的 D3/D7/D30 留存人数保持 NULL。
 
 `gmv_d14` 至 `gmv_d180` 对未成熟 cohort 也可能返回截至当前的部分累计值，不会自动置空。业务周比较这些指标时，仅使用整个业务周均已达到相应观察天数的 cohort；花费、曝光、点击、注册和 D0 可按已覆盖日期聚合。
 
-两个接口都会校验 `x-pollocloud-trigger: cron`，不会接受普通用户请求。发布后可用 `pollocloud cron list --name pollo-ai` 查看配置，并用 `pollocloud cron run --name pollo-ai <任务>` 做一次验证。
+定时接口都会校验 `x-pollocloud-trigger: cron`，不会接受普通用户请求。发布后可用 `pollocloud cron list --name pollo-ai` 查看配置，并用 `pollocloud cron run --name pollo-ai <任务>` 做一次验证。
 
 ## Report generation
 

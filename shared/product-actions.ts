@@ -74,11 +74,5 @@ export function revenueActionEvents(rows: Row[], actions: ProductAction[], metri
     signals.sort((a,b) => Math.abs(b.change/b.threshold)-Math.abs(a.change/a.threshold));
     if (signals[0]) candidates.push(signals[0]);
   }
-  // One node per date; keep the four strongest signals, with space for a 24px event tile.
-  const selected: RevenueEvent[] = [];
-  for (const event of candidates.sort((a,b) => Math.abs(b.change/b.threshold)-Math.abs(a.change/a.threshold))) {
-    if (selected.every(e => Math.abs(Date.parse(e.date)-Date.parse(event.date)) >= 3*86400000)) selected.push(event);
-    if (selected.length === 4) break;
-  }
-  return selected.sort((a,b) => a.date.localeCompare(b.date));
+  return candidates.sort((a,b) => a.date.localeCompare(b.date));
 }

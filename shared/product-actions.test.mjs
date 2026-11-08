@@ -45,12 +45,13 @@ test('missing values are not zero and incomplete historical weeks cannot manufac
   data.find(r=>r.period==='2026-10-20').totalGmv=150;
   assert.equal(revenueActionEvents(data.filter(r=>r.period!=='2026-09-04'),[action()],'totalGmv','web','2026-10-09','2026-11-07').length,0);
 });
-test('thresholds are learned from prior weeks only and icons have spacing and a hard cap',()=>{
+test('all eligible action dates remain visible, including adjacent dates and more than four events',()=>{
   const data=rows(), actions=[];
-  for(let i=0;i<30;i+=2){const date=shift('2026-10-09',i);data.find(r=>r.period===date).totalGmv=500;actions.push(action(date,'web','pricing',String(i)));}
+  for(let i=0;i<6;i++){const date=shift('2026-10-18',i);data.find(r=>r.period===date).totalGmv=500;actions.push(action(date,'web','pricing',String(i)));}
   const result=revenueActionEvents(data,actions,'totalGmv','web','2026-10-09','2026-11-07');
-  assert.ok(result.length>0&&result.length<=4);
-  for(let i=1;i<result.length;i++)assert.ok(Date.parse(result[i].date)-Date.parse(result[i-1].date)>=3*86400000);
+  assert.deepEqual(result.map(e=>e.date),actions.map(a=>a.date));
+});
+test('thresholds are learned from prior weeks only',()=>{
   const original=rows();original.find(r=>r.period==='2026-10-20').totalGmv=150;
   const before=revenueActionEvents(original,[action()],'totalGmv','web','2026-10-09','2026-11-07');
   original.filter(r=>r.period>'2026-10-20').forEach(r=>r.totalGmv=10000);

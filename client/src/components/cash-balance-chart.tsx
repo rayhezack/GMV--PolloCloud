@@ -13,6 +13,7 @@ import { useControllableState } from "@/hooks/use-controllable-state"
 import { formatCompactCurrency, formatCurrency, formatTime } from "@/lib/chart-format"
 import { alignPolylines, fittedDash, niceTicks, polylineLengths, reachAt, smoothPath, timeTicks, valueAt, xAtLength } from "@/lib/chart-series"
 import { cn } from "@/lib/utils"
+import { layoutEventTiles } from "@/lib/event-timeline"
 
 type CashBalancePoint = {
   /** ms since the epoch */
@@ -427,6 +428,7 @@ function CashBalanceChart({
         .map((transaction) => ({ transaction, index: nearestIndex(data, transaction.time) })),
     [transactions, data, start, end],
   )
+  const eventLayout = React.useMemo(() => layoutEventTiles(placed.map(({transaction}) => transaction.time), start, end, trackWidth), [placed, start, end, trackWidth])
 
   const [selected, setSelected] = useControllableState<number | null>({
     value: indexProp,
@@ -993,8 +995,8 @@ function CashBalanceChart({
           if (event.button === 0 && !(event.target as Element).closest("button")) toggle(pick(pointerX(event), "track"))
         }}
       >
-        <div className="relative h-6">
-          {placed.map(({ transaction, index }) => {
+        <div className="relative" style={{height: eventTimeline ? eventLayout.height : TILE}}>
+          {placed.map(({ transaction, index }, tileIndex) => {
             const tone = transaction.tone ?? "blue"
             const scheduled = transaction.time > now
             const isActive = activeTransaction === transaction
@@ -1015,7 +1017,7 @@ function CashBalanceChart({
                 }}
                 // the ring sits 4px out, clear of the tile popping to 115%
                 className="absolute top-0 size-6 cursor-pointer rounded-full outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-blue-500/40 focus-visible:outline-solid"
-                style={{ left: Math.round(trackX(transaction.time) - TILE / 2) }}
+                style={eventTimeline ? eventLayout.positions[tileIndex] : { left: Math.round(trackX(transaction.time) - TILE / 2) }}
               >
                 <span data-slot="cash-balance-chart-tile-pop" data-time={transaction.time} className="block size-full">
                   <span

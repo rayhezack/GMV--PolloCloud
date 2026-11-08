@@ -22,7 +22,7 @@ export function RevenueActionInfo({title, source, period}: {title: string; sourc
       {/^\d{4}-\d{2}-\d{2}$/.test(period) && <p>当前对比：{period} 与 {new Date(Date.parse(`${period}T00:00:00Z`) - 7 * 86400000).toISOString().slice(0, 10)}。</p>}
       <p>斜纹带表示展示日期内 GMV 的第 25 至 75 百分位区间。</p>
       <strong>产品动作标注</strong>
-      <p>日环比或同星期周同比超出前 12 个完整业务周的 P95 / P05，且涨跌至少 10% 时标注；每张卡最多 4 个日期。</p>
+      <p>日环比或同星期周同比超出前 12 个完整业务周的 P95 / P05，且涨跌至少 10% 时，标注同日产品动作。</p>
       <p>浮层展示当前端当日全部动作；全端视图覆盖全部端。</p>
       {source?.lastSyncError && source.available && <p role="status">产品动作最近一次同步失败，当前展示上次成功入仓的数据（{source.readAt}）。</p>}
       {!source?.available && <p role="status">{source ? '产品动作暂不可用，请刷新重试。' : '正在读取产品动作…'}</p>}
