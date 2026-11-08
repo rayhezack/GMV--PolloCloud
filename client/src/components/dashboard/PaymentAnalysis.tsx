@@ -83,6 +83,7 @@ import PaymentTrend from "./PaymentTrend";
 import { CashFlowAreaChart } from "@/components/cash-flow-area-chart";
 import { FinancialTrendsChart } from "@/components/financial-trends-chart";
 import { IncomeOverviewChart } from "@/components/finance-chart/IncomeOverviewChart";
+import { PaymentShareDialog } from './PaymentShareDialog';
 import { Search as BenchoSearch } from "@/components/bencho";
 import PaymentDailyDetail from "./PaymentDailyDetail";
 import LoadingWave from './LoadingWave';
@@ -331,6 +332,7 @@ export default function PaymentAnalysis({
   });
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+  const [shareSelected, setShareSelected] = useState<string | null>(null);
   const [registrationDimension, setRegistrationDimension] = useState<'userLifecycle' | 'regCountry'>('userLifecycle');
   const [showInsight, setShowInsight] = useState(false);
   const update = (updates: Record<string, string | undefined>) =>
@@ -385,6 +387,7 @@ export default function PaymentAnalysis({
   useEffect(() => {
     setPage(0);
     setSelected(null);
+    setShareSelected(null);
     setQuery("");
     setShowInsight(false);
   }, [
@@ -716,7 +719,7 @@ export default function PaymentAnalysis({
                   coverageLabel={costCoverage}
                 /> : <Card className="payment-viz-card payment-comparison-card">
                   <CardHeader className="payment-viz-head"><div><CardTitle>GMV 分布</CardTitle><div className="payment-viz-reading"><strong>{money(view.total.gmv)}</strong><span>日均</span><Change value={view.total.changeRate}/></div><span className="payment-baseline">{dimension}</span></div></CardHeader>
-                  <CardContent className="payment-viz-content"><IncomeOverviewChart key={`${mode}-${scope}-${grouping}`} periods={chartItems.map(item=>({id:item.key,label:entityLabel(item.key),amount:item.gmv}))} total={view.total.gmv} onOpen={setSelected}/></CardContent>
+                  <CardContent className="payment-viz-content"><IncomeOverviewChart key={`${mode}-${scope}-${grouping}`} periods={chartItems.map(item=>({id:item.key,label:entityLabel(item.key),amount:item.gmv}))} total={view.total.gmv} onOpen={grouping === 'payType' ? setShareSelected : setSelected} openLabel={grouping === 'payType' ? '占比趋势' : '明细'}/></CardContent>
                 </Card>}
 
               </div>
@@ -968,6 +971,15 @@ export default function PaymentAnalysis({
                   </div>
                 </div>
               </Card>
+              <PaymentShareDialog
+                entity={shareSelected}
+                label={shareSelected ? entityLabel(shareSelected) : ''}
+                history={costHistory}
+                error={historyError}
+                context={`${platform === 'web' ? 'Web 端' : platform === 'app' ? deviceType === 'ios' ? 'iOS' : deviceType === 'android' ? 'Android' : 'App 端' : '全端'} · ${revenueScopes.find(item => item.value === scope)!.label}`}
+                onClose={() => setShareSelected(null)}
+                onRetry={() => setHistoryRetry(value => value + 1)}
+              />
               <Sheet
                 open={Boolean(selectedItem)}
                 onOpenChange={(open) => {

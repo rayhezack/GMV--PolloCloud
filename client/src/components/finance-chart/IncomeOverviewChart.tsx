@@ -13,10 +13,12 @@ export function IncomeOverviewChart({
   periods,
   total,
   onOpen,
+  openLabel = '明细',
 }: {
   periods: IncomeOverviewPeriod[];
   total: number;
   onOpen: (id: string) => void;
+  openLabel?: string;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
@@ -163,7 +165,7 @@ export function IncomeOverviewChart({
                 <button
                   className="income-overview-open"
                   type="button"
-                  aria-label={`查看 ${period.label} 明细`}
+                  aria-label={`查看 ${period.label} ${openLabel}`}
                   onClick={() => onOpen(period.id)}
                 >
                   <ChevronRight size={14} />
