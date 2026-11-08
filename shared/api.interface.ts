@@ -76,6 +76,7 @@ export interface PaymentAnalysisResponse {
     rows: { period: string; weekStart: string; payType: string; userLifecycle: string; regCountry: string; gmvUsd: number }[];
     verifiedPayTypes: string[];
   };
+  registrationStatus?: 'available' | 'source_missing' | 'table_missing';
 }
 
 export const RENEWAL_PLAN_TIERS = ['LITE', 'PRO', 'ULTRA'] as const;

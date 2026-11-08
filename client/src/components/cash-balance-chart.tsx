@@ -48,6 +48,8 @@ type CashBalanceChartProps = Omit<React.ComponentProps<"div">, "children"> & {
   plotHeight?: number
   /** Product actions have no transaction amount; keep the money tooltip factual. */
   eventTimeline?: boolean
+  /** Locate an exact dated observation without highlighting the surrounding card. */
+  focusTime?: number
   title?: string
   /** The glyph in the blue tile (14px, white). */
   icon?: React.ReactNode
@@ -362,6 +364,7 @@ function CashBalanceChart({
   chartOnly = false,
   plotHeight: heightProp = 200,
   eventTimeline = false,
+  focusTime,
   title = "Cash Balance",
   icon = <CreditCardIcon />,
   balanceLabel = "Total Balance",
@@ -434,11 +437,14 @@ function CashBalanceChart({
   // ones after the data ends).
   const [hovered, setHovered] = React.useState<Target | null>(null)
   const [pinnedId, setPinnedId] = React.useState<string | undefined>(undefined)
+  const [focusTargetTime, setFocusTargetTime] = React.useState(focusTime)
+  React.useEffect(() => setFocusTargetTime(focusTime), [focusTime])
   const transactionAt = (index: number, id?: string) =>
     (id !== undefined ? placed.find((entry) => entry.transaction.id === id && entry.index === index) : undefined) ?? placed.find((entry) => entry.index === index)
   const pinned = selected !== null && selected >= 0 && selected < n ? selected : null
-  // Product-action previews end with the interaction, even after a point was clicked.
-  const target: Target | null = hovered !== null && hovered.index >= 0 && hovered.index < n ? hovered : !eventTimeline && pinned !== null ? { index: pinned, id: pinnedId } : null
+  const focusIndex = focusTargetTime === undefined ? -1 : data.findIndex(point => point.time === focusTargetTime)
+  // Product-action previews end with the interaction; anomaly links locate an exact observation.
+  const target: Target | null = hovered !== null && hovered.index >= 0 && hovered.index < n ? hovered : focusIndex >= 0 ? { index: focusIndex } : !eventTimeline && pinned !== null ? { index: pinned, id: pinnedId } : null
   // the cursor fades out where it was: keep the last target
   const [lastTarget, setLastTarget] = React.useState<Target | null>(target)
   if (target !== null && (target.index !== lastTarget?.index || target.id !== lastTarget?.id)) setLastTarget(target)
@@ -748,7 +754,10 @@ function CashBalanceChart({
     animate(all('[data-slot="cash-balance-chart-tick"]'), { opacity: [0, 1], duration: 500, delay: stagger(35), ease: "outQuad", onComplete: releaseStyles("opacity") })
   }, [ticksKey, reduced])
 
-  const hover = (next: Target | null) => setHovered(next)
+  const hover = (next: Target | null) => {
+    setHovered(next)
+    if (next === null) setFocusTargetTime(undefined)
+  }
   /** Pins the target, or unpins it when it is the pinned one. */
   const toggle = (next: Target) => {
     const same = pinned === next.index && transactionAt(next.index, next.id)?.transaction === pinnedTransaction

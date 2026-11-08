@@ -1049,6 +1049,7 @@ export default function PaymentAnalysis({
                           <h3>付费贡献分析</h3>
                           <IconBar label="付费下钻维度" value={registrationDimension} onChange={value => setRegistrationDimension(value as 'userLifecycle' | 'regCountry')} items={[{value:'userLifecycle',label:'注册新老'},{value:'regCountry',label:'注册国家'}]}/>
                         </header>
+                        {registrationRows ? <p className="payment-registration-note">注册国家来自支付订单，注册新老由账户快照的注册日期计算；并非归因表自带维度。按日、付费类型核对了金额，未校验上游注册标签本身。</p> : null}
                         {registrationRows ? <Table>
                           <TableHeader><TableRow>
                             <TableHead>{registrationDimension === 'userLifecycle' ? '注册新老' : '注册国家'}</TableHead>
@@ -1059,7 +1060,7 @@ export default function PaymentAnalysis({
                             <TableCell><div>{signedMoney(row.analysis-row.baseline)}</div><Change value={relativeChange(row.analysis,row.baseline)}/></TableCell>
                             <TableCell>{registrationContributions[index] == null ? '—' : `${registrationContributions[index]! > 0 ? '+' : ''}${percent(registrationContributions[index])}`}</TableCell>
                           </TableRow>)}</TableBody>
-                        </Table> : <p>注册维度尚未完成金额核对，暂不展示贡献度。</p>}
+                        </Table> : <p role="status">{data.registrationStatus === 'table_missing' ? '注册明细 D1 表缺失，无法下钻；请检查数据同步。' : data.registrationStatus === 'source_missing' ? '所选日期缺少支付订单注册明细，无法下钻；请检查数据同步。' : data.source === 'legacy' ? '历史口径没有可核对的注册明细，无法下钻。' : '此付费类型的注册明细缺失或与归因表按日金额不一致，无法下钻；请核对数据源。'}</p>}
                         {registrationRows && <p className="payment-registration-note">新用户指所在业务周内注册；贡献度 = 该分层日均变化 ÷ 此付费类型日均总变化，抵消整体变化的分层为负。</p>}
                       </section>}
                       {grouping !== "payType" && (

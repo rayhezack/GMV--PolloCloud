@@ -1341,12 +1341,14 @@ async function paymentAnalysis(env: Env, request: Request) {
     costAvailable,
   };
   if (attributionType === 'NONE' && !legacy && dates.length) {
+    response.registrationStatus = 'source_missing';
     const filters = ['period IN (SELECT value FROM json_each(?))'];
     const binds: unknown[] = [JSON.stringify(dates)];
     if (platform !== 'all') { filters.push('platform=?'); binds.push(platform); }
     if (deviceType) { filters.push('device_type=?'); binds.push(deviceType); }
     try {
       const rows = await queryRows(env, `SELECT period,week_start,pay_type,user_lifecycle,reg_country,SUM(gmv_usd) AS gmv_usd FROM pollo_da_payment_registration WHERE ${filters.join(' AND ')} GROUP BY period,week_start,pay_type,user_lifecycle,reg_country`, ...binds);
+      if (rows.length) response.registrationStatus = 'available';
       // Verify every date, including zero/missing groups, against payment results.
       // Never rescale registration slices or substitute funnel revenue for orders.
       const parent = new Map<string, number>();
@@ -1367,6 +1369,7 @@ async function paymentAnalysis(env: Env, request: Request) {
       };
     } catch (error) {
       if (!String(error).includes('no such table: pollo_da_payment_registration')) throw error;
+      response.registrationStatus = 'table_missing';
     }
   }
   return json(response);
@@ -1784,7 +1787,7 @@ async function creativeOverview(env: Env, request: Request): Promise<Response> {
       // SQL already combines the selected platforms at this exact daily grain.
       const daily = group.map(row => creativeChainPoint(asText(row.period),[row]));
       return { key, label, userType, payGmv30d, current, baseline, daily };
-    }).sort((a, b) => b.current.gmvUsd - a.current.gmvUsd);
+    }).sort((a, b) => b.current.creationTaskCnt - a.current.creationTaskCnt || a.label.localeCompare(b.label));
     return json({ ready: true, source: 'pollo_da_creation_chain', comparison: { baselinePeriod, analysisPeriod, periodDays: currentDays, baselinePeriodDays: baselineDays, analysisPeriodDays: currentDays }, trend, functions, observedThrough, comparisonDates: {analysis: [...new Set(currentRows.map(row=>asText(row.period)))], baseline: [...new Set(baselineRows.map(row=>asText(row.period)))]} } satisfies CreativeOverviewResponse);
   } catch (error) {
     console.error('Creation overview read failed',error);

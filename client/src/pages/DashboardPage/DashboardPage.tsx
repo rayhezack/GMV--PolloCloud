@@ -16,7 +16,7 @@ import {
 } from 'react';
 import dayjs from 'dayjs';
 import { Slide } from 'loading-dev';
-import { LOCAL_DATA_WINDOW } from '@/lib/local-data-window';
+import { LOCAL_DATA_WINDOW, LOCAL_REVENUE_WINDOW } from '@/lib/local-data-window';
 import PaymentAnalysis from '@/components/dashboard/PaymentAnalysis';
 import { AdsDashboard, CreativeDashboard } from '@/components/dashboard/OperationalDashboards';
 import { ChainWorkbench } from '@/components/dashboard/ChainWorkbench';
@@ -53,7 +53,6 @@ import {
   RevenueCards,
   ContributionBars,
   downloadCsv,
-  type RevenueHeadlineSummary,
 } from '@/components/dashboard/AnalysisWidgets';
 import {
   dashboardView,
@@ -454,7 +453,7 @@ function resolveTrendSourceWindow(
   granularity: Granularity,
 ): { startDate: string; endDate: string } {
 
-  const minStartDate = dayjs(LOCAL_DATA_WINDOW?.startDate ?? TREND_DATA_START_DATE);
+  const minStartDate = dayjs(LOCAL_REVENUE_WINDOW?.startDate ?? TREND_DATA_START_DATE);
   const zoomStartDate = dayjs(window.endDate).subtract(89, 'day');
   const selectedStartDate = dayjs(window.startDate).subtract(WEEK_DAYS, 'day');
   const paddedStartDate = granularity === 'day'
@@ -815,6 +814,7 @@ function GmvCoverageExplanation({
         <span>数据口径</span>
         <nav aria-label="数据口径目录">
           <a href="#method-coverage">覆盖差异</a>
+          <a href="#method-lineage">图表血缘</a>
           <a href="#method-window">统计窗口</a>
           <a href="#method-active">主动付费</a>
           <a href="#method-drill">下钻口径</a>
@@ -883,6 +883,22 @@ function GmvCoverageExplanation({
             )}
           </div>
         </section>
+        <section id="method-lineage" className="dashboard-methodology-section">
+          <h3>图表与数据源</h3>
+          <p>看板读取 D1 同步表，按页面所选端口、日期与业务周聚合；以下为每类图表的实际依赖，源表缺失或对账未通过时不推定缺失维度。</p>
+          <a href="/data-lineage.html" target="_blank" rel="noreferrer">查看完整血缘图</a>
+          <div className="dashboard-lineage-figure"><img src="/data-lineage-overview.svg" width="1280" height="720" alt="数据管道总览：MaxCompute 和飞书 Base 经独立同步进入 D1，再由 Worker API 聚合及校验后供看板读取" /></div>
+          <div className="dashboard-lineage-figure"><img src="/data-lineage-payment.svg" width="1280" height="720" alt="支付依赖图：GMV 与付费类型共享支付结果，注册拆分同时依赖支付结果对账和注册明细，支付链路独立读取漏斗及续订 cohort" /></div>
+          <div className="dashboard-lineage-figure"><img src="/data-lineage-operations.svg" width="1280" height="720" alt="创作与投放依赖图：功能表现和创作分层共享活跃事实，广告指标与 LTV 共用注册 cohort 事实" /></div>
+          <dl className="dashboard-methodology-definitions">
+            <div><dt>GMV 趋势与三张指标卡</dt><dd>MaxCompute 支付归因日表 → D1 pollo_da_fact_rows（pay_type，NONE 结果行）→ overview/payTypeTrend。卡片金额为展示范围内最新日期的单日值，WoW 与 7 天前同日比较；折线展示所选范围全部可用日期。收入趋势的支付结果线同源；付费墙等诊断线另读 pollo_da_chain_funnel，不混入卡片 GMV。</dd></div>
+            <div><dt>付费类型贡献与下钻</dt><dd>支付归因日表 → D1 pollo_da_fact_rows。结果汇总取 NONE 行；功能/模型归因分别取 CREATION_MODE、MODEL 或 ACTUAL_MODEL，不能跨模式相加。注册国家和注册新老另由支付订单表关联用户账户快照 → pollo_da_payment_registration，按同口径订单结果核对后才展示，不从归因表虚构。</dd></div>
+            <div><dt>支付链路与自动续订</dt><dd>付费墙用户日表 → pollo_da_chain_funnel / pollo_da_chain_breakdown → 漏斗、驱动及触点下钻。续订 cohort 表 → pollo_da_fact_rows（renewal）→ 到期用户、续订率、续订客单价；到期 cohort GMV 与支付日续费 GMV 不能直接相减。</dd></div>
+            <div><dt>创作积极性与分层</dt><dd>创作功能链路日表 → pollo_da_creation_overall_daily / pollo_da_creation_function_daily → 指标卡、创作趋势、功能表现。行为日志和创作记录 → pollo_da_fact_rows（creative）→ 活跃 UV、渗透率及 30 日创作分层。创作 Tab 不展示链路表的 GMV，该字段不是本页支付结果。</dd></div>
+            <div><dt>广告投放</dt><dd>广告归因日表 → pollo_da_ads_daily → 点击、成本、注册、ROAS 卡片，国家与渠道周对比，以及注册 Cohort 的 LTV/CAC。国家表按当前选择的分析周指标降序；Cohort 收入按注册日归组，不等同于支付日 GMV。</dd></div>
+            <div><dt>异动与动作标注</dt><dd>异动检测读取支付结果与链路的 D1 日表；产品动作由飞书 Base 同步到 pollo_da_product_actions / pollo_da_product_action_details，仅作日期标注，不参与收入计算。</dd></div>
+          </dl>
+        </section>
         <section id="method-window" className="dashboard-methodology-section">
           <h3>统计窗口</h3>
           <p>付费类型、支付链路和创作分层页面按各分析页的业务周选择器比较；GMV 趋势页面使用独立趋势窗口。</p>
@@ -931,7 +947,7 @@ function GmvCoverageExplanation({
           <h3>支付结果与链路归因</h3>
           <dl className="dashboard-methodology-definitions">
             <div><dt>付费类型表</dt><dd>主动付费直接汇总支付结果；自动续订按支付日期汇总当日实际发生的续费 GMV。</dd></div>
-            <div><dt>大盘 GMV</dt><dd>不统计 API Credits 订单。</dd></div>
+            <div><dt>大盘 GMV</dt><dd>包含主动付费、自动续订和 API 收入；API 单独列项，不纳入主动付费链路归因。</dd></div>
             <div><dt>续订表</dt><dd>以到期用户为 cohort，观察这批用户后续是否续费及其续费金额，不按续费支付日重新归组。</dd></div>
             <div><dt>支付链路表</dt><dd>主动付费从 DAU 出发，按访问、曝光、提交、支付的时间戳顺序归因；自动续订沿用到期用户 cohort。</dd></div>
             <div><dt>差额含义</dt><dd>支付结果中未能被对应行为链路串联的部分，保留在结果口径中，不强行分配给某个驱动因子。</dd></div>
@@ -3033,7 +3049,7 @@ const DashboardPage = () => {
       const end = isValidDateParam(effectiveTrendEndDate)
         ? effectiveTrendEndDate
         : trendWindow.endDate;
-      const minimum = LOCAL_DATA_WINDOW?.startDate ?? TREND_DATA_START_DATE;
+      const minimum = (activeTab === 'trend' ? LOCAL_REVENUE_WINDOW : LOCAL_DATA_WINDOW)?.startDate ?? TREND_DATA_START_DATE;
       const maximum = LOCAL_DATA_WINDOW?.endDate ?? dayjs().subtract(1, 'day').format('YYYY-MM-DD');
       const clamp = (date: string) => date < minimum ? minimum : date > maximum ? maximum : date;
       return {
@@ -3041,7 +3057,7 @@ const DashboardPage = () => {
         endDate: clamp(start <= end ? end : start),
       };
     },
-    [effectiveTrendEndDate, effectiveTrendStartDate, trendWindow],
+    [activeTab, effectiveTrendEndDate, effectiveTrendStartDate, trendWindow],
   );
   const trendSourceWindow = useMemo(
     () => resolveTrendSourceWindow(selectedTrendWindow, granularity),
@@ -3080,7 +3096,7 @@ const DashboardPage = () => {
     }),
     [selectedTrendWindow],
   );
-  // Headline cards always show the latest daily values. The day/week control
+  // Headline cards show the latest selected day; the day/week control
   // belongs to the trend chart and must not change the card metric grain.
   const cardGranularity: Granularity = 'day';
 
@@ -3718,22 +3734,6 @@ const DashboardPage = () => {
           },
       ]
       : [];
-  const primaryPaySection = paySections.find((section) => section.title.includes('一级') || section.title === '付费类型贡献') ?? null;
-  const revenueHeadlineSummary = useMemo<RevenueHeadlineSummary | undefined>(() => {
-    const items = primaryPaySection?.items ?? [];
-    if (!items.length) return undefined;
-    const renewal = items.find((item) => item.key.includes('自动续订'));
-    const totalCurrent = items.reduce((sum, item) => sum + item.analysisDailyAvg, 0);
-    const totalBaseline = items.reduce((sum, item) => sum + item.baselineDailyAvg, 0);
-    const renewalCurrent = renewal?.analysisDailyAvg ?? 0;
-    const renewalBaseline = renewal?.baselineDailyAvg ?? 0;
-    const period = attributions.payType?.comparison?.analysisPeriod ?? analysisWeek;
-    return {
-      totalGmv: { current: totalCurrent, baseline: totalBaseline, period },
-      activeGmv: { current: totalCurrent - renewalCurrent, baseline: totalBaseline - renewalBaseline, period },
-      renewalGmv: { current: renewalCurrent, baseline: renewalBaseline, period },
-    };
-  }, [analysisWeek, attributions.payType, primaryPaySection]);
   const selectedPayDrillSections = selectedPaymentType === 'renewal'
     ? paySections.filter((section) => section.title.includes('自动续订套餐'))
     : paySections.filter((section) => section.title === '主动付费下钻');
@@ -3784,6 +3784,7 @@ const DashboardPage = () => {
           {['trend','creative'].includes(activeTab) ? (
             <DateRangePicker
               selectedRange={selectedTrendWindow}
+              availableRange={activeTab === 'trend' ? LOCAL_REVENUE_WINDOW : LOCAL_DATA_WINDOW}
               onRangeChange={updateTrendRange}
             />
           ) : null}
@@ -3826,7 +3827,6 @@ const DashboardPage = () => {
         <>
           <RevenueCards
             items={paySections[0]?.items ?? []}
-            summary={revenueHeadlineSummary}
             structureItems={revenueStructureItems}
             loading={!cardTrend.length && cardTrendLoading}
             period={formatWeekRange(analysisWeek)}

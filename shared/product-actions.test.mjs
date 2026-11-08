@@ -56,3 +56,13 @@ test('thresholds are learned from prior weeks only and icons have spacing and a 
   original.filter(r=>r.period>'2026-10-20').forEach(r=>r.totalGmv=10000);
   assert.deepEqual(revenueActionEvents(original,[action()],'totalGmv','web','2026-10-09','2026-11-07'),before);
 });
+
+test('the full lookback marks both rises and falls near the start of a visible quarter',()=>{
+  const data=Array.from({length:188},(_,i)=>({period:shift('2026-05-01',i),totalGmv:100}));
+  data.find(r=>r.period==='2026-08-10').totalGmv=150;
+  data.find(r=>r.period==='2026-08-14').totalGmv=50;
+  const actions=[action('2026-08-10'),action('2026-08-14','web','payment','fall')];
+  const result=revenueActionEvents(data,actions,'totalGmv','web','2026-08-07','2026-11-04');
+  assert.deepEqual(result.map(e=>[e.date,Math.sign(e.change)]),[['2026-08-10',1],['2026-08-14',-1]]);
+  assert.equal(revenueActionEvents(data.filter(r=>r.period>='2026-08-07'),actions,'totalGmv','web','2026-08-07','2026-11-04').length,0);
+});

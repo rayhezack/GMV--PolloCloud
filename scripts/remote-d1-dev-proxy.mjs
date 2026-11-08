@@ -98,6 +98,7 @@ export function remoteD1DevProxy() {
     config(_, { command }) {
       return { define: {
         'import.meta.env.VITE_LOCAL_DATA_WINDOW': JSON.stringify(command === 'serve' && window ? { startDate: window.startDate, endDate: window.endDate } : null),
+        'import.meta.env.VITE_LOCAL_REVENUE_WINDOW': JSON.stringify(command === 'serve' && window ? { startDate: window.revenueHistoryStartDate ?? window.startDate, endDate: window.endDate } : null),
       } };
     },
     configureServer(server) {
@@ -138,7 +139,7 @@ export function remoteD1DevProxy() {
         try {
           if (local && url.pathname.startsWith('/api/dashboard/')) {
             const supportsHistory = ['/api/dashboard/overview','/api/dashboard/payment-trend'].includes(url.pathname);
-            const coverageStart = supportsHistory && window.revenueHistoryStartDate || window.startDate;
+            const coverageStart = supportsHistory && (window.revenueBaselineStartDate ?? window.revenueHistoryStartDate) || window.startDate;
             const requestedStart = url.searchParams.get('startDate');
             url.searchParams.set('startDate', requestedStart ? [coverageStart,requestedStart].sort().at(-1) : window.startDate);
             const requestedEnd = url.searchParams.get('endDate');

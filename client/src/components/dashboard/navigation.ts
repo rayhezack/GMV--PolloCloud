@@ -23,7 +23,7 @@ export const DASHBOARD_VIEWS = [
   },
   {
     id: 'chain',
-    label: '支付链路归因',
+    label: '支付链路',
     description: '从 GMV 驱动下钻到支付漏斗、国家结构与渠道效率。',
     icon: GitBranch,
   },

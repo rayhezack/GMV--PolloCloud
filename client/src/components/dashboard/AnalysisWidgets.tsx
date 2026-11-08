@@ -67,7 +67,6 @@ export function downloadCsv(
 }
 
 type RevenueMetric = 'totalGmv' | 'activeGmv' | 'renewalGmv';
-export type RevenueHeadlineSummary = Partial<Record<RevenueMetric, { current: number; baseline: number; period: string }>>;
 
 function formatTrendDate(period: string) {
   return period.length >= 10 ? period.slice(5).replace('-', '/') : period;
@@ -94,40 +93,8 @@ function resolveTrendDialogYAxisDomain(
   return lower === upper ? [lower - 1, upper + 1] : [lower, upper];
 }
 
-function rangeRows(
-  rows: OverviewTrendPoint[],
-  days: number,
-  metric: RevenueMetric,
-) {
-  const selected = rows.slice(-days);
-  if (days !== 90) return selected;
-  const grouped = new Map<string, OverviewTrendPoint[]>();
-  selected.forEach((row) => {
-    const week = getBusinessWeekStart(row.period);
-    const bucket = grouped.get(week) ?? [];
-    bucket.push(row);
-    grouped.set(week, bucket);
-  });
-  return [...grouped.entries()].map(([period, bucket]) => ({
-    ...bucket[0],
-    period,
-    [metric]: bucket.reduce((sum, row) => sum + Number(row[metric] ?? 0), 0) / bucket.length,
-  }));
-}
-
-function selectCardTrendRows(
-  rows: OverviewTrendPoint[],
-  days: number,
-  metric: RevenueMetric,
-  granularity: Granularity,
-) {
-  if (granularity !== 'week') return rangeRows(rows, days, metric);
-  return rows.slice(-Math.max(1, Math.ceil(days / 7)));
-}
-
 export function RevenueCards({
   items,
-  summary,
   structureItems = {},
   loading,
   period,
@@ -139,7 +106,6 @@ export function RevenueCards({
   headlineEndDate,
 }: {
   items: AttributionItem[];
-  summary?: RevenueHeadlineSummary;
   structureItems?: Partial<Record<RevenueMetric, AttributionItem[]>>;
   loading: boolean;
   period: string;
@@ -153,7 +119,6 @@ export function RevenueCards({
   headlineEndDate?: string;
 }) {
   const { search } = useLocation();
-  const trendDays: Record<RevenueMetric, number> = { totalGmv: 30, activeGmv: 30, renewalGmv: 30 };
   const [expandedMetric, setExpandedMetric] = useState<RevenueMetric | null>(null);
   const [exportMetric, setExportMetric] = useState<RevenueMetric | null>(null);
   const [structureMetric, setStructureMetric] = useState<RevenueMetric | null>(null);
@@ -169,10 +134,10 @@ export function RevenueCards({
   const focusHandledRef = useRef<string | null>(null);
   useEffect(() => {
     if (!focusMetric || !focusPeriod || loading || !focusApplies) {
-      document.querySelectorAll('.revenue-card-focus').forEach((card) => card.classList.remove('revenue-card-focus'));
+      focusHandledRef.current = null;
       return;
     }
-    const focusKey = `${focusMetric}:${focusPeriod}`;
+    const focusKey = `${selectedPlatform}:${focusMetric}:${focusPeriod}`;
     if (focusHandledRef.current === focusKey) return;
     const card = document.querySelector<HTMLElement>(`.revenue-card-focus-${focusMetric}`);
     if (!card) return;
@@ -182,12 +147,7 @@ export function RevenueCards({
     if (bounds.top < 12 || bounds.bottom > viewportBottom - 12) {
       card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     }
-    card.classList.remove('revenue-card-focus');
-    void card.offsetWidth;
-    card.classList.add('revenue-card-focus');
-    const timer = window.setTimeout(() => card.classList.remove('revenue-card-focus'), 2600);
-    return () => window.clearTimeout(timer);
-  }, [dailyTrend.length, focusApplies, focusMetric, focusPeriod, items.length, loading, trend.length]);
+  }, [dailyTrend.length, focusApplies, focusMetric, focusPeriod, items.length, loading, selectedPlatform, trend.length]);
   const [actionSource, setActionSource] = useState<ProductActionSource | null>(null);
   useEffect(() => {
     let live = true;
@@ -203,13 +163,9 @@ export function RevenueCards({
     return date.toISOString().slice(0, 10);
   };
   const sourceRows = dailyTrend.length ? dailyTrend : trend;
-  const comparisonRows = trend.length ? trend : sourceRows;
-  const headlineRows = sourceRows.filter((row) =>
-    (!headlineStartDate || row.period >= headlineStartDate) &&
-    (!headlineEndDate || row.period <= headlineEndDate),
-  );
-  const latestRows = headlineRows.length ? headlineRows : sourceRows;
+  const headlineRows = sourceRows.filter(row => (!headlineStartDate || row.period >= headlineStartDate) && (!headlineEndDate || row.period <= headlineEndDate));
   const valueOf = (row: OverviewTrendPoint, metric: RevenueMetric) => Number(row[metric] ?? 0);
+  const previousByDate = new Map(sourceRows.map(row => [row.period, row]));
   const definitions = [
     { key: '大盘 GMV', metric: 'totalGmv' as const, color: '#5B3FF2' },
     { key: '主动付费', metric: 'activeGmv' as const, color: '#25243D' },
@@ -217,30 +173,16 @@ export function RevenueCards({
   ];
   const cards = definitions.map((definition) => ({
     ...definition,
-    latestValue: latestRows.length ? valueOf(latestRows[latestRows.length - 1], definition.metric) : summary?.[definition.metric]?.current ?? null,
-    latestPeriod: latestRows.at(-1)?.period ?? summary?.[definition.metric]?.period ?? period,
-    previousValue: latestRows.at(-1)
-      ? valueOf(
-          comparisonRows.find((row) => row.period === addDays(latestRows.at(-1)!.period, -7)) ??
-            ({} as OverviewTrendPoint),
-          definition.metric,
-        )
-      : summary?.[definition.metric]?.baseline ?? null,
+    latestValue: headlineRows.length ? valueOf(headlineRows.at(-1)!, definition.metric) : null,
+    latestPeriod: headlineRows.at(-1)?.period ?? period,
+    previousValue: headlineRows.length ? previousByDate.get(addDays(headlineRows.at(-1)!.period, -7))?.[definition.metric] ?? null : null,
   }));
   const money = (v: number) => '$' + Math.round(v).toLocaleString('en-US');
   return (
     <div className="revenue-cards" aria-busy={loading}>
       {cards.map((item, i) => {
-        const change = item.previousValue
-          ? item.latestValue === null
-            ? null
-            : item.latestValue / item.previousValue - 1
-          : null;
-        const selectedDays = trendDays[item.metric];
-        const cardRows = sourceRows.map((row) => ({ ...row, activeGmv: valueOf(row, 'activeGmv') }));
-        // Keep the card's quick range independent from the global trend range.
-        // Weekly source rows are sliced by business-week count in the helper.
-        const miniRows = selectCardTrendRows(cardRows, selectedDays, item.metric, granularity);
+        const change = item.previousValue && item.latestValue !== null
+          ? item.latestValue / item.previousValue - 1 : null;
         return (
           <ActionNode
             key={item.key}
@@ -300,7 +242,7 @@ export function RevenueCards({
                         </div>
                         <RevenueActionInfo title={item.key} source={actionSource} period={item.latestPeriod} />
                       </div>
-                      <div className="revenue-date">{item.latestPeriod}</div>
+                      <div className="revenue-date">{headlineRows.length ? item.latestPeriod : '—'}</div>
                       <div className="revenue-foot">
                         <span className={change !== null && change < 0 ? 'text-destructive' : 'text-emerald-700'}>
                           {loading || change === null
@@ -309,7 +251,8 @@ export function RevenueCards({
                         </span>
                       </div>
                     </div>
-                    <RevenueActionChart rows={sourceRows} visibleRows={miniRows} metric={item.metric}
+                    <RevenueActionChart rows={sourceRows} visibleRows={headlineRows} metric={item.metric}
+                      focusPeriod={!loading && focusApplies && focusMetric === item.metric ? focusPeriod : null}
                       color={item.color} title={item.key} platform={selectedPlatform} source={actionSource} />
                 </motion.div>
               </AnimatePresence>
@@ -324,11 +267,10 @@ export function RevenueCards({
             <SheetDescription>按日期查看及导出趋势数据</SheetDescription>
           </SheetHeader>
           {exportMetric && (() => {
-            const cardRows = sourceRows.map((row) => ({ ...row, activeGmv: valueOf(row, 'activeGmv') }));
-            const rows = selectCardTrendRows(cardRows, trendDays[exportMetric], exportMetric, granularity)
+            const rows = headlineRows
               .map((row) => ({ period: row.period, value: Number(row[exportMetric] ?? 0) }));
             const title = definitions.find((item) => item.metric === exportMetric)?.key ?? 'GMV';
-            const periodLabel = granularity === 'week' || trendDays[exportMetric] === 90 ? '业务周起始日' : '日期';
+            const periodLabel = granularity === 'week' ? '业务周起始日' : '日期';
             return <>
               <div className="payment-daily-toolbar">
                 <Button variant="ghost" disabled={!rows.length} onClick={() => downloadCsv(`Pollo-${title}-明细.csv`, [[periodLabel, `${title}_USD`], ...rows.map((row) => [row.period, row.value])])}>
@@ -354,8 +296,8 @@ export function RevenueCards({
         metric={structureMetric}
         items={structureMetric ? structureItems[structureMetric] ?? [] : []}
         definitions={definitions}
-        currentPoint={latestRows.at(-1)}
-        baselinePoint={latestRows.at(-1) ? comparisonRows.find(row => row.period === addDays(latestRows.at(-1)!.period, -7)) : undefined}
+        currentPoint={headlineRows.at(-1)}
+        baselinePoint={headlineRows.at(-1) ? previousByDate.get(addDays(headlineRows.at(-1)!.period, -7)) : undefined}
         daily={granularity === 'day'}
         onClose={() => setStructureMetric(null)}
       />

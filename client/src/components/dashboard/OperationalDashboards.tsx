@@ -66,7 +66,7 @@ function AdsMetricCard({label,value,comparisonValue,baseline,points,format,contr
   return <article className="op-finance-card op-ads-metric"><header><h2>{label}</h2>{controls}</header>
     <div className="op-ads-metric-value">{value==null?'—':format(value)}</div>
     <div className="op-ads-metric-comparison"><AdsDelta value={comparisonValue==null||baseline==null?null:change(comparisonValue,baseline)}/><span>较上周同期</span></div>
-    {points.length?<FinanceOverviewAreaChart className="op-finance" title={label} categoryLabel="" category="" metric={label} summaryValue={value??undefined} formatValue={format} periods={[{value:'range',label:'所选日期',points:points.map(p=>({value:p.value,label:p.period})),axis:axes}]}/>:<div className="op-ads-metric-empty">该窗口暂无数据</div>}
+    {points.length?<FinanceOverviewAreaChart className="op-finance" plotHeight={160} title={label} categoryLabel="" category="" metric={label} summaryValue={value??undefined} formatValue={format} periods={[{value:'range',label:'所选日期',points:points.map(p=>({value:p.value,label:p.period})),axis:axes}]}/>:<div className="op-ads-metric-empty">该窗口暂无数据</div>}
   </article>;
 }
 function CohortDiagnosis({period,label,cell,asOf}:{period:string;label:string;cell:AdsCohortCell;asOf:string}) {
@@ -147,11 +147,11 @@ export function AdsDashboard({data,tableData,detailRequest,tableWeeks,dateRange,
       {activeCohort&&activeCell&&<CohortDiagnosis period={activeCohort.key} label={activeCohort.label} cell={activeCell} asOf={asOf}/>}
       {cohortRows.length?<div className="op-table-scroll op-cohort-scroll"><table className="op-matrix"><thead><tr><th>注册日期</th>{['D0','D14','D30','D60','D90','D180'].map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{cohortRows.map(row=><tr key={row.key}><th>{row.label}</th>{row.values.map(c=>{
         const value=adsCohortValue(c,row.key,cohortMetric,asOf),level=value==null?null:Math.max(0,Math.min(1,value/maximum));
-        return <td key={c.horizon}><button type="button" aria-label={cellText(row,c)} aria-pressed={cell?.cohort===row.key&&cell.horizon===c.horizon} onFocus={()=>setCell({cohort:row.key,horizon:c.horizon})} onClick={()=>setCell({cohort:row.key,horizon:c.horizon})} style={level==null?undefined:{background:`color-mix(in srgb,#533afd ${6+level*49}%,white)`,color:'#0d253d'}}>{value==null?'—':cohortFormat(value)}</button></td>;
+        return <td key={c.horizon}><button type="button" aria-label={cellText(row,c)} aria-pressed={cell?.cohort===row.key&&cell.horizon===c.horizon} onClick={()=>setCell(current=>current?.cohort===row.key&&current.horizon===c.horizon?null:{cohort:row.key,horizon:c.horizon})} style={level==null?undefined:{background:`color-mix(in srgb,#533afd ${6+level*49}%,white)`,color:'#0d253d'}}>{value==null?'—':cohortFormat(value)}</button></td>;
       })}</tr>)}</tbody></table></div>:<Empty>所选日期暂无 Cohort 数据</Empty>}
     </section>
     <section className="op-panel"><header className="op-heading"><h2>国家{trafficLabel}变化</h2><div className="op-ads-table-actions">{onComparisonChange&&<WeekComparisonPicker baselineWeek={tableWeeks.baselineWeek} analysisWeek={tableWeeks.analysisWeek} availableWeeks={availableWeeks} onWeekChange={value=>onComparisonChange(value.baselineWeek??tableWeeks.baselineWeek,value.analysisWeek??tableWeeks.analysisWeek)}/>}<Picker label="国家流量指标" value={metric} onChange={setMetric} items={trafficMetrics}/><Button type="button" size="sm" variant="tertiary" className="op-ads-channel-button" onPress={()=>setChannelOpen(true)} isDisabled={!table?.countries.length}>渠道分析</Button></div></header>
-      {table?<div className="op-table-scroll op-country-scroll"><table className="op-table"><thead><tr><th>国家</th><th title="所选基准周：按可比日期计算日均">基准周日均</th><th title="所选分析周：按可比日期计算日均">分析周日均</th><th>绝对变化</th><th>周环比</th><th>变化贡献度</th></tr></thead><tbody>{countryRow({key:'total',label:'合计',current,baseline},true)}{table.countries.map(c=>countryRow(c))}</tbody></table></div>:<Empty>对比周数据加载中</Empty>}
+      {table?<div className="op-table-scroll op-country-scroll"><table className="op-table"><thead><tr><th>国家</th><th title="所选基准周：按可比日期计算日均">基准周日均</th><th title="所选分析周：按可比日期计算日均，降序">分析周日均 ↓</th><th>绝对变化</th><th>周环比</th><th>变化贡献度</th></tr></thead><tbody>{countryRow({key:'total',label:'合计',current,baseline},true)}{[...table.countries].sort((a,b)=>b.current[trafficKey]-a.current[trafficKey]||a.key.localeCompare(b.key)).map(c=>countryRow(c))}</tbody></table></div>:<Empty>对比周数据加载中</Empty>}
     </section>
     <Dialog open={channelOpen&&!!table} onOpenChange={setChannelOpen}><DialogContent className="op-country-dialog op-ads-dialog" onEscapeKeyDown={event=>{if(document.querySelector('.op-ads-dialog .bencho-picker-popover'))event.preventDefault();}} onInteractOutside={event=>{if(event.target instanceof Element&&event.target.closest('.bencho-picker-popover'))event.preventDefault();}}><DialogTitle>{selectedCountry?.label??'国家'} · 渠道表现</DialogTitle><div className="op-country-controls"><span>{comparisonRange(table?.comparisonDates?.analysis,comparison?.analysisPeriod)} / {comparisonRange(table?.comparisonDates?.baseline,comparison?.baselinePeriod)} · 日均</span><div className="op-ads-channel-pickers"><Picker label="渠道分析国家" searchable value={selectedCountry?.key??''} onChange={value=>{setCountry(value);setChannel('');}} items={table?.countries.map(c=>({value:c.key,label:c.label}))??[]}/><Picker label="国家广告渠道" value={selectedChannel?.key??''} onChange={setChannel} items={detail?.channels.map(c=>({value:c.key,label:c.label}))??[]}/></div></div>
       <div className="op-ads-channel-body">{selectedChannel?<><div className="op-table-scroll"><table className="op-table"><thead><tr><th>日均指标</th><th>基准周</th><th>分析周</th><th>周环比</th></tr></thead><tbody>{([{label:'点击量',key:'clicks',format:adsCompact},{label:'CTR',key:'ctr',format:creativePct},{label:'广告成本',key:'costUsd',format:adsMoney},{label:'CPC',key:'cpc',format:(n:number)=>`$${n.toFixed(2)}`},{label:'注册量',key:'registerUsers',format:adsCompact},{label:'D0 收入',key:'gmvD0',format:adsMoney},{label:'D0 ROAS',key:'roas',format:adsRoasFormat}] as const).map(m=>{
@@ -166,10 +166,9 @@ export function AdsDashboard({data,tableData,detailRequest,tableWeeks,dateRange,
 const creativeNumber = (n:number) => n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const creativeCompact = (n:number) => Math.abs(n)>=10000?`${(n/10000).toFixed(2)}万`:creativeNumber(n);
 const creativePct = (n:number) => `${(n*100).toFixed(2)}%`;
-const creativeMoney = (n:number) => `$${creativeCompact(n)}`;
 const creativeRatio = (n:number|null|undefined,d:number|null|undefined) => n!=null&&d!=null&&d>0?n/d:null;
 const creativeWeekBefore = (period:string) => new Date(Date.parse(period)-7*86400000).toISOString().slice(0,10);
-const creativeAtomicKeys = ['creationUserCnt','creationTaskCnt','validCreationTaskCnt','successTaskCnt','successOutputCnt','adoptedTaskCnt','adoptedOutputCnt','d3CreationUserCnt','d7CreationUserCnt','d30CreationUserCnt','gmvUsd'] as const;
+const creativeAtomicKeys = ['creationUserCnt','creationTaskCnt','validCreationTaskCnt','successTaskCnt','successOutputCnt','adoptedTaskCnt','adoptedOutputCnt','d3CreationUserCnt','d7CreationUserCnt','d30CreationUserCnt'] as const;
 type CreativeAtomicKey = typeof creativeAtomicKeys[number];
 type CreativeRateKey = 'creationPenetrationRate'|'avgCreationTaskCntPerCreator'|'requestRate'|'successRate'|'adoptionRate'|'d3Rate'|'d7Rate'|'d30Rate';
 type CreativeInput = {period:CreativeChainTrendPoint['period'];activity?:{activeUv:number|null;creationUv:number|null;creationTaskCnt:number|null}|null} & Partial<Record<CreativeAtomicKey,number|null>>;
@@ -186,7 +185,6 @@ const creativeMetrics:CreativeMetric[] = [
   {key:'adoptionRate',label:'任务采纳率',format:creativePct,formula:'采纳任务数 / 成功任务数'},
   ...([3,7,30] as const).map(horizon=>({key:`d${horizon}Rate` as const,label:`D${horizon} 创作留存率`,format:creativePct,formula:`D${horizon} 留存用户数 / 对应创作日用户数；仅统计截至数据观测日已满 ${horizon} 天且留存数据完整的创作日。周值为留存用户合计 / 对应创作用户合计。`})),
   ...([3,7,30] as const).map(horizon=>({key:`d${horizon}CreationUserCnt` as const,label:`D${horizon} 留存用户`,format:creativeCompact,formula:'整体按用户去重；同一用户可使用多个功能，功能行的留存人数不可相加为整体人数。'})),
-  {key:'gmvUsd',label:'归因GMV',format:creativeMoney},
 ];
 function withRates(p:CreativeInput,asOf:string):CreativePoint {
   const values=Object.fromEntries(creativeAtomicKeys.map(key=>[key,p[key]??null])) as Record<CreativeAtomicKey,number|null>;
@@ -235,7 +233,7 @@ function CreativeMetricCard({metric,point,baseline,trend,controls}:{metric:Creat
   return <article className="op-finance-card op-creative-metric"><header><h2><CreativeMetricHeader metric={metric}/></h2>{controls}</header>
     <div className="op-creative-metric-value">{value==null?'—':metric.format(value)}</div>
     <div className="op-creative-metric-comparison"><span><CreativeDelta value={value} baseline={prior} isRate={metric.key.endsWith('Rate')}/> <span className="op-muted">较上周同期</span></span>{point&&<time dateTime={point.period}>{point.period}</time>}</div>
-    {value!=null&&points.length?<FinanceOverviewAreaChart className="op-finance" title={metric.label} categoryLabel="" category="" metric={metric.label} summaryValue={value} formatValue={metric.format} periods={[{value:'data',label:'所选日期',points:points.map(p=>({value:p[metric.key]!,label:p.period})),axis:axes}]}/>:<div className="op-creative-metric-empty">暂无可用数据</div>}
+    {value!=null&&points.length?<FinanceOverviewAreaChart className="op-finance" plotHeight={160} title={metric.label} categoryLabel="" category="" metric={metric.label} summaryValue={value} formatValue={metric.format} periods={[{value:'data',label:'所选日期',points:points.map(p=>({value:p[metric.key]!,label:p.period})),axis:axes}]}/>:<div className="op-creative-metric-empty">暂无可用数据</div>}
   </article>;
 }
 type CreativeWeeks = {baselineWeek:string;analysisWeek:string};
@@ -273,7 +271,7 @@ export function CreativeDashboard({data,chain,dateRange,availableWeeks,featureWe
   const columns:CreativeMetric[]=[
     ...creativeMetrics.filter(m=>['creationUserCnt','creationTaskCnt','validCreationTaskCnt','requestRate'].includes(m.key)),
     {key:'successTaskCnt',label:'成功任务',format:creativeCompact},
-    ...creativeMetrics.filter(m=>['successRate','adoptionRate','d3Rate','d7Rate','d30Rate','d3CreationUserCnt','d7CreationUserCnt','d30CreationUserCnt','gmvUsd'].includes(m.key)),
+    ...creativeMetrics.filter(m=>['successRate','adoptionRate','d3Rate','d7Rate','d30Rate','d3CreationUserCnt','d7CreationUserCnt','d30CreationUserCnt'].includes(m.key)),
   ];
   const aggregateWeek=(name:string,week:string)=>{
     const calendar=week===chain.comparison?.analysisPeriod?chain.comparisonDates?.analysis:chain.comparisonDates?.baseline;

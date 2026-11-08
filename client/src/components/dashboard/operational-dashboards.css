@@ -99,6 +99,7 @@
 .op-creative-metric-comparison time { color:#61718a; }
 .op-creative-metric [data-slot=finance-overview-area-chart-stat] { display:none; }
 .op-creative-metric-empty { display:grid; min-height:142px; place-content:center; color:#61718a; font-size:11px; }
+.op-creative-metric-empty,.op-ads-metric-empty { min-height:110px; }
 /* BalanceChart's tooltip compares adjacent points; creative comparisons use date minus seven. */
 .op-creative-dashboard .op-balance [data-slot=balance-chart-tooltip]>span:nth-child(2),
 .op-creative-dashboard .op-balance [data-slot=balance-chart-plot]>span.invisible>span:nth-child(2) { display:none; }

@@ -936,11 +936,6 @@
 }
 .revenue-card:hover,
 .revenue-card:focus-within { background: #ffffff; }
-.revenue-card-focus {
-  position: relative;
-  z-index: 2;
-  animation: revenue-card-focus 2600ms ease-out both;
-}
 .revenue-label {
   display: flex;
   align-items: center;
@@ -1558,14 +1553,6 @@
   from { transform: scaleY(0); }
   to { transform: scaleY(1); }
 }
-@keyframes revenue-card-focus {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(91, 63, 242, 0), 0 8px 20px rgba(91, 63, 242, 0);
-  }
-  22%, 62% {
-    box-shadow: 0 0 0 2px rgba(91, 63, 242, .42), 0 0 0 8px rgba(91, 63, 242, .1), 0 14px 34px rgba(91, 63, 242, .14);
-  }
-}
 @keyframes revenue-bar-focus {
   0%, 100% { box-shadow: 0 0 0 0 rgba(91, 63, 242, 0); }
   35%, 70% { box-shadow: 0 0 0 3px rgba(91, 63, 242, .32), 0 0 0 6px rgba(91, 63, 242, .1); }
@@ -1584,7 +1571,6 @@
   .revenue-card-ready .revenue-foot,
   .revenue-card-ready .revenue-mini-chart,
   .revenue-card-ready .revenue-mini-bar,
-  .revenue-card-focus,
   .revenue-mini-bar[data-focus-target='true'],
   .driver-channels.is-revealed .driver-channel,
   .driver-channels.is-revealed .driver-channel-fill,
@@ -1701,6 +1687,8 @@
 .dashboard-methodology-source-list { margin-top: 22px; }
 .dashboard-methodology-coverage { margin-top: 24px; }
 .dashboard-methodology-status { padding: 18px 0; color: #737373; font-size: 14px; line-height: 1.8; }
+.dashboard-lineage-figure { max-width: 100%; overflow-x: auto; margin-top: 20px; border: 1px solid var(--ui-line); border-radius: 8px; }
+.dashboard-lineage-figure img { display: block; width: 100%; min-width: 1280px; height: auto; }
 .dashboard-heading-meta { display: block; max-width: 720px; margin-top: 4px; color: var(--ui-muted); font-size: 12px; line-height: 1.6; }
 .dashboard-coverage-table {
   min-width: 0;

@@ -144,7 +144,7 @@ try {
   db.close();
   try { await copyFile(path.join(directory,'dashboard.sqlite'), path.join(directory,`dashboard-before-prepare-${Date.now()}.sqlite`)); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   await rename(tempPath, path.join(directory, 'dashboard.sqlite'));
-  const manifest = { startDate, endDate, generatedAt: new Date().toISOString(), coverage, revenueHistoryStartDate: history.start, revenueHistoryCoverage: history.coverage };
+  const manifest = { startDate, endDate, generatedAt: new Date().toISOString(), coverage, revenueHistoryStartDate: history.start, revenueBaselineStartDate: history.baselineStart, revenueHistoryCoverage: history.coverage };
   await writeFile(path.join(directory, 'manifest.json'), JSON.stringify(manifest, null, 2));
   console.log(`本地数据已准备：${startDate} ~ ${endDate}`);
 } catch (error) {

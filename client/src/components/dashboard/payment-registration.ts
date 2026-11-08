@@ -15,5 +15,5 @@ export function registrationBreakdown(data: PaymentAnalysisResponse, payType: st
     group[row.weekStart === analysisPeriod ? 'analysis' : 'baseline'] += row.gmvUsd / matched.size;
     groups.set(key, group);
   }
-  return [...groups.values()].sort((a,b) => b.analysis-a.analysis || a.key.localeCompare(b.key));
+  return groups.size ? [...groups.values()].sort((a,b) => b.analysis-a.analysis || a.key.localeCompare(b.key)) : null;
 }

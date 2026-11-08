@@ -14,11 +14,12 @@ type Props = {
   onRangeChange: (range: SelectedRange) => void;
   // Retained for existing callers; local coverage bounds always apply.
   allowLocalSelection?: boolean;
+  availableRange?: SelectedRange | null;
 };
 
-export default function DashboardDateRangePicker({ selectedRange, onRangeChange }: Props) {
-  const minDate = LOCAL_DATA_WINDOW?.startDate ?? '2026-01-01';
-  const maxDate = LOCAL_DATA_WINDOW?.endDate ?? today(getLocalTimeZone()).subtract({ days: 1 }).toString();
+export default function DashboardDateRangePicker({ selectedRange, onRangeChange, availableRange = LOCAL_DATA_WINDOW }: Props) {
+  const minDate = availableRange?.startDate ?? '2026-01-01';
+  const maxDate = availableRange?.endDate ?? today(getLocalTimeZone()).subtract({ days: 1 }).toString();
   const minimum = useMemo(() => parseDate(minDate), [minDate]);
   const maximum = useMemo(() => parseDate(maxDate), [maxDate]);
   const selected = useMemo(() => {

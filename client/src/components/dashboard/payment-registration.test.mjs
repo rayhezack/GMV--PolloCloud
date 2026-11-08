@@ -30,4 +30,8 @@ for (const dimension of ['userLifecycle','regCountry']) {
     assert.deepEqual(result,[{key:dimension==='userLifecycle'?'老用户':'US',baseline:100,analysis:120}]);
     assert.equal(registrationBreakdown({...data,revenues:[data.revenues[0]]},'renewal',dimension),null);
   });
+  test(`${dimension}: missing source rows are not synthesized from payment totals`, () => {
+    assert.equal(registrationBreakdown({...data,registration:{verifiedPayTypes:['renewal'],rows:[]}},'renewal',dimension),null);
+    assert.equal(registrationBreakdown({...data,registration:{verifiedPayTypes:[],rows:[]}},'renewal',dimension),null);
+  });
 }

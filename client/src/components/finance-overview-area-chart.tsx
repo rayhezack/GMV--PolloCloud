@@ -37,6 +37,7 @@ type FinanceOverviewPeriod = {
 type FinanceOverviewAreaChartProps = Omit<React.ComponentProps<"div">, "children"> & {
   formatValue?: (value: number) => string
   summaryValue?: number
+  plotHeight?: number
   title?: string
   /** The soft label before the two tags. */
   categoryLabel?: string
@@ -174,9 +175,9 @@ function layoutChart(points: FinanceOverviewPoint[], columns: number, width: num
 const round = (n: number) => Math.round(n * 1000) / 1000
 
 /** The area under the line: the smooth line, then straight down to AREA_BOTTOM and back. */
-function areaPath(line: Point[]) {
+function areaPath(line: Point[], bottom = AREA_BOTTOM) {
   if (!line.length) return ""
-  return `${smoothPath(line)} L ${round(line[line.length - 1].x)} ${AREA_BOTTOM} L ${round(line[0].x)} ${AREA_BOTTOM} Z`
+  return `${smoothPath(line)} L ${round(line[line.length - 1].x)} ${bottom} L ${round(line[0].x)} ${bottom} Z`
 }
 
 /**
@@ -205,6 +206,7 @@ function FinanceOverviewAreaChart({
   currency = "USD",
   formatValue,
   summaryValue,
+  plotHeight = PLOT_HEIGHT,
   className,
   ...props
 }: FinanceOverviewAreaChartProps) {
@@ -213,9 +215,13 @@ function FinanceOverviewAreaChart({
   const points = React.useMemo(() => period?.points ?? [], [period])
   const axis = React.useMemo(() => period?.axis ?? [], [period])
   const n = points.length
-  const [plotRef, plot] = useChartSize<HTMLDivElement>({ width: PLOT_WIDTH, height: PLOT_HEIGHT })
+  const [plotRef, plot] = useChartSize<HTMLDivElement>({ width: PLOT_WIDTH, height: plotHeight })
   const width = plot.width || PLOT_WIDTH
-  const { line, step, grid } = React.useMemo(() => layoutChart(points, axis.length, width), [points, axis.length, width])
+  const { line, step, grid } = React.useMemo(() => {
+    const layout = layoutChart(points, axis.length, width)
+    return { ...layout, line: layout.line.map(point => ({ ...point, y: point.y * plotHeight / PLOT_HEIGHT })) }
+  }, [points, axis.length, width, plotHeight])
+  const areaBottom = AREA_BOTTOM * plotHeight / PLOT_HEIGHT
   // Content keys: parents may pass new arrays on every render, so changes are detected by value.
   const dataKey = `${period?.value}|${points.map((point) => point.value).join(";")}`
   const axisKey = `${period?.value}|${axis.join(";")}`
@@ -377,7 +383,7 @@ function FinanceOverviewAreaChart({
     const draw = (t: number) => {
       const frame = aligned.xs.map((x, i) => ({ x, y: aligned.from[i] + (aligned.to[i] - aligned.from[i]) * t }))
       lineEl?.setAttribute("d", smoothPath(frame))
-      areaEl?.setAttribute("d", areaPath(frame))
+      areaEl?.setAttribute("d", areaPath(frame, areaBottom))
       // the dot rides on the line's end, unless a scrub has taken it elsewhere
       if (latest.current.hover === null) dot?.style.setProperty("translate", `0 ${frame[frame.length - 1].y - endY}px`)
       else dot?.style.removeProperty("translate")
@@ -391,11 +397,11 @@ function FinanceOverviewAreaChart({
       onUpdate: () => draw(state.t),
       onComplete: () => {
         lineEl?.setAttribute("d", smoothPath(line))
-        areaEl?.setAttribute("d", areaPath(line))
+        areaEl?.setAttribute("d", areaPath(line, areaBottom))
         dot?.style.removeProperty("translate")
       },
     })
-  }, [dataKey, width, reduced])
+  }, [dataKey, width, reduced, areaBottom])
   React.useEffect(
     () => () => {
       morph.current?.cancel()
@@ -418,7 +424,7 @@ function FinanceOverviewAreaChart({
       onComplete: releaseStyles("opacity", "transform"),
     })
     if (before.columns !== axis.length)
-      animate(all('[data-slot="finance-overview-area-chart-grid-line"]'), { y2: [0, PLOT_HEIGHT], duration: 600, delay: stagger(30), ease: "outQuad" })
+      animate(all('[data-slot="finance-overview-area-chart-grid-line"]'), { y2: [0, plotHeight], duration: 600, delay: stagger(30), ease: "outQuad" })
   }, [axisKey, axis.length, reduced])
 
   // The arrow turns over when the change flips sign.
@@ -544,28 +550,28 @@ function FinanceOverviewAreaChart({
       )}
 
       <div className="relative mr-2 flex flex-col gap-4">
-        <div ref={plotRef} data-slot="finance-overview-area-chart-plot" className="relative" style={{ height: PLOT_HEIGHT }}>
+        <div ref={plotRef} data-slot="finance-overview-area-chart-plot" className="relative" style={{ height: plotHeight }}>
           <svg aria-hidden className="pointer-events-none absolute inset-0 size-full overflow-visible">
             <defs>
               {/* Primary/Purple/purple-500 to purple-100 (transparent) from the line's top down, at 32% */}
-              <linearGradient id={`${ids}-fill`} gradientUnits="userSpaceOnUse" x1="0" y1={LINE_TOP} x2="0" y2={AREA_BOTTOM}>
+              <linearGradient id={`${ids}-fill`} gradientUnits="userSpaceOnUse" x1="0" y1={LINE_TOP * plotHeight / PLOT_HEIGHT} x2="0" y2={areaBottom}>
                 <stop offset="0" style={{ stopColor: "var(--primary-purple-500)" }} />
                 <stop offset="1" style={{ stopColor: "var(--primary-purple-100)", stopOpacity: 0 }} />
               </linearGradient>
               <clipPath id={`${ids}-wipe`}>
-                <rect ref={wipeRef} x="0" y="0" width="100%" height={PLOT_HEIGHT} />
+                <rect ref={wipeRef} x="0" y="0" width="100%" height={plotHeight} />
               </clipPath>
             </defs>
             {/* Figma "Grid Line": 1px #e0e0e0, centred on x, dashed 5/5 */}
             {grid.map((x, i) => (
-              <line key={i} data-slot="finance-overview-area-chart-grid-line" x1={x} x2={x} y1={0} y2={PLOT_HEIGHT} className="stroke-[#e0e0e0]" {...GRID_DASH} />
+              <line key={i} data-slot="finance-overview-area-chart-grid-line" x1={x} x2={x} y1={0} y2={plotHeight} className="stroke-[#e0e0e0]" {...GRID_DASH} />
             ))}
             {hover !== null && activeAt && (
-              <line ref={guideRef} data-slot="finance-overview-area-chart-guide" x1={activeAt.x} x2={activeAt.x} y1={0} y2={PLOT_HEIGHT} className="stroke-primary-purple-500/50" {...GUIDE_DASH} />
+              <line ref={guideRef} data-slot="finance-overview-area-chart-guide" x1={activeAt.x} x2={activeAt.x} y1={0} y2={plotHeight} className="stroke-primary-purple-500/50" {...GUIDE_DASH} />
             )}
             {line.length > 0 && (
               <>
-                <path ref={areaRef} data-slot="finance-overview-area-chart-area" d={areaPath(line)} fill={`url(#${ids}-fill)`} fillOpacity={0.32} clipPath={`url(#${ids}-wipe)`} />
+                <path ref={areaRef} data-slot="finance-overview-area-chart-area" d={areaPath(line, areaBottom)} fill={`url(#${ids}-fill)`} fillOpacity={0.32} clipPath={`url(#${ids}-wipe)`} />
                 <path ref={lineRef} data-slot="finance-overview-area-chart-line" d={smoothPath(line)} fill="none" strokeWidth={2} className="stroke-primary-purple-500" />
               </>
             )}

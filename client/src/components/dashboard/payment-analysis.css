@@ -1,6 +1,4 @@
 .dashboard-content[data-tab='payment'] { gap: 18px; }
-.dashboard-content[data-tab='payment'] .dashboard-heading { padding-bottom: 2px; border-bottom: 0; }
-.dashboard-content[data-tab='payment'] .dashboard-heading h1 { color: #0d253d; font-family: 'Inter Variable',Inter,'PingFang SC',sans-serif; font-weight: 450; letter-spacing: -.025em; }
 .payment-bento {
   --payment-primary: #533afd;
   --payment-ink: #0d253d;

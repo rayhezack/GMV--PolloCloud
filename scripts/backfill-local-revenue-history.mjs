@@ -16,21 +16,25 @@ export async function backfillLocalRevenueHistory(directory, options = {}) {
   const manifest = options.endDate ? null : JSON.parse(await readFile(manifestPath, 'utf8'));
   const end = options.endDate ?? manifest.endDate;
   const start = shift(end, -89);
+  // The earliest displayed day also needs twelve complete prior weeks and
+  // their week-over-week denominators; this history stays outside the picker.
+  const baselineStart = shift(start, -98);
   const database = options.database ?? path.join(directory, 'dashboard.sqlite');
   for (const script of ['refresh-payment-results.py', 'backfill-payment-registration.py']) {
-    const { stdout } = await exec('/usr/bin/python3', [path.join(root, 'scripts', script), '--start', start, '--end', end, '--database', database, '--apply-local'], { maxBuffer: 4 * 1024 * 1024, timeout: 30 * 60 * 1000 });
+    const { stdout } = await exec('/usr/bin/python3', [path.join(root, 'scripts', script), '--start', script === 'refresh-payment-results.py' ? baselineStart : start, '--end', end, '--database', database, '--apply-local'], { maxBuffer: 4 * 1024 * 1024, timeout: 30 * 60 * 1000 });
     console.log(stdout.trim());
   }
   const db = new DatabaseSync(database);
   try {
     const coverage = db.prepare("SELECT platform, COUNT(*) AS rows, COUNT(DISTINCT period) AS days, SUM(gmv_usd) AS gmv FROM pollo_da_fact_rows WHERE dataset='pay_type' AND attribution_type='NONE' AND pay_type<>'汇总' GROUP BY platform").all();
-    if (!coverage.length || coverage.some(row => row.days < 90)) throw new Error('季度付费结果不足90天');
+    if (!coverage.length || coverage.some(row => row.days < 188)) throw new Error('季度付费结果及异动基准期不足188天');
     if (manifest) {
       manifest.revenueHistoryStartDate = start;
+      manifest.revenueBaselineStartDate = baselineStart;
       manifest.revenueHistoryCoverage = coverage;
       await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
     }
-    return { start, coverage };
+    return { start, baselineStart, coverage };
   } finally { db.close(); }
 }
 
