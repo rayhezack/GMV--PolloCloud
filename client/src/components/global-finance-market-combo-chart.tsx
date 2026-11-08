@@ -5,7 +5,7 @@ import * as React from "react"
 
 import { ChartButton } from "@/components/ui/chart-button"
 import { ChartCard } from "@/components/ui/chart-card"
-import { CalendarSolidIcon, ChevronDownIcon, DownloadIcon } from "@/components/ui/chart-icons"
+import { CalendarSolidIcon, ChevronDownIcon, DownloadIcon, TrendDownIcon, TrendUpIcon } from "@/components/ui/chart-icons"
 import { ChartMenu, ChartMenuContent, ChartMenuRadioGroup, ChartMenuRadioItem, ChartMenuTrigger } from "@/components/ui/chart-menu"
 import { ChartSwatch } from "@/components/ui/chart-swatch"
 import { ChartTrend } from "@/components/ui/chart-trend"
@@ -46,7 +46,11 @@ type GlobalFinanceMarketComboChartProps = Omit<React.ComponentProps<"div">, "chi
   formatValue?: (value: number) => string
   formatTooltipValue?: (value: number) => string
   formatChangeValue?: (value: number) => string
+  formatComparisonValue?: (value: number) => string
   variant?: "combo" | "line"
+  /** Read all three stats from the same selected date and its comparison. */
+  comparisonStats?: boolean
+  comparisonPoints?: GlobalFinanceMarketComboPoint[]
   title?: string
   /** The soft line under the title. */
   description?: string
@@ -589,30 +593,35 @@ function Stat({
   kind,
   format,
   locale,
+  trendValue = false,
 }: {
+  trendValue?: boolean
   label: string
   value: number | undefined
   change: number | undefined
   /** How the entrance counts the number up. */
-  kind: "money" | "percent"
+  kind: "money" | "percent" | "comparison"
   format: (value: number) => string
   locale: string
 }) {
   const valueRef = React.useRef<HTMLParagraphElement>(null)
   useCountUp(valueRef, value ?? 0, format, { enabled: value !== undefined, duration: 900 })
   return (
-    <div data-slot="global-finance-market-combo-chart-stat" className="flex min-w-0 flex-1 flex-col items-start gap-3 overflow-hidden rounded-2xl bg-surface-disable p-4">
+    <div data-slot="global-finance-market-combo-chart-stat" className="relative flex min-w-0 flex-1 flex-col items-start gap-3 overflow-hidden rounded-2xl bg-surface-disable p-4">
       <p className="typo-label-02-medium hug-w -my-0.5 max-w-full truncate py-0.5 text-fg-soft">{label}</p>
       {/* the Figma text box is 30px tall for the 24px style, which centres the glyphs 3px lower */}
+      <div className="flex items-center gap-2 min-w-0">
+      {trendValue && value != null && (value < 0 ? <TrendDownIcon className="size-5 shrink-0 text-error-500" /> : <TrendUpIcon className="size-5 shrink-0 text-primary-green-500" />)}
       <p
         ref={valueRef}
         data-slot="global-finance-market-combo-chart-stat-value"
         data-value={value}
         data-format={kind}
-        className="typo-heading-02-semibold hug-w leading-[30px] whitespace-nowrap text-fg-loud"
+        className={cn("typo-heading-02-semibold hug-w leading-[30px] whitespace-nowrap", trendValue ? value != null && value < 0 ? "text-error-500" : "text-primary-green-500" : "text-fg-loud")}
       >
         {value !== undefined ? format(value) : "–"}
       </p>
+      </div>
       {change !== undefined ? <ChartTrend value={change} fractionDigits={2} locale={locale} /> : <span aria-hidden className="h-3.5" />}
     </div>
   )
@@ -688,7 +697,7 @@ function TooltipLines({ text }: { text: TooltipText }) {
  * choice in a menu morphs the lines and the bars while the numbers count.
  */
 function GlobalFinanceMarketComboChart({
-  toolbar, formatValue, formatTooltipValue, formatChangeValue, variant = "combo",
+  toolbar, formatValue, formatTooltipValue, formatChangeValue, formatComparisonValue, variant = "combo", comparisonStats = false, comparisonPoints,
   title = "Global finance market overview",
   description = "2020-2027",
   data = sampleGlobalFinanceMarketComboData,
@@ -762,7 +771,7 @@ function GlobalFinanceMarketComboChart({
 
   const money = React.useCallback((value: number) => formatValue ? formatValue(value) : formatCompactCurrency(value, { locale, currency, minimumFractionDigits: 1 }), [locale, currency, formatValue])
   const exact = React.useCallback((value: number) => formatTooltipValue ? formatTooltipValue(value) : formatCurrency(value, { locale, currency, maximumFractionDigits: 0 }), [locale, currency, formatTooltipValue])
-  const percent = React.useCallback((value: number) => formatPercent(value, { locale, maximumFractionDigits: 0 }), [locale])
+  const percent = React.useCallback((value: number) => formatPercent(comparisonStats ? Math.abs(value) : value, { locale, maximumFractionDigits: comparisonStats ? 2 : 0, ...(comparisonStats ? {minimumFractionDigits: 2} : {}) }), [locale, comparisonStats])
   const step = n > 1 ? (actual[n - 1].time - actual[0].time) / (n - 1) : DAY
   const dateText = (time: number, withTime = step < DAY && layout.end - layout.start <= 10 * DAY) =>
     formatTime(time, withTime ? { month: "short", day: "numeric", hour: "numeric" } : { month: "short", day: "numeric", year: "numeric" }, locale)
@@ -770,11 +779,12 @@ function GlobalFinanceMarketComboChart({
 
   // What the stats read: the actual assets at the chosen point (the latest without one) against the forecast there,
   // the market's growth and the outlook (data).
-  const chosen = actual[selected ?? n - 1]
-  const forecastThen = chosen ? valueOn(forecast, chosen.time) : undefined
+  const chosen = actual[(comparisonStats ? active : selected) ?? n - 1]
+  const forecastThen = chosen ? (comparisonStats ? (comparisonPoints ?? shownData.forecast ?? []).find(point => timeOf(point.date) === chosen.time)?.value : valueOn(forecast, chosen.time)) : undefined
   const aum = chosen?.value
   const aumChange = aum !== undefined && forecastThen ? (aum / forecastThen - 1) * 100 : undefined
-  const outlook = shownData.outlook
+  const outlook = comparisonStats ? (forecastThen === undefined ? undefined : {year: 0, value: forecastThen}) : shownData.outlook
+  const growthValue = comparisonStats ? aumChange : shownData.growth?.value
   const latestValue = actual[n - 1]?.value
   const outlookChange = outlook && outlook.year > 0 && latestValue ? (outlook.value / latestValue - 1) * 100 : undefined
   const chosenYear = chosen ? new Date(chosen.time).getUTCFullYear() : new Date(layout.end).getUTCFullYear()
@@ -875,7 +885,7 @@ function GlobalFinanceMarketComboChart({
   const growing = React.useRef<{ t: number }[] | null>(null)
 
   // The numbers the entrance counts up from zero.
-  const counted = { aum: aum ?? 0, growth: shownData.growth?.value ?? 0, outlook: outlook?.value ?? 0 }
+  const counted = { aum: aum ?? 0, growth: growthValue ?? 0, outlook: outlook?.value ?? 0 }
   const counts = React.useRef(counted)
   const latestBars = React.useRef(bars)
   useIsomorphicLayoutEffect(() => {
@@ -901,7 +911,7 @@ function GlobalFinanceMarketComboChart({
     const count = () => {
       all('[data-slot="global-finance-market-combo-chart-stat-value"]').forEach((el) => {
         const value = Number(el.dataset.value)
-        if (Number.isFinite(value)) el.textContent = el.dataset.format === "percent" ? percent(value * counter.t) : money(value * counter.t)
+        if (Number.isFinite(value)) el.textContent = el.dataset.format === "percent" ? percent(value * counter.t) : el.dataset.format === "comparison" ? (formatComparisonValue ?? exact)(value * counter.t) : money(value * counter.t)
       })
     }
     count()
@@ -938,7 +948,7 @@ function GlobalFinanceMarketComboChart({
       count()
       all('[data-slot="global-finance-market-combo-chart-stat-value"]').forEach((el) => {
         const value = Number(el.dataset.value)
-        if (Number.isFinite(value)) el.textContent = el.dataset.format === "percent" ? percent(value) : money(value)
+        if (Number.isFinite(value)) el.textContent = el.dataset.format === "percent" ? percent(value) : el.dataset.format === "comparison" ? (formatComparisonValue ?? exact)(value) : money(value)
       })
     }
   })
@@ -1178,9 +1188,9 @@ function GlobalFinanceMarketComboChart({
 
       {/* Figma "Stats": three equal tiles 12px apart; they wrap when the card gets too narrow for the amounts */}
       {variant === "combo" && <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3 p-5">
-        <Stat label={chosen ? dateText(chosen.time, false) : aumLabel} value={aum} change={aumChange} kind="money" format={money} locale={locale} />
-        <Stat label={growthLabel} value={shownData.growth?.value} change={shownData.growth?.change} kind="percent" format={percent} locale={locale} />
-        <Stat label={outlookLabel} value={outlook?.value} change={outlookChange} kind="money" format={money} locale={locale} />
+        <Stat label={chosen ? dateText(chosen.time, false) : aumLabel} value={aum} change={comparisonStats ? undefined : aumChange} kind="money" format={money} locale={locale} />
+        <Stat label={growthLabel} value={growthValue} change={comparisonStats ? undefined : shownData.growth?.change} kind="percent" format={percent} locale={locale} trendValue={comparisonStats} />
+        <Stat label={outlookLabel} value={outlook?.value} change={outlookChange} kind={comparisonStats ? "comparison" : "money"} format={comparisonStats ? formatComparisonValue ?? exact : money} locale={locale} />
       </div>}
 
       <div className="flex flex-col gap-4 p-5">

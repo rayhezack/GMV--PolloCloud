@@ -136,6 +136,14 @@ export function remoteD1DevProxy() {
         }
 
         try {
+          // Optional verified Base export for local UI review, never shipped to production.
+          const actionsPath = path.resolve('.local-data/product-actions.json');
+          if (url.pathname === '/api/dashboard/product-actions' && existsSync(actionsPath)) {
+            response.setHeader('content-type', 'application/json');
+            response.setHeader('cache-control', 'no-store');
+            response.end(readFileSync(actionsPath));
+            return;
+          }
           if (local && url.pathname.startsWith('/api/dashboard/')) {
             const supportsHistory = ['/api/dashboard/overview','/api/dashboard/payment-trend'].includes(url.pathname);
             const coverageStart = supportsHistory && window.revenueHistoryStartDate || window.startDate;

@@ -1064,7 +1064,7 @@ function MetricTrendChart({ data, metricControls, granularity, onGranularityChan
   // Forecast is the real value seven days earlier, aligned to the shown date.
   const actual = visible.map(row => ({date: row.period, value: row.value}));
   const forecast = visible.flatMap(row => {
-    const value = byDate.get(dayjs(row.period).subtract(7, 'day').format('YYYY-MM-DD'));
+    const value = byDate.get(dayjs(row.period).subtract(granularity === 'month' ? 1 : 7, granularity === 'month' ? 'month' : 'day').format('YYYY-MM-DD'));
     return value == null ? [] : [{date: row.period, value}];
   });
   const unit = metric.key.endsWith("Rate") ? "ratio" : ["dau", "expireUserCnt"].includes(metric.key) ? "count" : "currency";
@@ -1080,7 +1080,7 @@ function MetricTrendChart({ data, metricControls, granularity, onGranularityChan
   const toolbar = <div className="trend-control-row">{metricControls}<CanvasToolbar granularity={granularity} onGranularityChange={onGranularityChange} showData={showData} onToggleData={()=>setShowData(v=>!v)} onExport={exportRows}/></div>;
   if (!visible.length) return <>{toolbar}<EmptyBlock title="暂无趋势" description=""/></>;
   return <>
-    <GlobalFinanceMarketComboChart key={`${metric.key}:${granularity}:${rangeStartDate}:${rangeEndDate}`} locale="zh-CN" title="" variant={singleLine ? "line" : "combo"} data={{actual,forecast:singleLine ? [] : forecast,flows:singleLine ? [] : flows,growth:change==null?undefined:{value:change},outlook:forecast.length?{year:0,value:previous}:undefined}} products={[]} categories={[]} periods={[]} period={granularity} toolbar={toolbar} actualLabel={metric.label} forecastLabel="上周同期" flowLabel="较上周变化" aumLabel="当日 GMV" growthLabel="可比日期较上周" outlookLabel="上周同期日均" formatValue={metric.format} formatTooltipValue={value => formatChartTooltipValue(value, unit)} formatChangeValue={value => formatChartTooltipChange(value, unit)} onExport={exportRows}/>
+    <GlobalFinanceMarketComboChart key={`${metric.key}:${granularity}:${rangeStartDate}:${rangeEndDate}`} locale="zh-CN" title="" comparisonStats comparisonPoints={forecast} variant={singleLine ? "line" : "combo"} data={{actual,forecast:singleLine ? [] : forecast,flows:singleLine ? [] : flows,growth:change==null?undefined:{value:change},outlook:forecast.length?{year:0,value:previous}:undefined}} products={[]} categories={[]} periods={[]} period={granularity} toolbar={toolbar} actualLabel={metric.label} forecastLabel="上周同期" flowLabel="较上周变化" aumLabel="当日 GMV" growthLabel={granularity === "month" ? "较上月同期" : "较上周同期"} outlookLabel={granularity === "month" ? "上月同期" : "上周同期"} formatValue={metric.format} formatComparisonValue={value => unit === "currency" ? `$${Math.round(value).toLocaleString("en-US")}` : formatChartTooltipValue(value, unit)} formatTooltipValue={value => formatChartTooltipValue(value, unit)} formatChangeValue={value => formatChartTooltipChange(value, unit)} onExport={exportRows}/>
     {showData && <div className="chart-data"><table><thead><tr><th>日期</th><th>{metric.label}</th></tr></thead><tbody>{actual.map(p=><tr key={p.date}><td>{p.date}</td><td>{metric.format(p.value)}</td></tr>)}</tbody></table></div>}
   </>;
 }
@@ -3074,7 +3074,10 @@ const DashboardPage = () => {
   const creativeSourceStart = [dayjs(selectedTrendWindow.startDate).subtract(7,'day').format('YYYY-MM-DD'), creativeWeeks.baselineWeek, creativeWeeks.analysisWeek].sort()[0];
   const creativeSourceEnd = [selectedTrendWindow.endDate, dayjs(creativeWeeks.baselineWeek).add(6,'day').format('YYYY-MM-DD'), dayjs(creativeWeeks.analysisWeek).add(6,'day').format('YYYY-MM-DD')].sort().at(-1)!;
   const cardTrendWindow = useMemo(
-    () => resolveTrendSourceWindow(selectedTrendWindow, 'day'),
+    () => ({
+      startDate: [dayjs(selectedTrendWindow.startDate).subtract(98, 'day').format('YYYY-MM-DD'), TREND_DATA_START_DATE].sort().at(-1)!,
+      endDate: selectedTrendWindow.endDate,
+    }),
     [selectedTrendWindow],
   );
   // Headline cards always show the latest daily values. The day/week control

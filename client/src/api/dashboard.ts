@@ -1,3 +1,4 @@
+import type { ProductActionSource } from '@shared/product-actions';
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
 import { createRequestCache } from './request-cache';
 import { getDemoAttributions, getDemoCoverage, getDemoOverview, STATIC_DEMO_MODE } from '@/lib/demo-data';
@@ -180,4 +181,8 @@ export async function getWorkbookPreview(params: {
     method: 'GET',
   });
   return response.data as WorkbookPreviewResponse;
+}
+
+export async function getProductActions(): Promise<ProductActionSource> {
+  return (await readDashboard<ProductActionSource>('/api/dashboard/product-actions')).data;
 }

@@ -1,3 +1,4 @@
+import { normalizeChartActions } from '../shared/product-actions';
 import { BREAKDOWN_VALUE_SQL } from './breakdown-dimensions';
 import { chainDriverEffects, lmdiDriverEffects } from './chain-attribution';
 import { serializeStagingChunks } from './sync-staging';
@@ -3050,6 +3051,15 @@ export default {
     try {
       const url = new URL(request.url);
       if (url.pathname.startsWith('/api/cron/')) return cronHandler(env, request, context);
+      if (url.pathname === '/api/dashboard/product-actions' && request.method === 'GET') {
+        try {
+          const actions = normalizeChartActions(await baseRecords(env, 'product_actions'));
+          return json({ actions, available: true, readAt: new Date().toISOString() });
+        } catch {
+          // An old D1 workbook snapshot must never masquerade as today's product releases.
+          return json({ actions: [], available: false, readAt: new Date().toISOString() });
+        }
+      }
       if (url.pathname === '/api/dashboard/overview' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => overview(env, request));
       if (url.pathname === '/api/dashboard/gmv-coverage' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => gmvCoverage(env));
       if (url.pathname === '/api/dashboard/gmv-anomalies' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => gmvAnomalies(env));

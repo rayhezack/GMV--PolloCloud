@@ -1,0 +1,37 @@
+.dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card { min-height: 324px; }
+.dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-body:not([data-picker='true']) { min-height: 260px !important; }
+.dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-face { grid-template-columns: minmax(0,1fr); align-items: start; gap: 12px; min-height: 260px; }
+.revenue-action-chart { position: relative; min-width: 0; padding-top: 4px; }
+.dashboard-shell .revenue-cash-chart[data-charts] { padding: 0; gap: 6px; border: 0; background: transparent; box-shadow: none; border-radius: 0; overflow: visible; --primary-blue-500: var(--revenue-line); --primary-blue-400: var(--revenue-line); }
+.revenue-cash-chart .cash-balance-plot-row { gap: 8px; }
+.revenue-cash-chart [data-slot='cash-balance-chart-range'] { fill: var(--revenue-line); opacity: .10; }
+.revenue-cash-chart [data-slot='cash-balance-chart-line'] { stroke: var(--revenue-line); }
+.revenue-cash-chart [data-slot='cash-balance-chart-cursor'] circle { stroke: var(--revenue-line); }
+.revenue-cash-chart .cash-balance-timeline { margin-left: 42px; margin-right: 8px; }
+.revenue-cash-chart [data-slot='cash-balance-chart-tick'], .revenue-cash-chart [data-slot='cash-balance-chart-time'] { font-size: 10px; color: #71829a; }
+.revenue-event-info { display: flex; margin: 0; padding: 4px; color: #71829a; border-radius: 50%; }
+.revenue-event-info:hover { background: #eef0f4; color: #533afd; }
+.revenue-event-method { border: 0; padding: 16px; color: #0d253d; background: #fff; box-shadow: 0 8px 32px #0d253d20; font-size: 12px; line-height: 1.7; }
+.revenue-event-method p { margin-top: 8px; color: #63758e; }
+.revenue-event-dialog { max-width: 620px; border: 0; background: #fff; color: #0d253d; }
+.revenue-event-list { max-height: 50vh; overflow: auto; }
+.revenue-event-list article { display: flex; gap: 12px; padding: 16px 0; border-bottom: 1px solid #eef1f5; }
+.revenue-event-list-icon { flex-shrink: 0; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: #f0edff; color: #533afd; }
+.revenue-event-list h3 { font-size: 14px; font-weight: 600; }
+.revenue-event-list p { margin-top: 6px; font-size: 13px; line-height: 1.65; color: #64758e; white-space: pre-line; }
+.revenue-event-list small, .revenue-event-caveat { font-size: 11px; color: #8793a4; }
+@container revenue-card (max-width: 340px) {
+  .dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-face { grid-template-columns: minmax(0,1fr); gap: 14px; }
+  .dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-face .revenue-number { margin-bottom: 6px; }
+  .revenue-action-chart { width: 100%; }
+}
+
+.dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-face > div:first-child { display: grid; grid-template-columns: minmax(0,1fr) auto; column-gap: 8px; align-items: center; }
+.dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-face .revenue-number { grid-row: 1 / 3; margin: 0; font-size: clamp(22px,2vw,28px); }
+.dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-face .revenue-date { grid-column: 2; margin: 0; font-size: 10px; text-align: right; }
+.dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-face .revenue-foot { grid-column: 2; margin: 0; font-size: 10px; text-align: right; }
+.revenue-cash-chart [data-slot='cash-balance-chart-time'] > span { font-size: inherit; color: inherit; }
+@container revenue-card (max-width: 220px) {
+  .dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-face > div:first-child { display: block; }
+  .dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-face .revenue-date, .dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-face .revenue-foot { text-align: left; }
+}

@@ -264,6 +264,21 @@ export function niceTicks(min: number, max: number, count = 5) {
   }
 }
 
+/** A close-fitting line axis: 5% breathing room, round steps, no padding to force a tick count. */
+export function tightLineTicks(values: number[], intervals = 5) {
+  const finite = values.filter(Number.isFinite)
+  if (!finite.length) return [0, 1]
+  const min = Math.min(...finite), max = Math.max(...finite)
+  const pad = max > min ? (max - min) * .05 : Math.abs(max) * .01 || 1
+  const low = min >= 0 ? Math.max(0, min - pad) : min - pad, high = max + pad
+  const raw = (high - low) / Math.max(1, intervals)
+  const power = 10 ** Math.floor(Math.log10(raw))
+  const step = [1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 7.5, 8, 10]
+    .map(base => base * power).reduce((a,b) => Math.abs(a-raw) <= Math.abs(b-raw) ? a : b)
+  const first = Math.floor(low / step) * step, last = Math.ceil(high / step) * step
+  return Array.from({length: Math.round((last-first)/step)+1}, (_,i) => Number((first+i*step).toPrecision(12)))
+}
+
 const BAR_TICK_STEPS = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]
 
 /**

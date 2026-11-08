@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { RevenueActionChart, RevenueActionInfo } from './RevenueActionChart';
+import { getProductActions } from '@/api/dashboard';
+import type { ProductActionSource } from '@shared/product-actions';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
-import { ArrowDownToLine, BarChart3, Expand, LineChart } from 'lucide-react';
+import { ArrowDownToLine, BarChart3, Expand } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { ActionNode, PullToRefresh } from '@/components/bencho';
+import { ActionNode } from '@/components/bencho';
 import {
   Dialog,
   DialogContent,
@@ -151,11 +154,6 @@ export function RevenueCards({
 }) {
   const { search } = useLocation();
   const trendDays: Record<RevenueMetric, number> = { totalGmv: 30, activeGmv: 30, renewalGmv: 30 };
-  const [chartTypes, setChartTypes] = useState<Record<RevenueMetric, 'bar' | 'line'>>({
-    totalGmv: 'bar',
-    activeGmv: 'bar',
-    renewalGmv: 'bar',
-  });
   const [expandedMetric, setExpandedMetric] = useState<RevenueMetric | null>(null);
   const [exportMetric, setExportMetric] = useState<RevenueMetric | null>(null);
   const [structureMetric, setStructureMetric] = useState<RevenueMetric | null>(null);
@@ -190,6 +188,14 @@ export function RevenueCards({
     const timer = window.setTimeout(() => card.classList.remove('revenue-card-focus'), 2600);
     return () => window.clearTimeout(timer);
   }, [dailyTrend.length, focusApplies, focusMetric, focusPeriod, items.length, loading, trend.length]);
+  const [actionSource, setActionSource] = useState<ProductActionSource | null>(null);
+  useEffect(() => {
+    let live = true;
+    getProductActions().then(source => { if (live) setActionSource(source); }).catch(() => {
+      if (live) setActionSource({actions: [], available: false, readAt: ''});
+    });
+    return () => { live = false; };
+  }, [dailyTrend, selectedPlatform]);
   if (!trend.length && !items.length && !loading) return null;
   const addDays = (value: string, days: number) => {
     const date = new Date(`${value}T00:00:00Z`);
@@ -235,7 +241,6 @@ export function RevenueCards({
         // Keep the card's quick range independent from the global trend range.
         // Weekly source rows are sliced by business-week count in the helper.
         const miniRows = selectCardTrendRows(cardRows, selectedDays, item.metric, granularity);
-        const chartType = chartTypes[item.metric];
         return (
           <ActionNode
             key={item.key}
@@ -263,16 +268,6 @@ export function RevenueCards({
                 onSelect: () => setStructureMetric(item.metric),
               },
               {
-                id: 'chart-type',
-                label: chartType === 'bar' ? '切换为折线图' : '切换为柱状图',
-                Icon: chartType === 'bar' ? LineChart : BarChart3,
-                onSelect: () =>
-                  setChartTypes((current) => ({
-                    ...current,
-                    [item.metric]: chartType === 'bar' ? 'line' : 'bar',
-                  })),
-              },
-              {
                 id: 'expand',
                 label: '放大查看趋势',
                 Icon: Expand,
@@ -282,6 +277,7 @@ export function RevenueCards({
           >
             <div className="revenue-label">
               <span>{item.key}</span>
+              <RevenueActionInfo title={item.key} source={actionSource} />
             </div>
             <motion.div
               className="revenue-card-body"
@@ -311,15 +307,8 @@ export function RevenueCards({
                         </span>
                       </div>
                     </div>
-                    <MiniTrendBars
-                      rows={miniRows}
-                      metric={item.metric}
-                      color={item.color}
-                      formatValue={money}
-                      label={`${item.key}${granularity === 'week' ? '周' : '日'}趋势`}
-                      chartType={chartType}
-                      focusPeriod={focusApplies && focusMetric === item.metric ? focusPeriod ?? undefined : undefined}
-                    />
+                    <RevenueActionChart rows={sourceRows} visibleRows={miniRows} metric={item.metric}
+                      color={item.color} title={item.key} platform={selectedPlatform} source={actionSource} />
                 </motion.div>
               </AnimatePresence>
             </motion.div>
@@ -531,99 +520,6 @@ function RevenueStructureDialog({
         {keys.length ? <ExpensesChart key={metric} title={title} totalLabel={daily ? "GMV" : "日均 GMV"} categories={categories} periods={periods} defaultPeriod="analysis" currency="USD" locale="zh-CN" /> : <div className="revenue-structure-empty">暂无构成数据</div>}
       </DialogContent>
     </Dialog>
-  );
-}
-
-function MiniTrendBars({
-  rows,
-  metric,
-  color,
-  formatValue,
-  label,
-  chartType,
-  focusPeriod,
-}: {
-  rows: OverviewTrendPoint[];
-  metric: RevenueMetric;
-  color: string;
-  formatValue: (value: number) => string;
-  label: string;
-  chartType: 'bar' | 'line';
-  focusPeriod?: string;
-}) {
-  const [hovered, setHovered] = useState<number | null>(null);
-  const rowRef = useRef<HTMLDivElement | null>(null);
-  const downRef = useRef(false);
-  const values = useMemo(() => rows.map((row) => Number(row[metric] ?? 0)), [metric, rows]);
-  const focusIndex = useMemo(
-    () => focusPeriod ? rows.findIndex((row) => row.period === focusPeriod) : -1,
-    [focusPeriod, rows],
-  );
-  const min = Math.min(...values, 0);
-  const max = Math.max(...values, min + 1);
-  const spread = Math.max(max - min, 1);
-  const hoveredValue = hovered === null ? null : values[hovered];
-  if (chartType === 'line') {
-    return (
-      <div className="revenue-mini-chart" aria-label={label}>
-        <PullToRefresh
-          rows={rows.map((row) => ({ period: row.period, value: Number(row[metric] ?? 0) }))}
-          color={color}
-          formatValue={formatValue}
-          formatDate={formatTrendDate}
-          ariaLabel={label}
-        />
-      </div>
-    );
-  }
-  const at = (clientX: number) => {
-    const bounds = rowRef.current?.getBoundingClientRect();
-    if (!bounds || !bounds.width || !values.length) return null;
-    const index = Math.floor(((clientX - bounds.left) / bounds.width) * values.length);
-    return Math.min(values.length - 1, Math.max(0, index));
-  };
-  const track = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType !== 'mouse' && !downRef.current) return;
-    setHovered(at(event.clientX));
-  };
-  return (
-    <div className="revenue-mini-chart" aria-label={label}>
-      {hoveredValue !== null ? (
-        <span className="revenue-mini-value">
-          <strong>{formatValue(hoveredValue)}</strong>
-          <span>{rows[hovered ?? 0] ? formatTrendDate(rows[hovered ?? 0].period) : ''}</span>
-        </span>
-      ) : null}
-      <div
-        ref={rowRef}
-        className="revenue-mini-bars"
-        role="img"
-        aria-label={label}
-        onPointerDown={(event) => {
-          downRef.current = true;
-          try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* scripted press */ }
-          setHovered(at(event.clientX));
-        }}
-        onPointerMove={track}
-        onPointerUp={() => { downRef.current = false; setHovered(null); }}
-        onPointerCancel={() => { downRef.current = false; setHovered(null); }}
-        onPointerLeave={() => { if (!downRef.current) setHovered(null); }}
-      >
-        {values.map((value, index) => (
-          <span
-            key={rows[index]?.period ?? index}
-            className="revenue-mini-bar"
-            data-hovered={hovered === index}
-            data-focus-target={focusIndex === index || undefined}
-            style={{
-              height: `${18 + ((value - min) / spread) * 82}%`,
-              backgroundColor: color,
-              '--bar-index': index,
-            } as CSSProperties}
-          />
-        ))}
-      </div>
-    </div>
   );
 }
 
