@@ -975,6 +975,11 @@ export default function PaymentAnalysis({
                 entity={shareSelected}
                 label={shareSelected ? entityLabel(shareSelected) : ''}
                 history={costHistory}
+                platform={platform}
+                deviceType={deviceType}
+                analysisPeriod={analysisPeriod}
+                scope={scope}
+                refreshToken={refreshToken}
                 error={historyError}
                 context={`${platform === 'web' ? 'Web 端' : platform === 'app' ? deviceType === 'ios' ? 'iOS' : deviceType === 'android' ? 'Android' : 'App 端' : '全端'} · ${revenueScopes.find(item => item.value === scope)!.label}`}
                 onClose={() => setShareSelected(null)}

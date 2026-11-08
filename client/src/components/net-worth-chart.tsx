@@ -4,6 +4,7 @@ import { animate, stagger, utils, type JSAnimation } from "animejs"
 import * as React from "react"
 import { ArrowDownToLine } from 'lucide-react'
 
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ChartButton } from "@/components/ui/chart-button"
 import { ChartCard } from "@/components/ui/chart-card"
 import { ChartBreakoutCircleIcon, InfoCircleLineIcon } from "@/components/ui/chart-icons"
@@ -40,6 +41,11 @@ type NetWorthChartProps = Omit<React.ComponentProps<"div">, "children"> & {
   onIndexChange?: (index: number, point: NetWorthPoint) => void
   /** Text for a day on the x axis ("May 7") and in the tooltip ("Thu, May 7"). */
   formatDate?: (date: string, context: "axis" | "tooltip") => string
+  /** Details shown by the info button next to the summary label. */
+  infoContent?: React.ReactNode
+  bodyContent?: React.ReactNode
+  headerActions?: React.ReactNode
+  grainLabel?: string
   /** The header button's text. */
   viewDataLabel?: string
   /** Called by the "View data" button. */
@@ -192,6 +198,10 @@ function NetWorthChart({
   defaultIndex,
   onIndexChange,
   formatDate,
+  infoContent,
+  bodyContent,
+  headerActions,
+  grainLabel = "日颗粒度",
   viewDataLabel = "View data",
   onViewDataClick,
   onInfoClick,
@@ -220,6 +230,10 @@ function NetWorthChart({
   const ticksKey = ticks.join(";")
 
   const [hovered, setHovered] = React.useState<number | null>(null)
+  React.useEffect(() => {
+    setIndex(n - 1)
+    setHovered(null)
+  }, [data[0]?.date, data.at(-1)?.date, n])
   const selected = n ? Math.min(Math.max(Math.round(indexValue), 0), n - 1) : -1
   const active = hovered !== null && hovered < n ? hovered : selected
   const point = data[active]
@@ -330,7 +344,7 @@ function NetWorthChart({
       if (totalEl) totalEl.textContent = latest.current.totalText
       if (tipEl) tipEl.textContent = money(latest.current.tipValue)
     }
-  })
+  }, {mode: "timeline", replayKey: data.map(point => point.date).join("|"), enabled: !bodyContent && n > 0})
 
   // New data (or a new axis) morphs every bar from the shape it has on screen. A resize redraws them at once, unless it
   // comes during a morph (new ticks can widen the axis labels): then the morph carries on to the new layout. While the
@@ -459,19 +473,26 @@ function NetWorthChart({
           {/* the padding keeps the descenders out of truncate's clip (the text styles have a line height of 1) */}
           <p className="typo-heading-01-semibold -my-0.5 min-w-0 truncate py-0.5 text-fg-loud">{title}</p>
         </div>
-        <ChartButton corner="rounded" onClick={onViewDataClick} className={cn("text-fg-normal", RING)}>
+        <div className="net-worth-chart-actions">
+          {headerActions}
+        <ChartButton corner="rounded" disabled={!onViewDataClick} onClick={onViewDataClick} className={cn("text-fg-normal", RING)}>
           {viewDataLabel}
           <ArrowDownToLine size={14} />
         </ChartButton>
+        </div>
       </div>
 
+      {bodyContent ?? <>
       <div className="flex flex-col gap-3">
         <p ref={totalRef} className="typo-heading-04-semibold hug-w whitespace-nowrap text-fg-loud">
           {totalText}
         </p>
         <div className="flex items-center gap-1">
           <p className="typo-label-03-medium hug-w whitespace-nowrap text-fg-normal">{totalLabel}</p>
-          {onInfoClick && <button
+          {infoContent ? <Popover>
+            <PopoverTrigger asChild><button type="button" aria-label="查看占比口径" className="payment-share-info"><InfoCircleLineIcon /></button></PopoverTrigger>
+            <PopoverContent className="payment-share-method" align="start">{infoContent}</PopoverContent>
+          </Popover> : onInfoClick && <button
             type="button"
             aria-label={`About ${totalLabel.toLowerCase()}`}
             onClick={onInfoClick}
@@ -542,7 +563,7 @@ function NetWorthChart({
               ))}
             </svg>
 
-            <div role="group" aria-label={`${title} · 日颗粒度`}>
+            <div role="group" aria-label={`${title} · ${grainLabel}`}>
               {data.map((day, i) => {
                 const left = n > 1 ? Math.max(0, bars[i].center - pitch / 2) : 0
                 const right = n > 1 ? Math.min(width, bars[i].center + pitch / 2) : width
@@ -599,6 +620,7 @@ function NetWorthChart({
           </div>
         </div>
       </div>
+      </>}
     </ChartCard>
   )
 }

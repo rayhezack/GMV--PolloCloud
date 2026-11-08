@@ -45,3 +45,13 @@
   .net-worth-chart-header { gap: 16px; }
   .net-worth-chart-header > div { max-width: 100%; }
 }
+.net-worth-chart-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.payment-share-range[data-slot='tabs-list'] { width: auto; }
+.payment-share-range [data-slot='tabs-trigger'] { min-width: 42px; border: 0; }
+.payment-share-range .payment-tab-bubble { backdrop-filter: blur(3px) saturate(115%); -webkit-backdrop-filter: blur(3px) saturate(115%); }
+.payment-share-coverage { margin: 12px 0 0; color: #61718a; font-size: 12px; }
+
+.payment-share-info { display: grid; place-items: center; width: 20px; height: 20px; margin-left: 2px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #61718a; cursor: pointer; }
+.payment-share-info svg { width: 16px; height: 16px; }
+.payment-share-method[data-slot='popover-content'] { z-index: 80; width: min(340px, calc(100vw - 40px)); border: 0; border-radius: 16px; padding: 18px; background: #fff; color: #0d253d; box-shadow: 0 8px 32px #0d253d24; font-size: 13px; line-height: 1.7; }
+.payment-share-method p { margin: 8px 0 0; color: #61718a; }

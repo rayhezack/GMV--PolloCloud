@@ -22,13 +22,14 @@ export function WeekComparisonPicker({baselineWeek,analysisWeek,availableWeeks,o
   },[weekOpen]);
   return (
         <div ref={controlsRef} className={`icon-control-wrap ${className}`} >
-          <button type="button" className="icon-control week-control-trigger" aria-expanded={weekOpen} aria-label={`业务周筛选：基准周 ${formatShortWeekRange(baselineWeek)}，分析周 ${formatShortWeekRange(analysisWeek)}`} title="业务周" onClick={() => setWeekOpen((open) => !open)}>
+          <button type="button" className="icon-control week-control-trigger" aria-expanded={weekOpen} aria-label={`业务周筛选：基准周 ${formatShortWeekRange(baselineWeek)}，分析周 ${formatShortWeekRange(analysisWeek)}`} onClick={() => setWeekOpen((open) => !open)}>
             {triggerText ? <span>{triggerText}</span> : <><CalendarRange size={17} />
             <span className="week-control-summary" aria-hidden="true">
               <span><em>基准</em>{formatShortWeekRange(baselineWeek)}</span>
               <span><em>分析</em>{formatShortWeekRange(analysisWeek)}</span>
             </span>
             </>}
+            {!weekOpen && <span className="icon-control-tooltip" aria-hidden="true">业务周</span>}
           </button>
           {weekOpen ? (
             <div className="icon-control-popover week-control-popover" aria-label="业务周筛选">

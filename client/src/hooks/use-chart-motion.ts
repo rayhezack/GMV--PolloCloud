@@ -55,15 +55,29 @@ export function useAnimeScope(root: RefObject<HTMLElement | null>) {
 export function useChartEntrance(
   root: RefObject<HTMLElement | null>,
   build: (timeline: Timeline) => void | (() => void),
-  _options: { amount?: number } = {},
+  options: { amount?: number; mode?: 'reveal' | 'timeline'; replayKey?: string; enabled?: boolean } = {},
 ) {
   const reduced = useReducedMotion()
   const buildRef = useRef(build)
   buildRef.current = build
   useIsomorphicLayoutEffect(() => {
-    if (!root.current) return
+    if (!root.current || options.enabled === false) return
     const timeline = createTimeline({ autoplay: false })
     const cleanup = buildRef.current(timeline)
+    // Registry charts can opt into their original per-element entrance timeline.
+    if (options.mode === 'timeline' && !reduced) {
+      const observer = new IntersectionObserver(entries => {
+        if (!entries.some(entry => entry.isIntersecting)) return
+        observer.disconnect()
+        timeline.play()
+      }, {threshold: options.amount ?? .15})
+      observer.observe(root.current)
+      return () => {
+        observer.disconnect()
+        timeline.revert()
+        if (typeof cleanup === 'function') cleanup()
+      }
+    }
     timeline.seek(timeline.duration, true)
     timeline.revert()
     // Builders restore their final SVG geometry and exact text after reverting styles.
@@ -81,7 +95,7 @@ export function useChartEntrance(
     }, {threshold:0.15})
     observer.observe(root.current)
     return () => { observer.disconnect(); reveal?.cancel(); plots.forEach(el => el.style.removeProperty('clip-path')) }
-  }, [root,reduced])
+  }, [root, reduced, options.mode, options.replayKey, options.enabled])
 }
 
 /**
