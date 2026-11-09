@@ -40,6 +40,10 @@ type D1Database = {
 };
 export type Env = {
   DB?: D1Database;
+  STORAGE?: {
+    put(key: string, value: string, options?: {contentType?: string}): Promise<unknown>;
+    getText(key: string): Promise<string | null>;
+  };
   FEISHU_APP_ID?: string;
   FEISHU_APP_SECRET?: string;
   MAXCOMPUTE_ENDPOINT?: string;

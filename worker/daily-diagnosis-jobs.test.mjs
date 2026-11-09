@@ -21,6 +21,23 @@ test('backend tick creates report without any browser request; repeated refresh 
  await tickDailyDiagnoses(env,d);assert.equal(calls,1);let s=await getDailyDiagnosis(env,'web');assert.equal(s.status,'success');assert.equal(s.report.markdown,'**原文**\n\n|数|值|\n|--|--|\n|a|b|');
  await markDailyDiagnosisDirty(env);await tickDailyDiagnoses(env,d);assert.equal(calls,1);assert.equal(db.prepare('SELECT count(*) n FROM daily_diagnosis_jobs').get().n,1);
 });
+test('large real-sized evidence and model prose use storage, D1 values remain small and retries read identical evidence',async()=>{
+ const {env,db}=setup();const objects=new Map();env.STORAGE={put:async(k,v)=>{objects.set(k,v);},getText:async k=>objects.get(k)??null};
+ const e=evidence();e.longData='数'.repeat(500000);const prose='完整原文'.repeat(20000);let calls=0;
+ const d=deps({collect:async()=>e,generate:async input=>{calls++;assert.deepEqual(input,e);return prose;}});
+ await tickDailyDiagnoses(env,d);
+ const job=db.prepare('SELECT evidence,markdown FROM daily_diagnosis_jobs').get();
+ assert.ok(job.evidence.startsWith('daily-storage:'));assert.ok(job.markdown.startsWith('daily-storage:'));
+ assert.ok(job.evidence.length<200&&job.markdown.length<200);assert.equal((await getDailyDiagnosis(env,'web')).report.markdown,prose);
+ await markDailyDiagnosisDirty(env);await tickDailyDiagnoses(env,d);assert.equal(calls,1);
+ await regenerateDailyDiagnosis(env,'web',day);await tickDailyDiagnoses(env,d);assert.equal(calls,2);assert.equal((await getDailyDiagnosis(env,'web')).report.markdown,prose);
+});
+test('missing storage defers oversized evidence without a partial D1 row or model call',async()=>{
+ const {env,db}=setup();const e=evidence();e.longData='x'.repeat(70000);let calls=0;
+ await tickDailyDiagnoses(env,deps({collect:async()=>e,generate:async()=>{calls++;return 'bad';}}));
+ assert.equal(calls,0);assert.equal(db.prepare('SELECT count(*) n FROM daily_diagnosis_jobs').get().n,0);
+ assert.equal((await getDailyDiagnosis(env,'web')).status,'waiting');assert.match((await getDailyDiagnosis(env,'web')).error,/文件存储/);
+});
 test('changed input generates one new history version, failed generation permits manual retry',async()=>{
  const {env,db}=setup();let n=80,calls=0,fail=false;const d=deps({collect:async()=>evidence(n),generate:async()=>{calls++;if(fail)throw Error('model offline');return `report ${n}`;}});
  await tickDailyDiagnoses(env,d);n=79;fail=true;await markDailyDiagnosisDirty(env);await tickDailyDiagnoses(env,d);assert.equal((await getDailyDiagnosis(env,'web')).status,'failed');

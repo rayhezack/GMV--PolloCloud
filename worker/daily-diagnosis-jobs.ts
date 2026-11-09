@@ -21,6 +21,23 @@ function database(env: Env) { if (!env.DB) throw new Error('D1 未配置'); retu
 async function rows<T>(env: Env, sql: string, ...binds: unknown[]) { return (await database(env).prepare(sql).bind(...binds).all<T>()).results; }
 async function run(env: Env, sql: string, ...binds: unknown[]) { await database(env).prepare(sql).bind(...binds).run(); }
 
+const storagePrefix = 'daily-storage:';
+async function saveContent(env: Env, key: string, content: string) {
+  if (env.STORAGE) {
+    await env.STORAGE.put(key,content,{contentType:key.endsWith('.json')?'application/json':'text/markdown; charset=utf-8'});
+    return `${storagePrefix}${key}`;
+  }
+  // Small inline values keep existing histories and local tests readable.
+  if (new TextEncoder().encode(content).length > 60000) throw new Error('完整诊断证据需要应用文件存储，当前未配置');
+  return content;
+}
+async function readContent(env: Env, content: string) {
+  if (!content.startsWith(storagePrefix)) return content;
+  const text = await env.STORAGE?.getText(content.slice(storagePrefix.length));
+  if (text == null) throw new Error('诊断存档文件暂不可用');
+  return text;
+}
+
 /** Read timestamps and row order must not create new paid calls. Full evidence is retained separately. */
 export async function dailyInputHash(evidence: unknown, model = 'kimi-k3') {
   const stable = (value: unknown): unknown => {
@@ -110,7 +127,8 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies) {
           }
           await run(env,"UPDATE daily_diagnosis_jobs SET status='superseded' WHERE platform=? AND period=? AND status='queued'",platform,comparison.date);
           const id=crypto.randomUUID();
-          await run(env,`INSERT INTO daily_diagnosis_jobs(run_id,platform,period,baseline,input_hash,evidence,status,requested_by,created_at) VALUES(?,?,?,?,?,?,'queued','automatic',?)`,id,platform,comparison.date,comparison.baselineDate,hash,JSON.stringify(evidence),now());
+          const storedEvidence = await saveContent(env,`daily-diagnoses/evidence/${hash}.json`,JSON.stringify(evidence));
+          await run(env,`INSERT INTO daily_diagnosis_jobs(run_id,platform,period,baseline,input_hash,evidence,status,requested_by,created_at) VALUES(?,?,?,?,?,?,'queued','automatic',?)`,id,platform,comparison.date,comparison.baselineDate,hash,storedEvidence,now());
           await run(env,`INSERT INTO daily_diagnosis_state(platform,period,baseline,active,status,input_hash,signals,updated_at) VALUES(?,?,?,1,'queued',?,?,?) ON CONFLICT(platform,period) DO UPDATE SET baseline=excluded.baseline,active=1,status='queued',input_hash=excluded.input_hash,signals=excluded.signals,error=NULL,updated_at=excluded.updated_at`,platform,comparison.date,comparison.baselineDate,hash,JSON.stringify(selected),now());
         } catch(e) {
           await run(env,"UPDATE daily_diagnosis_jobs SET status='superseded' WHERE platform=? AND period=? AND status='queued'",platform,comparison.date);
@@ -129,8 +147,10 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies) {
     await run(env,"UPDATE daily_diagnosis_state SET status='running',error=NULL,updated_at=? WHERE platform=? AND period=? AND input_hash=?",now(),job.platform,job.period,job.input_hash);
     try {
       if (!env.KIMI_API_KEY && !dependencies.generate) throw new Error('日诊断模型未配置');
-      const markdown = await (dependencies.generate ?? (e=>generateMarkdown(env,e)))(JSON.parse(job.evidence));
-      await run(env,"UPDATE daily_diagnosis_jobs SET status='success',markdown=?,model=?,finished_at=? WHERE run_id=?",markdown,env.KIMI_MODEL||'kimi-k3',now(),job.run_id);
+      const evidence = prepareReportData(JSON.parse(await readContent(env,job.evidence)));
+      const markdown = await (dependencies.generate ?? (e=>generateMarkdown(env,e)))(evidence);
+      const storedMarkdown = await saveContent(env,`daily-diagnoses/reports/${job.run_id}.md`,markdown);
+      await run(env,"UPDATE daily_diagnosis_jobs SET status='success',markdown=?,model=?,finished_at=? WHERE run_id=?",storedMarkdown,env.KIMI_MODEL||'kimi-k3',now(),job.run_id);
       // Changes arriving during generation invalidate publication, while retaining the historical result.
       await run(env,`UPDATE daily_diagnosis_state SET current_report_id=?,status=CASE WHEN (SELECT revision FROM daily_diagnosis_monitor WHERE id=1)=? THEN 'success' ELSE 'waiting' END,updated_at=? WHERE platform=? AND period=? AND active=1 AND input_hash=?`,job.run_id,revision,now(),job.platform,job.period,job.input_hash);
     } catch(e) {
@@ -153,7 +173,7 @@ export async function getDailyDiagnosis(env: Env, platform: DashboardPlatform, p
   const report = state.current_report_id ? (await rows<Job>(env,'SELECT * FROM daily_diagnosis_jobs WHERE run_id=?',state.current_report_id))[0] : undefined;
   return {platform,period:state.period,baseline:state.baseline, status:monitor.revision!==monitor.checked_revision && state.status==='success'?'waiting':state.status,
     error:state.error||monitor.last_error||undefined,updatedAt:state.updated_at,
-    report:report?.markdown?{runId:report.run_id,platform,periodStart:report.baseline,periodEnd:report.period,markdown:report.markdown,modelUsed:report.model,degraded:false,generatedAt:report.finished_at!}:undefined};
+    report:report?.markdown?{runId:report.run_id,platform,periodStart:report.baseline,periodEnd:report.period,markdown:await readContent(env,report.markdown),modelUsed:report.model,degraded:false,generatedAt:report.finished_at!}:undefined};
 }
 export async function regenerateDailyDiagnosis(env: Env, platform: DashboardPlatform, period: string) {
   const state = (await rows<State>(env,'SELECT * FROM daily_diagnosis_state WHERE platform=? AND period=?',platform,period))[0];

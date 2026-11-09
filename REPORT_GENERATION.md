@@ -104,3 +104,5 @@ node --experimental-strip-types scripts/review-daily-diagnosis.mjs --local-db .l
 
 
 2026-11-10 发布适配：PolloCloud 最多5个定时任务，因此将原周报调度扩展为统一报告调度，四个数据同步任务不变。旧日报与周报 cron 路径保留兼容，但配置仅注册 `/api/cron/reports`。新增迁移编号为 `0025_daily_diagnoses.sql`，避开线上已有 `0024_dashboard_payment_result_index.sql`。发布基于平台版本 `0mw9hhi3hpqleiatcrd`，保留性能优化；平台单次定时等待4分钟，长模型调用必须经过真实线上验证，不能仅以本地通过推定线上成功。
+
+上线实测补充：D1 限制单字段64KB、单请求1MB，完整证据不能直接写入任务字段。日任务改为通过 `env.STORAGE` 存储完整证据和模型原文，D1字段只保存文件路径；输入指纹、版本和状态仍在D1，重试读取同一证据文件，读取报告还原模型原文。小型旧记录兼容内联存储；文件存储缺失或写入失败时不生成不完整任务。
