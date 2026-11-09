@@ -21,6 +21,9 @@ import { buildPaymentRegistrationSql } from '../server/modules/maxcompute/paymen
 import { buildMiddleTableSql } from '../server/modules/maxcompute/middle-table-sql';
 import { POLLOCLOUD_APP_OWNER_ID } from '../shared/auth.constants';
 import { executeReport, reportGenerations } from './report-jobs';
+import { getDailyDiagnosis, markDailyDiagnosisDirty, regenerateDailyDiagnosis, tickDailyDiagnoses } from './daily-diagnosis-jobs';
+import { buildReportEvidence, normalizeProductAction } from './report-evidence';
+import { loadReportSources } from './report-evidence-loader';
 import type { AdsAggregate, AdsOverviewResponse, DashboardAttributionsResponse, ReportGenerationRequest, ReportGenerationStatus, ReportSummary, AttributionItem, AttributionDriverItem, SyncDataset, SyncMode, SyncRunStatus, SyncRunResponse, CreativeChainTrendPoint, CreativeOverviewResponse } from '../shared/api.interface';
 
 type D1Row = Record<string, string | number | null>;
@@ -214,6 +217,7 @@ async function cachedDashboardResponse(env: Env, request: Request, context: { wa
 async function invalidateDashboardCache(env: Env) {
   dashboardCacheGeneration++;
   dashboardMemoryCache.clear();
+  await markDailyDiagnosisDirty(env).catch(() => undefined); // Migration may not be installed yet.
   if (env.DB) await env.DB.prepare('DELETE FROM dashboard_response_cache').run().catch(() => undefined);
 }
 
@@ -1146,7 +1150,7 @@ function percentile(values: number[], quantile: number) {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
 }
 
-async function gmvAnomalies(env: Env) {
+export async function gmvAnomalies(env: Env, asOfDate?: string) {
   const empty = () => json({ latestWeek: '', latestDay: '', method: 'daily_and_weekly_rolling_p95_p05_min_10pct', alerts: [] });
   if (!env.DB) return empty();
   const latestPeriods = await Promise.all([
@@ -1156,18 +1160,19 @@ async function gmvAnomalies(env: Env) {
   ]).then((periods) => periods.filter(Boolean).sort());
   // Wait until all three sources contain the same latest day. This prevents
   // the four split sync jobs from alerting on a partially refreshed day.
-  const latestPeriod = latestPeriods[0] || '';
+  const lastCompleteDay = shiftDate(new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10), -1);
+  const latestPeriod = latestPeriods[0] ? [asOfDate || lastCompleteDay, lastCompleteDay, latestPeriods[0]].sort()[0] : '';
   if (!latestPeriod || latestPeriods.length < 3) return empty();
   const endDate = latestPeriod;
   // Keep enough data for twelve complete business weeks plus the current
   // partial week and the prior-day / prior-week comparison points.
   const startDate = shiftDate(latestPeriod, -120);
-  const [payRows, chainRows, renewalRows] = await Promise.all([
-    dailyRows(env, 'pay_type_daily', { startDate, endDate }),
-    dailyRows(env, 'chain_daily', { startDate, endDate }),
-    dailyRows(env, 'renewal_daily', { startDate, endDate }),
-  ]);
+  const payRows = await queryRows(env, `SELECT period,week_start,platform,SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows_read
+    WHERE dataset='pay_type' AND dataset_kind='daily' AND period BETWEEN ? AND ?
+    AND (attribution_type IS NULL OR (attribution_type='NONE' AND pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL','API') AND pay_type<>'汇总'))
+    GROUP BY period,week_start,platform`, startDate,endDate);
   const alerts: Array<Record<string, unknown>> = [];
+  const monitoredPlatforms: string[] = [];
   const MIN_COMPLETE_WEEKS = 12;
   const MIN_THRESHOLD_SAMPLES = 8;
   const directionFor = (change: number, history: number[]) => {
@@ -1180,12 +1185,8 @@ async function gmvAnomalies(env: Env) {
   };
   for (const platform of ['all', 'web', 'app'] as const) {
     const pay = payRows.filter((row) => asText(row.platform) === platform);
-    const chain = chainRows.filter((row) => asText(row.platform) === platform);
-    const renewal = renewalPlatformRows(renewalRows, platform);
     const metrics = [
       { key: 'totalGmv', rows: pay, field: 'gmv_usd' },
-      { key: 'activeGmv', rows: chain, field: 'chain_gmv_usd' },
-      { key: 'renewalGmv', rows: renewal, field: 'renew_amount_usd' },
     ] as const;
     for (const metric of metrics) {
       const byDay = new Map<string, { value: number; week: string }>();
@@ -1226,6 +1227,7 @@ async function gmvAnomalies(env: Env) {
       const previousDate = shiftDate(latestPeriod, -1);
       const currentValue = valueAt(latestPeriod);
       const previousValue = valueAt(previousDate);
+      if (currentValue > 0 && previousValue > 0 && valueAt(shiftDate(latestPeriod, -7)) > 0) monitoredPlatforms.push(platform);
       if (currentValue > 0 && previousValue > 0) {
         const dailyHistory = historicalDates.slice(1).flatMap((period, index) => {
           const previous = historicalDates[index];
@@ -1266,7 +1268,7 @@ async function gmvAnomalies(env: Env) {
       }
     }
   }
-  return json({ latestWeek: '', latestDay: latestPeriod, method: 'daily_and_weekly_rolling_p95_p05_min_10pct', alerts });
+  return json({ latestWeek: '', latestDay: latestPeriod, method: 'daily_and_weekly_rolling_p95_p05_min_10pct', monitoredPlatforms, alerts });
 }
 
 async function paymentTrend(env: Env, request: Request) {
@@ -2162,32 +2164,13 @@ function previewRow(sheet: string, row: D1Row) {
 }
 
 async function productActionRows(env: Env) {
-  const normalizeAction = (row: D1Row): D1Row => {
-    const launchTime = row.merge_time ?? row['合入时间']
-      ?? row.release_time ?? row['上线时间']
-      ?? row.effective_time ?? row['生效时间']
-      ?? row.publish_time ?? row['发布时间'];
-    return {
-      stat_date: row.stat_date ?? row['统计日'], weekday: row.weekday ?? row['星期'],
-      launch_time: launchTime,
-      release_time: row.release_time ?? row['上线时间'],
-      merge_time: row.merge_time ?? row['合入时间'],
-      effective_time: row.effective_time ?? row['生效时间'],
-      publish_time: row.publish_time ?? row['发布时间'],
-      action_type: row.action_type ?? row['类型'],
-      update_point: row.update_point ?? row['更新点'], description: row.description ?? row['说明'],
-      board: row.board ?? row['板块'], version: row.version ?? row['版本'],
-      commit_id: row.commit_id ?? row.commit, source: row.source ?? row['来源'],
-      remark: row.remark ?? row['备注'], platform: row.platform ?? row['端类型'] ?? row['端'],
-    };
-  };
   if (!env.DB) throw new Error('D1 未配置');
   const snapshot = await readProductActions(env.DB);
   if (!snapshot.available) throw new Error('产品动作尚未完成入仓');
   return snapshot.records.map(record => {
     const link = record.fields['原消息链接'];
-    return { ...normalizeAction(normalizeBaseFields(record.fields)), original_message_link: readBaseValue(link && typeof link === 'object' && !Array.isArray(link) ? (link as Record<string, unknown>).link : link) };
-  });
+    return { ...normalizeBaseFields(record.fields), ...normalizeProductAction(record.fields, record.id), original_message_link: readBaseValue(link && typeof link === 'object' && !Array.isArray(link) ? (link as Record<string, unknown>).link : link) };
+  }) as D1Row[];
 }
 
 async function workbookPreview(env: Env, request: Request) {
@@ -2893,6 +2876,24 @@ async function cronHandler(
 ): Promise<Response> {
   if (request.headers.get('x-pollocloud-trigger') !== 'cron') return errorResponse('仅允许 Pollo Cloud 定时任务触发', 403);
   const path = new URL(request.url).pathname;
+  if (path === '/api/cron/daily-diagnoses') {
+    // Keep the scheduled HTTP invocation alive during the model stream, just as sync jobs do.
+    const encoder = new TextEncoder();
+    let disconnected = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const pulse = setInterval(() => { if (!disconnected) controller.enqueue(encoder.encode(' ')); }, 5000);
+        const task = tickDailyDiagnoses(env, { detect: async () => (await gmvAnomalies(env)).json() })
+          .then(result => { if (!disconnected) controller.enqueue(encoder.encode(JSON.stringify({ok:true,task:'daily-diagnoses',...result}))); })
+          .catch(error => { if (!disconnected) controller.enqueue(encoder.encode(JSON.stringify({ok:false,error:(error instanceof Error ? error.message : '日诊断调度失败').replace(/sk-[\w-]+/g,'[已隐藏密钥]')}))); })
+          .finally(() => { clearInterval(pulse); if (!disconnected) controller.close(); });
+        context.waitUntil(task);
+        return task;
+      },
+      cancel() { disconnected = true; },
+    });
+    return new Response(stream, {headers:{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'}});
+  }
   const scheduledDataset = path === '/api/cron/daily-pay-type'
     ? 'pay_type'
     : path === '/api/cron/daily-chain'
@@ -2915,6 +2916,7 @@ async function cronHandler(
         }, { scheduled: true, force: request.headers.get('x-pollocloud-cron-run') === 'manual' });
       } catch (error) { actionError = error; }
     }
+    if (actions) await markDailyDiagnosisDirty(env);
     const result = await runScheduledSync(env, [scheduledDataset]);
     if (actionError) throw actionError;
     if (scheduledDataset === 'chain' && (result.status === 'success' || result.skipped)) {
@@ -2937,128 +2939,29 @@ async function cronHandler(
 
 type ReportProgress = (key: string, status: NonNullable<ReportGenerationStatus['steps']>[number]['status'], detail?: string) => Promise<void>;
 
-async function collectReportEvidence(env: Env, request: ReportGenerationRequest, progress: ReportProgress) {
+export async function collectReportEvidence(env: Env, request: ReportGenerationRequest, progress: ReportProgress) {
   const { platform, startDate, endDate } = request;
-  const analysisPeriod = shiftDate(startDate, 7);
-  const params = new URLSearchParams({ platform, startDate, endDate, baselinePeriod: startDate, analysisPeriod });
-  const readAttribution = async (dimension: string, extra: Record<string, string> = {}) => {
-    const query = new URLSearchParams(params);
-    query.set('dimension', dimension);
-    Object.entries(extra).forEach(([key, value]) => query.set(key, value));
-    const response = await attributions(env, new Request(`https://report.internal/api/dashboard/attributions?${query}`));
-    if (!response.ok) throw new Error('归因数据读取失败');
-    return await response.json() as DashboardAttributionsResponse;
-  };
-  const read = async (key: string, table: 'pay_type_daily' | 'chain_daily' | 'renewal_daily' | 'creative_daily', dimension: string, extra = {}) => {
-    await progress(key, 'running');
-    const rows = await dailyRows(env, table, { platform, startDate, endDate });
-    const dates = new Set(rows.map(row => asText(row.period)));
-    const analysisEnd = shiftDate(analysisPeriod, 6);
-    const isIncompleteAnalysis = endDate < analysisEnd;
-    const baselineDates = Array.from({ length: 7 }, (_, i) => shiftDate(startDate, i));
-    const analysisExpectedDays = Math.floor((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${analysisPeriod}T00:00:00Z`)) / 86400000) + 1;
-    const analysisExpectedDates = Array.from({ length: analysisExpectedDays }, (_, i) => shiftDate(analysisPeriod, i));
-    const missingBaseline = baselineDates.filter(date => !dates.has(date));
-    const missingAnalysis = analysisExpectedDates.filter(date => !dates.has(date));
-    if (missingBaseline.length || (!isIncompleteAnalysis && missingAnalysis.length)) {
-      const missing = [...missingBaseline, ...missingAnalysis];
-      throw new Error(`${table} 缺少 ${missing.join('、')} 的数据，请先同步后再生成。`);
-    }
-    const observedAnalysisDays = analysisExpectedDates.filter(date => dates.has(date)).length;
-    if (!observedAnalysisDays) throw new Error(`${table} 在分析业务周暂无可用数据，请先同步后再生成。`);
-    const data = await readAttribution(dimension, extra);
-    const coverage = isIncompleteAnalysis
-      ? `基准期 7 个业务日 · 分析期 ${observedAnalysisDays}/${analysisExpectedDays} 个业务日`
-      : `${baselineDates.length + analysisExpectedDays} 个业务日`;
-    await progress(key, 'success', `已读取 ${rows.length.toLocaleString('en-US')} 条记录 · ${coverage}`);
-    return data;
-  };
-  const results = await Promise.allSettled([
-    read('pay', 'pay_type_daily', 'pay_type'), read('chain', 'chain_daily', 'chain'),
-    read('renewal', 'renewal_daily', 'chain', { chainType: 'renewal' }), read('creative', 'creative_daily', 'creative'),
-  ]);
-  const failure = results.find(result => result.status === 'rejected');
-  if (failure?.status === 'rejected') throw failure.reason;
-  const [pay, chain, renewal, creative] = results.map(result => (result as PromiseFulfilledResult<DashboardAttributionsResponse>).value);
-  await progress('analyze', 'running');
-  const coreTier = [...chain.items].filter(item => (item.contribution ?? 0) > 0).sort((a, b) => (b.contribution ?? 0) - (a.contribution ?? 0))[0];
-  const coreChain = coreTier ? await readAttribution('chain', { creationTier: coreTier.key }) : chain;
-  const actions = (await productActionRows(env)).filter(row => {
-    const dateValue = row.launch_time;
-    const date = typeof dateValue === 'number' ? new Date(dateValue).toISOString().slice(0, 10) : asText(dateValue).slice(0, 10);
-    const scope = asText(row.platform || 'web').toLowerCase();
-    return dateInRange(date, startDate, endDate) && ['新增功能', '优化'].includes(asText(row.action_type)) && (scope.includes(platform) || /全部|双端/.test(scope));
-  });
-  const labels: Record<string, string> = Object.fromEntries(TIER_ORDER.map((tier, i) => [tier, ['近30日无创作用户', '近30日创作1-10次用户', '近30日创作11-30次用户', '近30日创作31-100次用户', '近30日创作101次以上用户'][i]]));
-  const number = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 2 });
-  const percent = (value: number | null) => value == null ? '—' : `${value >= 0 ? '+' : ''}${(value * 100).toFixed(2)}%`;
-  const itemTable = (items: AttributionItem[]) => ['| 维度 | 基准期日均 | 分析期日均 | 周环比 | 贡献度 |', '| --- | ---: | ---: | ---: | ---: |', ...items.map(item => `| ${labels[item.key] || item.key} | $${number(item.baselineDailyAvg)} | $${number(item.analysisDailyAvg)} | ${percent(item.wowChange)} | ${percent(item.contribution)} |`)].join('\n');
-  const driverTable = (drivers: AttributionDriverItem[]) => {
-    const value = (driver: AttributionDriverItem, amount: number) => /Rate/.test(driver.metricKey) ? `${(amount * 100).toFixed(2)}%` : /Arppu|Aov/.test(driver.metricKey) ? `$${number(amount)}` : number(amount);
-    return ['| 指标 | 基准期 | 分析期 | 周环比 | 贡献度 |', '| --- | ---: | ---: | ---: | ---: |', ...drivers.map(driver => `| ${driver.metric} | ${value(driver, driver.previousValue)} | ${value(driver, driver.value)} | ${percent(driver.wowChange)} | ${percent(driver.contribution)} |`)].join('\n');
-  };
-  // Give the model display-ready, consistently daily figures instead of mixing
-  // weekly totals, daily averages and unformatted percentage ratios.
-  const money = (value: number) => `$${value.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
-  const gmvEvidence = (baseline: number, analysis: number) => ({ 基准期日均GMV: money(baseline), 分析期日均GMV: money(analysis), 日均增量: money(analysis - baseline), 周环比: percent(baseline ? (analysis - baseline) / baseline : null) });
-  const itemsEvidence = (items: AttributionItem[]) => items.map(item => ({ 名称: labels[item.key] || item.key, ...gmvEvidence(item.baselineDailyAvg, item.analysisDailyAvg), 贡献度: percent(item.contribution) }));
-  const driversEvidence = (drivers: AttributionDriverItem[]) => drivers.map(driver => {
-    const value = (amount: number) => /Rate/.test(driver.metricKey) ? `${(amount * 100).toFixed(2)}%` : /Arppu|Aov/.test(driver.metricKey) ? money(amount) : number(amount);
-    return { 指标: driver.metric, 基准期: value(driver.previousValue), 分析期: value(driver.value), 周环比: percent(driver.wowChange), 贡献度: percent(driver.contribution) };
-  });
-  const totalEvidence = (items: AttributionItem[]) => gmvEvidence(sum(items.map(item => item.baselineDailyAvg)), sum(items.map(item => item.analysisDailyAvg)));
-  const renewalGmv = (period: string) => Number(renewal.trend.find(point => point.period === period)?.gmv ?? 0);
-  const creativeEvidence = creative.items.map(item => ({
-    分层: labels[item.key] || item.key,
-    指标: Object.entries(creative.metricLabels).map(([key, label]) => {
-      const baseline = item.previousMetrics?.[key] ?? 0;
-      const analysis = item.metrics?.[key] ?? 0;
-      const value = (amount: number) => /Rate/.test(key) ? `${(amount * 100).toFixed(2)}%` : number(amount);
-      return { 指标: label, 基准期: value(baseline), 分析期: value(analysis), 周环比: percent(baseline ? (analysis - baseline) / baseline : null) };
-    }),
-  }));
-  const overallCreative = (period: string) => creative.trend.find(point => point.period === period) as Record<string, unknown> | undefined;
-  const creativeOverall = Object.entries(creative.metricLabels).map(([key, label]) => {
-    const baseline = Number(overallCreative(startDate)?.[key] ?? 0);
-    const analysis = Number(overallCreative(analysisPeriod)?.[key] ?? 0);
-    const value = (amount: number) => /Rate/.test(key) ? `${(amount * 100).toFixed(2)}%` : number(amount);
-    return { 指标: label, 基准期: value(baseline), 分析期: value(analysis), 周环比: percent(baseline ? (analysis - baseline) / baseline : null) };
-  });
-  const rankedDrivers = [...(coreChain.drivers || [])].filter(driver => (driver.contribution ?? 0) > 0)
-    .sort((a, b) => (b.contribution ?? 0) - (a.contribution ?? 0));
-  const coreDriver = rankedDrivers[0];
-  let inflection: unknown = null;
-  if (coreTier && coreDriver) {
-    const rows = (await dailyRows(env, 'chain_daily', { platform, startDate, endDate }))
-      .filter(row => tierKey(row) === coreTier.key);
-    const analysisDates = [...new Set(
-      rows
-        .map(row => asText(row.period))
-        .filter(date => date >= analysisPeriod && date <= endDate),
-    )].sort();
-    const valueForDate = (date: string) => {
-      const metrics = chainMetrics(sumChain(rows.filter(row => asText(row.period) === date)));
-      return metrics[coreDriver.metricKey as keyof typeof metrics];
-    };
-    const baselineMean = analysisDates.length
-      ? average(analysisDates.map(date => valueForDate(shiftDate(date, -7))))
-      : 0;
-    const analysisDaily = analysisDates.map(date => ({ date, value: valueForDate(date) }));
-    const direction = Math.sign(coreDriver.change);
-    const first = direction ? analysisDaily.find((_, i) => analysisDaily.slice(i).every(item => (item.value - baselineMean) * direction > 0)) : undefined;
-    inflection = { 指标: coreDriver.metric, 持续变动开始日: first?.date ?? null, 方向: direction > 0 ? '持续高于基准周日均' : direction < 0 ? '持续低于基准周日均' : '无变化', 无拐点时: '仅可使用较弱的周级时序证据' };
-  }
-  await progress('analyze', 'success', '已按所选业务周和前一周计算归因');
-  return {
-    evidence: {
-      platform, baselineWeek: `${startDate} ~ ${shiftDate(startDate, 6)}`, analysisWeek: `${analysisPeriod} ~ ${endDate}`,
-      付费总收入: { 数据源: 'pay_type_daily', ...totalEvidence(pay.items), 一级构成: itemsEvidence(pay.items), 主动付费下钻: itemsEvidence(pay.sections?.[1]?.items || []) },
-      主动支付链路: { 数据源: 'pollo_da_chain_funnel', ...totalEvidence(chain.items), 创作分层: itemsEvidence(chain.items), 核心分层: coreTier ? labels[coreTier.key] || coreTier.key : '全部', 核心分层过程因子: driversEvidence(coreChain.drivers || []), 同向因子排名: driversEvidence(rankedDrivers), 核心因子拐点: inflection },
-      自动续订链路: { 数据源: 'renewal_daily', ...gmvEvidence(renewalGmv(startDate), renewalGmv(analysisPeriod)), 过程因子: driversEvidence(renewal.drivers || []) },
-      创作侧证: { 整体: creativeOverall, 分层: creativeEvidence }, productActions: actions,
+  for (const key of ['pay', 'chain', 'renewal', 'creative']) await progress(key, 'running');
+  const sources = await loadReportSources({ platform, startDate, endDate }, {
+    query: (sql, ...binds) => queryRows(env, sql, ...binds),
+    actions: async () => {
+      if (!env.DB) throw new Error('D1 未配置');
+      const snapshot = await readProductActions(env.DB);
+      return {
+        source: 'D1/产品动作明细', status: snapshot.available ? 'ok' : 'unavailable', readAt: snapshot.readAt, complete: snapshot.available,
+        rows: snapshot.records.map(record => normalizeProductAction(record.fields, record.id)),
+        provenance: { baseToken: FEISHU_BASE_APP_TOKEN, tableId: BASE_TABLES.product_actions, warehouse: 'pollo_da_product_action_details', identity: 'Worker application', recordScope: 'all_records', hasMore: false },
+      };
     },
-    tables: { PAY_TYPE_PRIMARY_TABLE: itemTable(pay.items), PAY_TYPE_DRILL_TABLE: itemTable(pay.sections?.[1]?.items || []), CHAIN_TIER_TABLE: itemTable(chain.items), CHAIN_DRIVER_TABLE: driverTable(coreChain.drivers || []), RENEWAL_DRIVER_TABLE: driverTable(renewal.drivers || []) },
-  };
+  });
+  await progress('analyze', 'running');
+  const evidence = buildReportEvidence({ platform, startDate, endDate }, sources);
+  for (const [key, source] of [['pay','pay'],['chain','funnel'],['renewal','renewal'],['creative','creation']] as const) {
+    const info = evidence.sources[source];
+    await progress(key, 'success', info.complete ? `已读取 ${info.rows.toLocaleString('en-US')} 条记录并核对日期覆盖` : '证据不完整，已标注缺口，未补零或替换口径');
+  }
+  await progress('analyze', 'success', '注册新老LMDI、国家/渠道、曝光、投放及创作证据已计算；缺失与未成熟单列');
+  return { evidence };
 }
 
 async function persistGeneratedReport(env: Env, report: ReportSummary) {
@@ -3192,6 +3095,20 @@ export default {
     try {
       const url = new URL(request.url);
       if (url.pathname.startsWith('/api/cron/')) return cronHandler(env, request, context);
+      if (url.pathname === '/api/daily-diagnosis') {
+        const platform = url.searchParams.get('platform') || 'all';
+        const period = url.searchParams.get('period') || undefined;
+        if (!['all','web','app'].includes(platform) || (period && !/^\d{4}-\d{2}-\d{2}$/.test(period))) return errorResponse('日诊断参数无效', 400);
+        const scope = platform as 'all'|'web'|'app';
+        if (request.method === 'GET') return json(await getDailyDiagnosis(env, scope, period));
+        if (request.method === 'POST') {
+          const denial = await authorizeDashboardMutation(request);
+          if (denial) return denial;
+          if (!period) return errorResponse('缺少异动日期', 400);
+          return json(await regenerateDailyDiagnosis(env, scope, period));
+        }
+        return errorResponse('不支持的请求方式', 405);
+      }
       if (url.pathname === '/api/dashboard/payment-registration-trend' && request.method === 'GET') return paymentRegistrationTrend(env, request);
       if (url.pathname === '/api/dashboard/product-actions' && request.method === 'GET') {
         try {

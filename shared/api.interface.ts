@@ -586,3 +586,15 @@ export interface AddAdminMembersRequest {
 export interface RemoveAdminMemberResponse {
   removedUserId: string;
 }
+
+/** Daily reports are isolated from weekly report dates and history. */
+export type DailyDiagnosisReport = Omit<ReportSummary, 'platform'> & { platform: DashboardPlatform; runId: string };
+export interface DailyDiagnosisStatus {
+  platform: DashboardPlatform;
+  period: string;
+  baseline: string;
+  status: 'waiting' | 'queued' | 'running' | 'success' | 'failed' | 'clear' | 'normal';
+  updatedAt: string;
+  error?: string;
+  report?: DailyDiagnosisReport;
+}

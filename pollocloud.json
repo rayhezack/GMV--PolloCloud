@@ -5,6 +5,7 @@
   "worker": "worker/index.ts",
   "immutable": ["/assets/*"],
   "cron": [
+    { "schedule": "4-59/5 * * * *", "path": "/api/cron/daily-diagnoses" },
     { "schedule": "0-59/5 * * * *", "path": "/api/cron/daily-pay-type" },
     { "schedule": "1-59/5 * * * *", "path": "/api/cron/daily-chain" },
     { "schedule": "2-59/5 * * * *", "path": "/api/cron/daily-renewal" },

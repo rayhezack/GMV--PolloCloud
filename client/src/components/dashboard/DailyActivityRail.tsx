@@ -34,6 +34,7 @@ import type {
 } from "@shared/api.interface";
 import type { ProductActionSource } from "@shared/product-actions";
 import "./daily-activity-rail.css";
+import DailyDiagnosisStatus from "./DailyDiagnosisStatus";
 
 const dateOf = (date: string) => new Date(`${date}T12:00:00`);
 const dateKey = (date: Date) =>
@@ -66,9 +67,10 @@ export default function DailyActivityRail({
   refreshToken: number;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { jobs, syncJob } = useOutletContext<{
+  const { jobs, syncJob, canManage } = useOutletContext<{
     jobs: ReportGenerationStatus[];
     syncJob: SyncRunStatus | null;
+    canManage?: boolean;
   }>();
   const [actions, setActions] = useState<ProductActionSource | null>(null);
   const [anomalies, setAnomalies] =
@@ -172,12 +174,12 @@ export default function DailyActivityRail({
     (action) => action.date === (selectedDate ? dateKey(selectedDate) : ""),
   );
   const alerts = (anomalies?.alerts ?? []).filter(
-    (alert) => platform === "all" || alert.platform === platform,
+    (alert) => alert.metric === "totalGmv" && (platform === "all" || alert.platform === platform),
   );
   const signals = [
     ...new Map(
       [...alerts]
-        .sort((a, b) => Math.abs(a.change) - Math.abs(b.change))
+        .sort((a, b) => Number(a.window === "week") - Number(b.window === "week"))
         .map((alert) => [
           `${alert.platform}:${alert.metric}:${alert.period}`,
           alert,
@@ -321,6 +323,7 @@ export default function DailyActivityRail({
           查看监测详情
           <ArrowUpRight size={14} />
         </Button>
+        <DailyDiagnosisStatus platform={focusedAlert?.platform ?? platform} period={latestDate} refreshToken={refreshToken} canManage={canManage} />
         <footer>
           <Link to={reportHref()}>
             周诊断报告 <ArrowUpRight size={12} />

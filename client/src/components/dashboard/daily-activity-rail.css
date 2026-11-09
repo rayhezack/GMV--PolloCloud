@@ -629,3 +629,7 @@
   outline: 1px solid rgba(83, 58, 253, 0.45);
   outline-offset: -1px;
 }
+
+.daily-diagnosis { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+.daily-diagnosis-conclusion { font-size: 12px; line-height: 1.65; }
+.daily-diagnosis-dialog { width: min(1200px, calc(100vw - 32px)); max-width: 1200px; max-height: 90dvh; overflow: auto; }
