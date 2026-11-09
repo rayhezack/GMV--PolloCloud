@@ -67,11 +67,13 @@ export async function fetchProductActions(readPage: PageReader): Promise<ActionR
   return records;
 }
 
-export async function syncProductActions(db: Database, readPage: PageReader, { force = false, now = Date.now() } = {}) {
+export async function syncProductActions(db: Database, readPage: PageReader, { force = false, now = Date.now(), scheduled = false } = {}) {
   const date = shanghaiDay(now), lease = crypto.randomUUID();
+  const scheduledAt = Date.parse(`${date}T09:10:00+08:00`);
+  if (scheduled && !force && now < scheduledAt) return { status: 'skipped', reason: 'before-daily-update' };
   const claim = await db.prepare(`UPDATE product_action_sync_state SET lease_id = ?, lease_until = ?
-    WHERE id = 1 AND lease_until < ? AND (? = 1 OR sync_date IS NULL OR sync_date <> ?) RETURNING id`)
-    .bind(lease, now + 180000, now, force ? 1 : 0, date).first();
+    WHERE id = 1 AND lease_until < ? AND (? = 1 OR sync_date IS NULL OR sync_date <> ? OR synced_at < ?) RETURNING id`)
+    .bind(lease, now + 180000, now, force ? 1 : 0, date, scheduled ? scheduledAt : 0).first();
   if (!claim) return { status: 'skipped', reason: 'already-current-or-running' };
   try {
     const records = await fetchProductActions(readPage);

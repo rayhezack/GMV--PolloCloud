@@ -88,6 +88,8 @@ type CashBalanceChartProps = Omit<React.ComponentProps<"div">, "children"> & {
   onTransactionClick?: (transaction: CashBalanceTransaction) => void
   /** Text for a time on the timeline's axis ("6 AM") and in the tooltip ("9:34 AM"). Times are in UTC by default. */
   formatTime?: (time: number, context: "axis" | "tooltip") => string
+  /** Optional contextual hint beneath the hovered value and date. */
+  tooltipHint?: (point: CashBalancePoint) => string
   /** The text after the change in the tooltip; "since" and the first point's time ("since 6 AM") by default. */
   sinceLabel?: string
   /** The tooltip's word for points after `now`. */
@@ -311,6 +313,7 @@ function Figure({
 type TooltipText = {
   value: string
   time: string
+  hint?: string
   change?: string
   /** The balance is lower than at the start (red, arrow down). */
   down?: boolean
@@ -329,6 +332,7 @@ function TooltipRows({ text, valueRef, changeRef }: { text: TooltipText; valueRe
         </span>
         <span className="typo-label-02-regular hug-w text-fg-soft">{text.time}</span>
       </span>
+      {text.hint && <span className="typo-label-02-regular hug-w text-fg-soft">{text.hint}</span>}
       {text.change !== undefined && (
         <span className={cn("flex items-center gap-1", text.down ? "text-error-500" : "text-primary-green-500")}>
           {text.down ? <ArrowCircleDownIcon className="shrink-0" /> : <ArrowCircleUpIcon className="shrink-0" />}
@@ -387,6 +391,7 @@ function CashBalanceChart({
   onIndexChange,
   onTransactionClick,
   formatTime: formatTimeProp,
+  tooltipHint,
   sinceLabel,
   projectedLabel = "Projected",
   scheduledLabel = "Scheduled",
@@ -488,6 +493,7 @@ function CashBalanceChart({
   const tooltip: TooltipText | undefined = point
     ? {
         value: money(point.value),
+        hint: tooltipHint?.(point),
         time: shown !== null && isProjected(shown) ? `${timeText(point.time, "tooltip")} · ${projectedLabel}` : timeText(point.time, "tooltip"),
         change: change !== undefined && shown !== 0 ? money(Math.abs(change)) : undefined,
         down: change !== undefined && change < 0,

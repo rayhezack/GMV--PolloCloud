@@ -52,12 +52,27 @@ export function RevenueActionChart({ rows, visibleRows, metric, color, title, pl
   }, [data]);
   const selectedEvent = events.find(event => event.date === selectedDate);
   const selectedValue = data.find(point => point.time === timeOf(selectedDate ?? ''))?.value;
-  const selectedActions = [...new Map((source?.actions ?? []).filter(action => action.date === selectedDate
-    && (platform === 'all' || action.platform.split('/').includes(platform))).map(action => [action.id, action])).values()];
+  const actionsByDate = useMemo(() => {
+    const groups = new Map<string, Map<string, NonNullable<ProductActionSource>['actions'][number]>>();
+    for (const action of source?.actions ?? []) {
+      if (platform !== 'all' && !action.platform.split('/').includes(platform)) continue;
+      const group = groups.get(action.date) ?? new Map();
+      group.set(action.id, action);
+      groups.set(action.date, group);
+    }
+    return groups;
+  }, [source, platform]);
+  const selectedActions = [...(actionsByDate.get(selectedDate ?? '')?.values() ?? [])];
   return <div className="revenue-action-chart" style={{'--revenue-line': color} as CSSProperties}>
     <CashBalanceChart chartOnly eventTimeline plotHeight={155} title={`${title} 日趋势`} data={data} range={range} ticks={ticks} summary={[]}
       focusTime={focusPeriod ? timeOf(focusPeriod) : undefined}
       transactions={[]} index={null} locale="en-US" currency="USD"
+      tooltipHint={point => {
+        if (!source) return '正在读取产品动作…';
+        if (!source.available) return '产品动作暂不可用';
+        const count = actionsByDate.get(new Date(point.time).toISOString().slice(0, 10))?.size ?? 0;
+        return count ? `产品动作 · ${count} 条，点击查看` : '当日暂无产品动作';
+      }}
       formatTime={(time, context) => context === 'axis' ? new Date(time).toISOString().slice(5, 10).replace('-', '/') : new Date(time).toISOString().slice(0, 10)}
       onIndexChange={(_, point) => {
         if (!point) return;

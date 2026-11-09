@@ -2770,6 +2770,15 @@ async function cronHandler(
 ): Promise<Response> {
   if (request.headers.get('x-pollocloud-trigger') !== 'cron') return errorResponse('仅允许 Pollo Cloud 定时任务触发', 403);
   const path = new URL(request.url).pathname;
+  if (path === '/api/cron/daily-product-actions') {
+    if (!env.DB) throw new Error('D1 未配置');
+    const actions = await syncProductActions(env.DB, (pageToken, signal) => {
+      const query = new URLSearchParams({ page_size: '500' });
+      if (pageToken) query.set('page_token', pageToken);
+      return baseRequest<ActionPage>(env, 'product_actions', `/records?${query}`, undefined, 'GET', signal);
+    }, { scheduled: true, force: request.headers.get('x-pollocloud-cron-run') === 'manual' });
+    return json({ ok: true, task: 'daily-product-actions', productActions: actions });
+  }
   const scheduledDataset = path === '/api/cron/daily-pay-type'
     ? 'pay_type'
     : path === '/api/cron/daily-chain'
@@ -2780,21 +2789,7 @@ async function cronHandler(
           ? 'renewal'
           : null;
   if (scheduledDataset) {
-    // Reuse the renewal schedule: actions publish once per Shanghai day, retry on the next tick if unsuccessful.
-    // This runs independently of MaxCompute so its failures cannot block action ingestion.
-    let actions: unknown, actionError: unknown;
-    if (scheduledDataset === 'renewal') {
-      try {
-        if (!env.DB) throw new Error('D1 未配置');
-        actions = await syncProductActions(env.DB, (pageToken, signal) => {
-          const query = new URLSearchParams({ page_size: '500' });
-          if (pageToken) query.set('page_token', pageToken);
-          return baseRequest<ActionPage>(env, 'product_actions', `/records?${query}`, undefined, 'GET', signal);
-        }, { force: request.headers.get('x-pollocloud-cron-run') === 'manual' });
-      } catch (error) { actionError = error; }
-    }
     const result = await runScheduledSync(env, [scheduledDataset]);
-    if (actionError) throw actionError;
     if (scheduledDataset === 'chain' && (result.status === 'success' || result.skipped)) {
       const ads = await scheduledAdsSync(env);
       return json({ ok: true, task: 'daily-chain-and-ads', status: result.status, runId: result.runId, ads: await ads.json() });
@@ -2803,7 +2798,7 @@ async function cronHandler(
       const creation = await scheduledCreationChainSync(env);
       return json({ ok: true, task: 'daily-creative-and-creation-chain', status: result.status, runId: result.runId, creation: await creation.json() });
     }
-    return json({ ok: true, task: `daily-${scheduledDataset}`, status: result.status, runId: result.runId, ...(actions ? { productActions: actions } : {}) });
+    return json({ ok: true, task: `daily-${scheduledDataset}`, status: result.status, runId: result.runId });
   }
   if (path === '/api/cron/weekly-reports') {
     const platform = new Date(Date.now() + 8 * 3600000).getUTCMinutes() < 10 ? 'web' : 'app';

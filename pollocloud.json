@@ -9,6 +9,7 @@
     { "schedule": "1-59/5 * * * *", "path": "/api/cron/daily-chain" },
     { "schedule": "2-59/5 * * * *", "path": "/api/cron/daily-renewal" },
     { "schedule": "3-59/5 * * * *", "path": "/api/cron/daily-creative" },
+    { "schedule": "*/5 9-23 * * *", "path": "/api/cron/daily-product-actions" },
     { "schedule": "0,10 * * * 6", "path": "/api/cron/weekly-reports" }
   ]
 }
