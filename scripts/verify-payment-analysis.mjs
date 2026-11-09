@@ -9,6 +9,9 @@ await Promise.all([
 const {default:worker}=await import('/tmp/pollo-payment-worker.mjs?'+Date.now());
 const {buildPaymentView,buildPaymentDailyRows,buildPaymentDailyPivot}=await import('/tmp/pollo-payment-data.mjs?'+Date.now());
 const database=new DatabaseSync('archives/middle-table-20261104/local-preview.sqlite',{readOnly:true});
+// This archived fixture predates the single-copy migration and retains physical
+// Web/App mirrors. Give it the same read contract without rewriting the archive.
+database.exec('CREATE TEMP VIEW IF NOT EXISTS pollo_da_fact_rows_read AS SELECT * FROM main.pollo_da_fact_rows');
 // Match the production D1 parameter limit; native SQLite permits far more.
 const DB={prepare(sql){let args=[];return {bind(...v){assert(v.length<=100,`D1 bind limit exceeded: ${v.length}`);args=v;return this;},async all(){return {results:database.prepare(sql).all(...args)};},async first(){return database.prepare(sql).get(...args)||null;},async run(){throw new Error('Read-only test');}};}};
 const ctx={waitUntil(p){p.catch(()=>{});}};
