@@ -1,11 +1,11 @@
 import { useId, useMemo, useState, type CSSProperties } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { WalletCards, BadgePercent, UserRoundPlus, Workflow, RotateCw, Info, Music2, NotebookPen, CalendarDays, Plus } from 'lucide-react';
+import { WalletCards, BadgePercent, UserRoundPlus, Workflow, RotateCw, Info, Music2, NotebookPen, Plus } from 'lucide-react';
 import { tightLineTicks } from '@/lib/chart-series';
 import { CashBalanceChart } from '@/components/cash-balance-chart';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { revenueActionEvents, type RevenueMetric, type ProductActionSource, type RevenueEvent } from '@shared/product-actions';
+import { revenueActionEvents, type RevenueMetric, type ProductActionSource } from '@shared/product-actions';
 import type { OverviewTrendPoint } from '@shared/api.interface';
 import './revenue-action-chart.css';
 
@@ -21,9 +21,8 @@ export function RevenueActionInfo({title, source, period}: {title: string; sourc
       <p>WoW =（当日 GMV − 7 天前同日 GMV）÷ 7 天前同日 GMV。基准日无数据或 GMV 为 0 时不显示变化幅度。</p>
       {/^\d{4}-\d{2}-\d{2}$/.test(period) && <p>当前对比：{period} 与 {new Date(Date.parse(`${period}T00:00:00Z`) - 7 * 86400000).toISOString().slice(0, 10)}。</p>}
       <p>斜纹带表示展示日期内 GMV 的第 25 至 75 百分位区间。</p>
-      <strong>产品动作标注</strong>
-      <p>日环比或同星期周同比超出前 12 个完整业务周的 P95 / P05，且涨跌至少 10% 时，标注同日产品动作。</p>
-      <p>浮层展示当前端当日全部动作；全端视图覆盖全部端。</p>
+      <strong>产品动作查询</strong>
+      <p>点击折线图中的日期，查看当前端当日全部产品动作；全端视图覆盖全部端。</p>
       {source?.lastSyncError && source.available && <p role="status">产品动作最近一次同步失败，当前展示上次成功入仓的数据（{source.readAt}）。</p>}
       {!source?.available && <p role="status">{source ? '产品动作暂不可用，请刷新重试。' : '正在读取产品动作…'}</p>}
     </PopoverContent>
@@ -35,7 +34,8 @@ export function RevenueActionChart({ rows, visibleRows, metric, color, title, pl
   color: string; title: string; platform: string; source: ProductActionSource | null;
   focusPeriod?: string | null;
 }) {
-  const [selectedEvent, setSelectedEvent] = useState<RevenueEvent | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [expandedAction, setExpandedAction] = useState<string | null>(null);
   const detailId = useId();
   const reducedMotion = useReducedMotion();
@@ -50,25 +50,28 @@ export function RevenueActionChart({ rows, visibleRows, metric, color, title, pl
     const low = quantile(.25), high = quantile(.75);
     return high > low ? [low, high] : null;
   }, [data]);
-  const transactions = useMemo(() => events.map(event => {
-    return { id: event.date, time: timeOf(event.date), amount: 0, label: `${event.date} 产品动作`, icon: <CalendarDays size={13} />, tone: 'blue' as const };
-  }), [events]);
+  const selectedEvent = events.find(event => event.date === selectedDate);
+  const selectedValue = data.find(point => point.time === timeOf(selectedDate ?? ''))?.value;
+  const selectedActions = [...new Map((source?.actions ?? []).filter(action => action.date === selectedDate
+    && (platform === 'all' || action.platform.split('/').includes(platform))).map(action => [action.id, action])).values()];
   return <div className="revenue-action-chart" style={{'--revenue-line': color} as CSSProperties}>
     <CashBalanceChart chartOnly eventTimeline plotHeight={155} title={`${title} 日趋势`} data={data} range={range} ticks={ticks} summary={[]}
       focusTime={focusPeriod ? timeOf(focusPeriod) : undefined}
-      transactions={transactions} locale="en-US" currency="USD"
+      transactions={[]} index={null} locale="en-US" currency="USD"
       formatTime={(time, context) => context === 'axis' ? new Date(time).toISOString().slice(5, 10).replace('-', '/') : new Date(time).toISOString().slice(0, 10)}
-      onTransactionClick={transaction => {
+      onIndexChange={(_, point) => {
+        if (!point) return;
         setExpandedAction(null);
-        setSelectedEvent(events.find(event => event.date === transaction.id) ?? null);
+        setSelectedDate(new Date(point.time).toISOString().slice(0, 10));
+        setDetailsOpen(true);
       }}
     />
-    <Dialog open={selectedEvent !== null} onOpenChange={open => { if (!open) setSelectedEvent(null); }}>
+    <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
       <DialogContent className="revenue-event-dialog">
-        <DialogHeader><DialogTitle>{selectedEvent?.date} · 产品动作</DialogTitle>
-          <DialogDescription>{title} {selectedEvent?.comparison === 'week' ? '较上周同日' : '较前一日'} {selectedEvent && signedPercent(selectedEvent.change)} · {platform === 'web' ? 'Web' : platform === 'app' ? 'App' : '全端'} 当日动作</DialogDescription>
+        <DialogHeader><DialogTitle>{selectedDate} · 产品动作</DialogTitle>
+          <DialogDescription>{title} {selectedValue == null ? '—' : '$'+Math.round(selectedValue).toLocaleString('en-US')}{selectedEvent && ` · ${selectedEvent.comparison === 'week' ? '较上周同日' : '较前一日'} ${signedPercent(selectedEvent.change)}`} · {platform === 'web' ? 'Web' : platform === 'app' ? 'App' : '全端'} 当日动作</DialogDescription>
         </DialogHeader>
-        <div className="revenue-event-list">{selectedEvent?.actions.map(action => {
+        <div className="revenue-event-list">{selectedActions.map(action => {
           const Icon = actionIcon(action);
           const expanded = expandedAction === action.id;
           const contentId = `${detailId}-${action.id}`;
@@ -89,7 +92,8 @@ export function RevenueActionChart({ rows, visibleRows, metric, color, title, pl
             </AnimatePresence>
           </article>;
         })}</div>
-        <p className="revenue-event-caveat">来源：产品动作明细 · 上线日期</p>
+        {!selectedActions.length && <p className="revenue-event-empty" role="status">{!source ? '正在读取产品动作…' : !source.available ? '产品动作暂不可用，请稍后重试。' : '当日暂无产品动作记录'}</p>}
+        {source?.available && <p className="revenue-event-caveat">来源：产品动作明细 · 上线日期</p>}
       </DialogContent>
     </Dialog>
   </div>;

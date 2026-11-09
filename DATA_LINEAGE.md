@@ -15,7 +15,7 @@
 | 创作分层、创作渗透率与人均创作任务 | `ods_pollo_log_event_dip`、`dwd_video_pollo_video_generate_record_dfp` | `pollo_da_fact_rows`（`creative`）→ `/api/dashboard/attributions?dimension=creative`；整体活跃 UV 也接入 `creative-overview` | 活跃人群与近 30 日创作次数分层；渗透率的分子、分母必须同一活跃人群。 |
 | 投放指标卡、国家周对比、渠道分析 | `ads_pollo_ad_attribution_daily_dip` | `pollo_da_ads_daily` → `/api/dashboard/ads-overview` | 展示点击、成本、展示、注册与回收；国家表按所选指标分析周的绝对日均值降序，不按变化量排序。 |
 | 投放注册 Cohort LTV / ROAS / CAC | `ads_pollo_ad_attribution_daily_dip` | `pollo_da_ads_daily` → `/api/dashboard/ads-overview` 的 `cohortMatrix` | 以获客注册日归组，`LTV=该 cohort 累计 GMV/注册 UV`，`CAC=该 cohort 广告成本/注册 UV`；未成熟或缺失的回收窗口为空，不补零。 |
-| GMV 异动提醒与产品动作标注 | 支付结果、链路源表；飞书 Base 产品动作 | `pollo_da_fact_rows`、`pollo_da_chain_funnel` → 异动接口；`pollo_da_product_actions`、`pollo_da_product_action_details` → `/api/dashboard/product-actions` | 异动阈值基于完整历史业务周；上升、下降均匹配同日同端动作，保留全部达标日期，密集图标错行显示。动作只作为日期注释，不计入 GMV，也不代表因果归因。 |
+| GMV 异动提醒与产品动作查询 | 支付结果、链路源表；飞书 Base 产品动作 | `pollo_da_fact_rows`、`pollo_da_chain_funnel` → 异动接口；`pollo_da_product_actions`、`pollo_da_product_action_details` → `/api/dashboard/product-actions` | 异动阈值基于完整历史业务周；产品动作通过点击折线图日期查询，展示同日同端全部记录，普通日期也可查。图上不排列动作图标；动作不计入 GMV，也不代表因果归因。 |
 
 ## 创作 GMV 差异的核查
 

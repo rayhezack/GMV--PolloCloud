@@ -47,3 +47,5 @@
   .dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-face > div:first-child { display: block; }
   .dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-face .revenue-date, .dashboard-shell .dashboard-content[data-tab='trend'] .revenue-card-face .revenue-foot { text-align: left; }
 }
+
+.revenue-event-empty { padding: 24px 0; font-size: 13px; color: #64758e; text-align: center; }
