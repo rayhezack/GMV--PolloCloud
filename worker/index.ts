@@ -1,3 +1,4 @@
+import { encodeDashboardCache, decodeDashboardCache } from './dashboard-cache';
 import { normalizeChartActions } from '../shared/product-actions';
 import { readProductActions, syncProductActions, type ActionPage } from './product-actions-store';
 import { BREAKDOWN_VALUE_SQL } from './breakdown-dimensions';
@@ -78,6 +79,7 @@ const DASHBOARD_STALE_TTL_MS = 60 * 60_000;
 let feishuTokenCache: { token: string; expiresAt: number } | null = null;
 const baseCache = new Map<string, { expiresAt: number; records: BaseRecord[] }>();
 const baseLoads = new Map<string, Promise<BaseRecord[]>>();
+let dashboardCacheGeneration = 0;
 const dashboardLoads = new Map<string, Promise<Response>>();
 const dashboardMemoryCache = new Map<string, { payload: string; expiresAt: number }>();
 
@@ -154,18 +156,23 @@ async function cachedDashboardResponse(env: Env, request: Request, context: { wa
   const refresh = () => {
     const pending = dashboardLoads.get(key);
     if (pending) return pending;
+    const generation = dashboardCacheGeneration;
     const task = (async () => {
       const response = await load();
       if (response.ok) {
         const payload = await response.clone().text();
         // Do not retain full-year function payloads in a long-lived Worker
         // isolate or attempt to persist them as a single oversized D1 row.
-        if (isCacheablePayload(payload) && !(url.pathname.endsWith('/creative-overview') && payload.length > 8 * 1024 * 1024)) {
+        if (generation === dashboardCacheGeneration && isCacheablePayload(payload) && !(url.pathname.endsWith('/creative-overview') && payload.length > 8 * 1024 * 1024)) {
           const expiresAt = Date.now() + DASHBOARD_CACHE_TTL_MS;
           dashboardMemoryCache.set(key, { payload, expiresAt });
           if (env.DB && payload.length < 1024 * 1024) {
-            await env.DB.prepare('INSERT OR REPLACE INTO dashboard_response_cache (cache_key, payload, expires_at) VALUES (?, ?, ?)')
-              .bind(key, payload, expiresAt).run().catch(() => undefined);
+            context.waitUntil((async () => {
+              const stored = await encodeDashboardCache(payload);
+              if (generation !== dashboardCacheGeneration || new TextEncoder().encode(stored).length >= 64 * 1024) return;
+              await env.DB!.prepare('INSERT OR REPLACE INTO dashboard_response_cache (cache_key, payload, expires_at) VALUES (?, ?, ?)')
+                .bind(key, stored, expiresAt).run();
+            })().catch(() => undefined));
           }
         }
       }
@@ -186,8 +193,9 @@ async function cachedDashboardResponse(env: Env, request: Request, context: { wa
   }
   if (!env.DB) return (await refresh()).clone();
   try {
-    const cached = await env.DB.prepare('SELECT payload, expires_at FROM dashboard_response_cache WHERE cache_key = ?')
+    const stored = await env.DB.prepare('SELECT payload, expires_at FROM dashboard_response_cache WHERE cache_key = ?')
       .bind(key).first<{ payload: string; expires_at: number }>();
+    const cached = stored ? { ...stored, payload: await decodeDashboardCache(stored.payload) } : null;
     if (cached && isCacheablePayload(cached.payload) && cached.expires_at > Date.now()) {
       dashboardMemoryCache.set(key, { payload: cached.payload, expiresAt: cached.expires_at });
       return json(JSON.parse(cached.payload));
@@ -204,6 +212,7 @@ async function cachedDashboardResponse(env: Env, request: Request, context: { wa
 }
 
 async function invalidateDashboardCache(env: Env) {
+  dashboardCacheGeneration++;
   dashboardMemoryCache.clear();
   if (env.DB) await env.DB.prepare('DELETE FROM dashboard_response_cache').run().catch(() => undefined);
 }
@@ -673,6 +682,20 @@ async function latestDailyPeriod(
   return row?.period || '';
 }
 
+// Aggregate before crossing the D1 boundary: the overview never needs the
+// original fields_json or order/model dimensions. Preserve scope and pay-type
+// dimensions used by the chart, including legacy functional drilldowns.
+async function overviewPayRows(env: Env, params: { platform?: string; startDate: string; endDate: string; deviceType?: string }) {
+  const conditions = ["dataset = 'pay_type'", "(attribution_type IS NULL OR (attribution_type = 'NONE' AND pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL','API') AND pay_type <> '汇总'))", 'period BETWEEN ? AND ?'];
+  const binds: unknown[] = [params.startDate, params.endDate];
+  if (params.platform) { conditions.push('platform = ?'); binds.push(params.platform); }
+  if (params.deviceType) { conditions.push('device_type = ?'); binds.push(params.deviceType); }
+  const dimensions = 'period, week_start, platform, pay_type, attribution_type, pay_category, product_type, subscription_tier';
+  return queryRows(env, `SELECT ${dimensions}, CASE WHEN COALESCE(function_name,'') <> '' THEN 'present' ELSE '' END AS function_name,
+    SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows_read WHERE ${conditions.join(' AND ')}
+    GROUP BY ${dimensions}, CASE WHEN COALESCE(function_name,'') <> '' THEN 'present' ELSE '' END ORDER BY period`, ...binds);
+}
+
 function shiftDate(date: string, days: number) {
   const shifted = new Date(`${date}T00:00:00Z`);
   shifted.setUTCDate(shifted.getUTCDate() + days);
@@ -997,13 +1020,19 @@ async function overview(env: Env, request: Request) {
   if (trendCountryTier && !['T1', 'T2', 'T3', '未知'].includes(trendCountryTier)) return errorResponse('国家分层筛选无效');
   const planTier = url.searchParams.get('planTier')?.toUpperCase() || undefined;
   if (!DASHBOARD_PLATFORMS.has(platform)) return errorResponse('platform 必须是 all / web / app 之一');
+  if (url.searchParams.get('view') === 'cards') {
+    const pay = await overviewPayRows(env, { platform, startDate, endDate, deviceType });
+    const days = trendPeriodDivisors(pay, granularity);
+    const periods = groupByPeriod(pay, granularity);
+    return json({ trend: [], payTypeTrend: payTrend(pay.map(row => ({ ...row, period: trendPeriod(row, granularity) })), periods, days) });
+  }
   const funnelConditions = ['period BETWEEN ? AND ?'];
   const funnelBinds: unknown[] = [startDate, endDate];
   if (platform !== 'all') { funnelConditions.push('platform = ?'); funnelBinds.push(platform); }
   if (deviceType) { funnelConditions.push('device_type = ?'); funnelBinds.push(deviceType); }
   const [funnel, pay, renewalRecords] = await Promise.all([
     queryRows(env, `SELECT * FROM pollo_da_chain_funnel WHERE ${funnelConditions.join(' AND ')} ORDER BY period`, ...funnelBinds),
-    dailyRows(env, 'pay_type_daily', { platform, startDate, endDate, deviceType }),
+    overviewPayRows(env, { platform, startDate, endDate, deviceType }),
     dailyRows(env, 'renewal_daily', { platform, startDate, endDate }),
   ]);
   const payForTrend = pay.map((row) => ({ ...row, period: trendPeriod(row, granularity) }));
@@ -1854,7 +1883,10 @@ async function attributions(env: Env, request: Request) {
   if (dimension === 'pay_type') {
     const attributionType = url.searchParams.get('attributionType') || 'CREATION_MODE';
     if (!['CREATION_MODE', 'MODEL', 'ACTUAL_MODEL'].includes(attributionType)) return errorResponse('下钻 attributionType 必须是 CREATION_MODE / MODEL / ACTUAL_MODEL');
-    const rawRows = await dailyRows(env, 'pay_type_daily', { platform, startDate, endDate, deviceType });
+    const summaryOnly = url.searchParams.get('view') === 'summary';
+    const rawRows = summaryOnly
+      ? await overviewPayRows(env, { platform, startDate, endDate, deviceType })
+      : await dailyRows(env, 'pay_type_daily', { platform, startDate, endDate, deviceType });
     const rows = alignComparisonWeekdays(rawRows, baselinePeriod, analysisPeriod);
     const comparison = buildComparison(rows, startDate, endDate, baselinePeriod, analysisPeriod);
     const days = comparison?.dayCounts || weekDayCounts(rows);
@@ -1928,6 +1960,7 @@ async function attributions(env: Env, request: Request) {
       makeSection('主动付费下钻', '主动付费明细按付费类型汇总；功能下钻按创作模式归因，中间表未提供注册新老标签。', activeGroupedRows, ['首订', '积分包', '套餐升级', '重新订阅', '其他']),
       makeRenewalPlanSection(),
     ];
+    if (summaryOnly) return json({ dimension, valueLabel: 'GMV', comparison, metricLabels: {}, items: sections[0].items, sections, trend });
     // Attribution uses aligned weekdays, but the detail trend must retain every
     // available calendar day in the selected weeks (including the baseline tail).
     const breakdownDates = [...new Set(rawRows.filter((row) =>
@@ -3122,10 +3155,11 @@ async function reportHandler(env: Env, request: Request) {
   if (request.method === 'GET' && url.pathname === '/api/report-latest') {
     let item: D1Row | undefined;
     try {
-      item = (await baseRecords(env, 'latest_report', false, { filter: platform ? `CurrentValue.[platform]="${escapeBaseFormulaValue(platform)}"` : undefined, sort: ['generated_at DESC'], limit: 1 }))[0]?.fields;
-    } catch {
       item = (await queryRows(env, `SELECT platform, period_start, period_end, model_used, degraded, generated_at, report_md FROM pollo_da_reports WHERE report_kind = 'latest' ${platform ? 'AND platform = ?' : ''} ORDER BY generated_at DESC LIMIT 1`, ...(platform ? [platform] : [])))[0];
+    } catch {
+      // Older installations may still have reports only in Base.
     }
+    if (!item) item = (await baseRecords(env, 'latest_report', false, { filter: platform ? `CurrentValue.[platform]="${escapeBaseFormulaValue(platform)}"` : undefined, sort: ['generated_at DESC'], limit: 1 }))[0]?.fields;
     return json(item ? { platform: asText(item.platform), periodStart: asText(item.period_start), periodEnd: asText(item.period_end), modelUsed: asText(item.model_used), degraded: asText(item.degraded) === 'true', markdown: asText(item.report_md), generatedAt: asText(item.generated_at) } : null);
   }
   if (request.method === 'GET' && url.pathname === '/api/report-history') {

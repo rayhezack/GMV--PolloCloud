@@ -1,8 +1,10 @@
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuPortal } from '@/components/ui/dropdown-menu';
 import { WeekComparisonPicker } from '@/components/dashboard/WeekComparisonPicker';
 import DateRangePicker from '@/components/dashboard/DashboardDateRangePicker';
+import DailyActivityRail from '@/components/dashboard/DailyActivityRail';
 import { formatChartTooltipValue, formatChartTooltipChange } from "@/lib/chart-tooltip-format";
 import {
+  lazy,
   startTransition,
   useCallback,
   useEffect,
@@ -17,9 +19,6 @@ import {
 import dayjs from 'dayjs';
 import { Slide } from 'loading-dev';
 import { LOCAL_DATA_WINDOW, LOCAL_REVENUE_WINDOW } from '@/lib/local-data-window';
-import PaymentAnalysis from '@/components/dashboard/PaymentAnalysis';
-import { AdsDashboard, CreativeDashboard } from '@/components/dashboard/OperationalDashboards';
-import { ChainWorkbench } from '@/components/dashboard/ChainWorkbench';
 import { GlobalFinanceMarketComboChart } from '@/components/global-finance-market-combo-chart';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
@@ -137,8 +136,13 @@ import type {
   RenewalPlanTier,
   SyncRunStatus,
 } from '@shared/api.interface';
-import SyncControlBar from './SyncControlBar';
 import LoadingWave from '@/components/dashboard/LoadingWave';
+
+const PaymentAnalysis = lazy(() => import('@/components/dashboard/PaymentAnalysis'));
+const AdsDashboard = lazy(() => import('@/components/dashboard/OperationalDashboards').then(module => ({ default: module.AdsDashboard })));
+const CreativeDashboard = lazy(() => import('@/components/dashboard/OperationalDashboards').then(module => ({ default: module.CreativeDashboard })));
+const ChainWorkbench = lazy(() => import('@/components/dashboard/ChainWorkbench').then(module => ({ default: module.ChainWorkbench })));
+const SyncControlBar = lazy(() => import('./SyncControlBar'));
 
 gsap.registerPlugin(useGSAP);
 
@@ -3194,32 +3198,6 @@ const DashboardPage = () => {
     setAttributions({ payType: null, chain: null, creative: null });
   }, [platform, effectiveDeviceType, baselineWeek, analysisWeek]);
 
-  // Warm other workspaces after the current workspace gets the network first.
-  // Sequential reads avoid competing large model payloads and reuse the same API cache.
-  useEffect(() => {
-    let cancelled = false;
-    const common = {
-      platform, deviceType: effectiveDeviceType,
-      startDate: attributionWindow.startDate, endDate: attributionWindow.endDate,
-      baselinePeriod: baselineWeek, analysisPeriod: analysisWeek,
-      cacheBust: refreshToken || undefined,
-    };
-    const timer = window.setTimeout(async () => {
-      const reads = [
-        () => dashboardApi.getAdsOverview(common),
-        () => dashboardApi.getChainFunnel(common),
-        () => dashboardApi.getPaymentAnalysis({ platform, deviceType: effectiveDeviceType, baselinePeriod: baselineWeek, analysisPeriod: analysisWeek, attributionType: 'NONE', cacheBust: refreshToken || undefined }),
-        () => dashboardApi.getCreativeOverview(common),
-        () => dashboardApi.getDashboardAttributions({ ...common, granularity: 'week', dimension: 'creative' }),
-      ];
-      for (const read of reads) {
-        if (cancelled) break;
-        try { await read(); } catch { /* The destination owns visible error handling. */ }
-      }
-    }, 250);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [platform, effectiveDeviceType, baselineWeek, analysisWeek, attributionWindow.startDate, attributionWindow.endDate, refreshToken]);
-
   const setSectionError = useCallback(
     (key: DashboardLoadKey, value?: string) => {
       setLoadErrors((current) => ({ ...current, [key]: value }));
@@ -3312,7 +3290,7 @@ const DashboardPage = () => {
     let cancelled = false;
     setCardTrendLoading(true);
     const cacheKey = [
-      'overview',
+      'overview-cards',
       platform,
       effectiveDeviceType ?? 'all',
       cardGranularity,
@@ -3325,6 +3303,7 @@ const DashboardPage = () => {
 
     void getCachedRequest(requestCacheRef.current, cacheKey, () =>
       dashboardApi.getDashboardOverview({
+        view: 'cards',
         platform,
         deviceType: effectiveDeviceType,
         granularity: cardGranularity,
@@ -3538,6 +3517,7 @@ const DashboardPage = () => {
     ].join('|');
     void getCachedRequest(requestCacheRef.current, cacheKey, () =>
       dashboardApi.getDashboardAttributions({
+        view: 'summary',
         platform,
         deviceType: effectiveDeviceType,
         granularity: 'week',
@@ -3823,24 +3803,7 @@ const DashboardPage = () => {
           </Link>
         </div>
       </div>
-      {activeTab === 'trend' && (
-        <>
-          <RevenueCards
-            items={paySections[0]?.items ?? []}
-            structureItems={revenueStructureItems}
-            loading={!cardTrend.length && cardTrendLoading}
-            period={formatWeekRange(analysisWeek)}
-            trend={cardTrend}
-            dailyTrend={cardTrend}
-            zoomTrend={cardTrend}
-            granularity={cardGranularity}
-            analysisWeek={analysisWeek}
-            baselineWeek={baselineWeek}
-            headlineStartDate={selectedTrendWindow.startDate}
-            headlineEndDate={selectedTrendWindow.endDate}
-          />
-        </>
-      )}
+      {activeTab === 'trend' && <DailyActivityRail platform={platform} refreshToken={refreshToken} />}
       {activeTab === 'data' && (
         <>
           <SyncControlBar onSyncSettled={refresh} />
@@ -3858,38 +3821,54 @@ const DashboardPage = () => {
       ) : null}
 
       {activeTab === 'trend' && (
-        <div className="dashboard-view" key="trend">
-          <PageSection
-            title="收入趋势"
-          >
-            <div className="grid min-w-0 gap-4">
-              {loadingBySection.overview && (!overview || overview.granularity !== granularity) ? (
-                <LoadingBlock title="趋势加载中" />
-              ) : (
-                <MetricTrendChart
-                  data={overview?.granularity === granularity ? overview.trend : []}
-                  metricControls={<DashboardFilters
-                    metric={trendMetric.key}
-                    onMetricChange={(value) => updateSearchParams(
-                      { metric: value, ...(!supportsTrendUserTag(value) ? {trendUserTag: undefined, trendCountryTier: undefined} : {}) },
-                      isRenewalTrendMetric(value) ? [] : ['planTier'],
-                    )}
-                    trendCountryTier={trendCountryTier}
-                    onTrendCountryTierChange={value => updateSearchParam('trendCountryTier', value === 'all' ? '' : value)}
-                    trendUserTag={trendUserTag}
-                    onTrendUserTagChange={(value) => updateSearchParam('trendUserTag', value === 'all' ? '' : value)}
-                    planTier={planTier}
-                    onPlanTierChange={(value) => updateSearchParam('planTier', value === 'all' ? '' : value)}
-                  />}
-                  granularity={granularity}
-                  onGranularityChange={(value) => updateSearchParam('granularity', value)}
-                  metric={trendMetric}
-                  rangeStartDate={selectedTrendWindow.startDate}
-                  rangeEndDate={selectedTrendWindow.endDate}
-                />
-              )}
-            </div>
-          </PageSection>
+        <div className="trend-workspace" key="trend">
+          <RevenueCards
+            items={paySections[0]?.items ?? []}
+            structureItems={revenueStructureItems}
+            loading={!cardTrend.length && cardTrendLoading}
+            period={formatWeekRange(analysisWeek)}
+            trend={cardTrend}
+            dailyTrend={cardTrend}
+            zoomTrend={cardTrend}
+            granularity={cardGranularity}
+            analysisWeek={analysisWeek}
+            baselineWeek={baselineWeek}
+            headlineStartDate={selectedTrendWindow.startDate}
+            headlineEndDate={selectedTrendWindow.endDate}
+          />
+          <div className="dashboard-view">
+            <PageSection
+              title="收入趋势"
+            >
+              <div className="grid min-w-0 gap-4">
+                {loadingBySection.overview && (!overview || overview.granularity !== granularity) ? (
+                  <LoadingBlock title="趋势加载中" />
+                ) : (
+                  <MetricTrendChart
+                    data={overview?.granularity === granularity ? overview.trend : []}
+                    metricControls={<DashboardFilters
+                      metric={trendMetric.key}
+                      onMetricChange={(value) => updateSearchParams(
+                        { metric: value, ...(!supportsTrendUserTag(value) ? {trendUserTag: undefined, trendCountryTier: undefined} : {}) },
+                        isRenewalTrendMetric(value) ? [] : ['planTier'],
+                      )}
+                      trendCountryTier={trendCountryTier}
+                      onTrendCountryTierChange={value => updateSearchParam('trendCountryTier', value === 'all' ? '' : value)}
+                      trendUserTag={trendUserTag}
+                      onTrendUserTagChange={(value) => updateSearchParam('trendUserTag', value === 'all' ? '' : value)}
+                      planTier={planTier}
+                      onPlanTierChange={(value) => updateSearchParam('planTier', value === 'all' ? '' : value)}
+                    />}
+                    granularity={granularity}
+                    onGranularityChange={(value) => updateSearchParam('granularity', value)}
+                    metric={trendMetric}
+                    rangeStartDate={selectedTrendWindow.startDate}
+                    rangeEndDate={selectedTrendWindow.endDate}
+                  />
+                )}
+              </div>
+            </PageSection>
+          </div>
         </div>
       )}
 

@@ -6,7 +6,6 @@ import {
   RefreshCw,
   ShieldCheck,
 } from 'lucide-react';
-import { toast } from 'sonner';
 import {
   Dialog,
   DialogClose,
@@ -17,7 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@client/src/components/ui/dialog';
-import DashboardDateRangePicker from '@/components/dashboard/DashboardDateRangePicker';
+import DashboardDatePicker from '@/components/dashboard/DashboardDatePicker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@client/src/components/ui/badge';
 import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
@@ -104,7 +103,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
   const [mode, setMode] = useState<'latest_day' | 'date_range'>('latest_day');
   const yesterday = new Date(Date.now() + 8 * 3600000 - 86400000).toISOString().slice(0, 10);
   const [rangeValid, setRangeValid] = useState(true);
-  const [range, setRange] = useState({ startDate: yesterday, endDate: yesterday });
+  const [date, setDate] = useState(yesterday);
   const [syncing, setSyncing] = useState(false);
   const [status, setStatus] = useState<SyncRunStatus | null>(null);
   const [plan, setPlan] = useState<LatestDaySyncPlan | null>(null);
@@ -192,7 +191,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
     try {
       const response = await createSyncRun({
         mode,
-        ...(mode === 'date_range' ? range : {}),
+        ...(mode === 'date_range' ? { startDate: date, endDate: date } : {}),
         platforms: plan?.platforms ?? ['all', 'web', 'app'],
       });
       if (['running', 'queued', 'pausing'].includes(response.status)) {
@@ -202,7 +201,6 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
         setStatus(started);
         trackSync(started);
         startPolling();
-        toast.info('同步任务已启动');
         return;
       }
       stopPolling();
@@ -214,16 +212,13 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
       setStatus(finalStatus);
       trackSync(finalStatus);
       await refreshPlan();
-      if (response.skipped) {
-        toast.info(response.skipReason ?? '最新日期已更新，已跳过拉取');
-      } else if (response.status !== 'success') {
+      if (!response.skipped && response.status !== 'success') {
         setErrorMsg(response.errorMessage ?? '同步失败，请稍后重试');
       }
     } catch (error) {
       stopPolling();
       const message = getErrorMessage(error);
       setErrorMsg(message);
-      toast.error(`同步请求失败: ${message}`);
     } finally {
       if (!startedAsync) {
         setSyncing(false);
@@ -236,7 +231,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
     onSyncSettled,
     plan,
     mode,
-    range,
+    date,
     rangeValid,
     refreshPlan,
     startPolling,
@@ -273,10 +268,10 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
           </Select>
         </div>
         <div className="flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground">同步区间</span>
+          <span className="text-xs text-muted-foreground">{mode === 'date_range' ? '回刷日期' : '同步日期'}</span>
           {mode === 'date_range' ? (
             <div className={running ? 'pointer-events-none opacity-50' : ''}>
-              <DashboardDateRangePicker selectedRange={range} onRangeChange={setRange} onValidityChange={setRangeValid} ariaLabel="回刷日期" isDisabled={running} availableRange={{ startDate: '2000-01-01', endDate: yesterday }} />
+              <DashboardDatePicker date={date} onDateChange={setDate} onValidityChange={setRangeValid} isDisabled={running} maxDate={yesterday} />
             </div>
           ) : (
             <div className="flex h-8 min-w-[214px] items-center rounded-full border border-gray-200 bg-white px-3 font-mono text-sm text-muted-foreground">
@@ -364,7 +359,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
               <div className="sync-confirm-meta-row">
                 <span>本次拉取日期</span>
                 <strong>
-                  {mode === 'date_range' ? `${range.startDate} ~ ${range.endDate}` : plan ? `${plan.startDate} ~ ${plan.endDate}` : '-'}
+                  {mode === 'date_range' ? date : plan ? `${plan.startDate} ~ ${plan.endDate}` : '-'}
                 </strong>
               </div>
               <div className="sync-confirm-meta-row">

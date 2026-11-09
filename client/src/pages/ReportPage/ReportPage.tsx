@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { FileText, Copy } from 'lucide-react';
-import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
 import { canManagePollocloudApp } from '@/lib/pollocloud';
@@ -30,6 +29,7 @@ export default function ReportPage() {
   const [generation, setGeneration] = useState<ReportGenerationStatus | null>(null);
   const [pollError, setPollError] = useState('');
   const [loadError, setLoadError] = useState('');
+  const [submitError, setSubmitError] = useState('');
   const [reload, setReload] = useState(0);
   const isAdmin = canManagePollocloudApp(user);
   const weeks = useMemo(() => reportWeekOptions(history), [history]);
@@ -74,14 +74,14 @@ export default function ReportPage() {
     if (!isAdmin || generating) return;
     if (report && !window.confirm('当前业务周已有报告，确认重新生成吗？')) return;
     setSubmitting(true);
+    setSubmitError('');
     try {
       const platforms: Platform[] = scope === 'both' ? ['web', 'app'] : [scope];
       const jobs = await Promise.all(platforms.map(target => generateReport({ platform: target, granularity: 'week', startDate: periodStart, endDate: periodEnd })));
       const selectedJob = jobs.find(job => job.platform === platform) ?? jobs[0];
       setGeneration(selectedJob);
       jobs.forEach(trackReport);
-      toast.info(scope === 'both' ? 'Web 和 App 报告已并行启动' : `${scope === 'web' ? 'Web' : 'App'} 报告生成任务已启动`);
-    } catch (error) { toast.error(error instanceof Error ? error.message : '报告生成失败'); }
+    } catch (error) { setSubmitError(error instanceof Error ? error.message : '报告生成失败'); }
     finally { setSubmitting(false); }
   };
 
@@ -101,6 +101,7 @@ export default function ReportPage() {
           {report && <Button variant="ghost" size="sm" className="report-copy-button rounded-xl" onClick={() => void copyAnalysis(normalizeReportNarrative(report.markdown))}><Copy size={14} />复制报告</Button>}
         </div>
       </div>
+      {submitError && <p className="text-sm text-destructive" role="alert">{submitError}</p>}
       {pollError && <p className="text-sm text-muted-foreground" role="status">{pollError}</p>}
       {loading ? <section className="report-empty report-loading" role="status"><LoadingWave label="正在读取报告" /></section>
         : loadError ? <section className="report-empty" role="alert"><p>{loadError}</p><Button variant="outline" onClick={() => setReload(value => value + 1)}>重试</Button></section>
