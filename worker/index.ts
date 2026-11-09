@@ -2869,6 +2869,13 @@ async function runScheduledReports(env: Env, platform: 'web' | 'app', context: {
   return status;
 }
 
+// The platform allows five schedules. Share the report slot while preserving weekly times.
+export function weeklyReportPlatformAt(time: Date): 'web' | 'app' | null {
+  const shanghai = new Date(time.getTime() + 8 * 3600000);
+  if (shanghai.getUTCDay() !== 6) return null;
+  return shanghai.getUTCMinutes() === 0 ? 'web' : shanghai.getUTCMinutes() === 10 ? 'app' : null;
+}
+
 async function cronHandler(
   env: Env,
   request: Request,
@@ -2876,7 +2883,15 @@ async function cronHandler(
 ): Promise<Response> {
   if (request.headers.get('x-pollocloud-trigger') !== 'cron') return errorResponse('仅允许 Pollo Cloud 定时任务触发', 403);
   const path = new URL(request.url).pathname;
-  if (path === '/api/cron/daily-diagnoses') {
+  if (path === '/api/cron/reports') {
+    const scheduled = request.headers.get('x-pollocloud-scheduled-time');
+    const platform = weeklyReportPlatformAt(scheduled ? new Date(scheduled) : new Date());
+    if (platform) {
+      const report = await runScheduledReports(env, platform, context);
+      return json({ok:true,task:'weekly-reports',platform,status:report.status});
+    }
+  }
+  if (path === '/api/cron/daily-diagnoses' || path === '/api/cron/reports') {
     // Keep the scheduled HTTP invocation alive during the model stream, just as sync jobs do.
     const encoder = new TextEncoder();
     let disconnected = false;

@@ -74,9 +74,20 @@ test('actual cron HTTP route invokes the model without a dashboard visit; GET re
  const tasks=[],context={waitUntil:p=>tasks.push(p)};
  try{
   const denied=await worker.fetch(new Request('http://local/api/cron/daily-diagnoses'),env,context);assert.equal(denied.status,403);assert.equal(calls,0);
-  const response=await worker.fetch(new Request('http://local/api/cron/daily-diagnoses',{headers:{'x-pollocloud-trigger':'cron'}}),{...env,KIMI_API_KEY:'fixture'},context);assert.equal((await response.json()).status,'processed');await Promise.all(tasks);assert.equal(calls,1);
+  const response=await worker.fetch(new Request('http://local/api/cron/reports',{headers:{'x-pollocloud-trigger':'cron','x-pollocloud-scheduled-time':'2026-11-09T16:00:00Z'}}),{...env,KIMI_API_KEY:'fixture'},context);assert.equal((await response.json()).status,'processed');await Promise.all(tasks);assert.equal(calls,1);
   const read=await worker.fetch(new Request('http://local/api/daily-diagnosis?platform=web&period=2026-11-08'),env,context);assert.equal((await read.json()).report.markdown,'**HTTP模型原文**');assert.equal(calls,1);
  }finally{globalThis.fetch=original;}
+});
+test('shared report schedule keeps five cron entries and preserves every Shanghai weekly slot',async()=>{
+ const b=await build({entryPoints:['worker/index.ts'],bundle:true,platform:'node',format:'esm',write:false,logLevel:'silent'});
+ const {weeklyReportPlatformAt}=await import(`data:text/javascript;base64,${Buffer.from(b.outputFiles[0].text).toString('base64')}`);
+ const config=JSON.parse(await readFile('pollocloud.json','utf8'));assert.equal(config.cron.length,5);
+ assert.ok(config.cron.some(c=>c.path==='/api/cron/reports'&&c.schedule==='*/5 * * * *'));
+ for(let hour=0;hour<24;hour++)for(let minute=0;minute<60;minute+=5){
+  const saturday=new Date(Date.UTC(2026,10,14,hour-8,minute));
+  assert.equal(weeklyReportPlatformAt(saturday),minute===0?'web':minute===10?'app':null);
+  const friday=new Date(Date.UTC(2026,10,13,hour-8,minute));assert.equal(weeklyReportPlatformAt(friday),null);
+ }
 });
 test('data returning to a previously diagnosed input reuses that historical version',async()=>{
  const {env,db}=setup();let n=80,calls=0;const d=deps({collect:async()=>evidence(n),generate:async()=>{calls++;return `version ${n}`;}});

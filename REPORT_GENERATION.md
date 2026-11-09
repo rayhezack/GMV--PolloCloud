@@ -88,9 +88,9 @@ node --experimental-strip-types scripts/review-daily-diagnosis.mjs --local-db .l
 
 本阶段未接入 HTTP 日报告任务、主 Tab 的点击生成和结果展示，未调整页面或任意日期筛选，未部署。以上属于后续集成阶段，须先由用户评估本地诊断结果。验收入口见 [本阶段结果](archives/daily-diagnosis-review-2026-11-09/本阶段结果.md)。
 
-## 日 GMV 自动诊断接入（本地待发布）
+## 日 GMV 自动诊断接入
 
-完整日数据发布后，缓存失效同时登记监测版本；`/api/cron/daily-diagnoses` 每五分钟检查版本并推进持久化队列，不依赖浏览器访问或点击。监测仅保留大盘、Web、App 的总 GMV；阈值沿用十二个完整业务周 P95/P05、至少八个历史样本及 ±10% 底线。日环比与上周同日同时触发时，同端同日合并，以上周同日为主。
+完整日数据发布后，缓存失效同时登记监测版本；`/api/cron/reports` 每五分钟检查版本并推进持久化队列（与周报共享第五个定时任务，周六每小时00分/10分仍分别执行原 Web/App 周报，日报在其余轮次推进），不依赖浏览器访问或点击。监测仅保留大盘、Web、App 的总 GMV；阈值沿用十二个完整业务周 P95/P05、至少八个历史样本及 ±10% 底线。日环比与上周同日同时触发时，同端同日合并，以上周同日为主。
 
 1. `daily-diagnosis-jobs.ts` 收集数据、校验与计算指纹，调用 `generateMarkdown`；诊断内容全部由已打包 Skill 与模型生成。后端不拼结论、表格或建议。主卡片直接取模型第一段，完整报告沿用现有折叠阅读组件，日模式显式显示异动日与比较日。
 2. 输入指纹包含业务证据、模型及 Skill 版本，忽略读取时间与 SQL 行顺序。相同证据复用；改变后合并成一个待执行版本。历史版本单独保留，不写入周报 latest/history，也不改写飞书周报。
@@ -101,3 +101,6 @@ node --experimental-strip-types scripts/review-daily-diagnosis.mjs --local-db .l
 本地真实验收：`scripts/review-daily-auto.mjs` 将 2026-11-08 的远程只读结果存于 `archives/daily-auto-2026-11-08/sources`，队列写入独立 `.local-data/daily-auto-review.sqlite`。`scripts/serve-daily-review.mjs` 启动只读验收页，读取实际卡片与报告组件；该页不发起模型调用。配置信息不进入报告或归档。
 
 2026-11-10 用户补充：核心摘要必须明确具体下滑付费类型，不能仅写主动付费后跳到漏斗或人群。规则写入主 Skill 与日诊断 reference，并由模型修订 11/08 大盘、Web 摘要，点明套餐升级、重置订阅周期、Ultra；程序不替换首段。真实验收与生成质量边界见 [11/08 验收说明](archives/daily-auto-2026-11-08/验收说明.md)。
+
+
+2026-11-10 发布适配：PolloCloud 最多5个定时任务，因此将原周报调度扩展为统一报告调度，四个数据同步任务不变。旧日报与周报 cron 路径保留兼容，但配置仅注册 `/api/cron/reports`。新增迁移编号为 `0025_daily_diagnoses.sql`，避开线上已有 `0024_dashboard_payment_result_index.sql`。发布基于平台版本 `0mw9hhi3hpqleiatcrd`，保留性能优化；平台单次定时等待4分钟，长模型调用必须经过真实线上验证，不能仅以本地通过推定线上成功。
