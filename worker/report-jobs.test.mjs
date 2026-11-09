@@ -24,7 +24,7 @@ test('production sends exactly the bundled Skill and every prepared datum; retur
     assert.doesNotMatch(body.messages[1].content,/summaryRequired|branchRequired|factIds|evidenceRefs/);
     return stream(modelText);
   };
-  try{assert.equal(await generateMarkdown({KIMI_BASE_URL:'https://fixture.local',KIMI_API_KEY:'fixture'},evidence),modelText);assert.equal(calls,1);}finally{globalThis.fetch=original;}
+  try{const stages=[];assert.equal(await generateMarkdown({KIMI_BASE_URL:'https://fixture.local',KIMI_API_KEY:'fixture'},evidence,'',async stage=>stages.push(stage)),modelText);assert.equal(calls,1);assert.deepEqual(stages,['model_accepted','model_streaming']);}finally{globalThis.fetch=original;}
 });
 test('only explicit human revision notes are forwarded; no automatic prose correction',async()=>{
   const original=globalThis.fetch;let calls=0;
