@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ChartButton } from "@/components/ui/chart-button"
 import { ChartCard } from "@/components/ui/chart-card"
 import { ChartBreakoutCircleIcon, InfoCircleLineIcon } from "@/components/ui/chart-icons"
-import { ChartTooltipLines } from "@/components/ui/chart-tooltip-lines"
+import { ChartTooltipLines, ChartTooltipValue } from "@/components/ui/chart-tooltip-lines"
 import { releaseStyles, useChartEntrance, useCountUp, useIsomorphicLayoutEffect, useReducedMotion } from "@/hooks/use-chart-motion"
 import { useChartSize } from "@/hooks/use-chart-size"
 import { useControllableState } from "@/hooks/use-controllable-state"
@@ -57,6 +57,8 @@ type NetWorthChartProps = Omit<React.ComponentProps<"div">, "children"> & {
   /** Override monetary formatting for ratio metrics. Null denotes unavailable data. */
   formatValue?: (value: number | null) => string
   formatTick?: (value: number) => string
+  /** Optional detail under the selected value, measured together with the existing tooltip. */
+  formatTooltipDetail?: (point: NetWorthPoint) => string
 }
 
 type Bar = { x: number; center: number; top: number; bottom: number; negative: boolean }
@@ -209,6 +211,7 @@ function NetWorthChart({
   currency = "USD",
   formatValue,
   formatTick,
+  formatTooltipDetail,
   className,
   ...props
 }: NetWorthChartProps) {
@@ -242,6 +245,7 @@ function NetWorthChart({
   const money = React.useCallback((value: number | null) => formatValue ? formatValue(value) : value == null ? "—" : formatCurrency(value, { locale, currency }), [formatValue, locale, currency])
   const dateText = (date: string, context: "axis" | "tooltip") =>
     formatDate ? formatDate(date, context) : formatDay(date, context === "axis" ? { month: "short", day: "numeric" } : { weekday: "short", month: "short", day: "numeric" }, locale)
+  const tooltipDetail = point ? formatTooltipDetail?.(point) : undefined
   const tooltip = point ? { date: dateText(point.date, "tooltip"), value: money(point.value) } : undefined
 
   // The tooltip is centred over the active bar (kept inside the plot) and ends 22px above the axis. Its size is
@@ -572,7 +576,7 @@ function NetWorthChart({
                     key={i}
                     type="button"
                     data-slot="net-worth-chart-day"
-                    aria-label={`${dateText(day.date, "tooltip")}: ${money(day.value)}`}
+                    aria-label={`${dateText(day.date, "tooltip")}: ${money(day.value)}${formatTooltipDetail ? ` · ${formatTooltipDetail(day)}` : ""}`}
                     aria-pressed={i === selected}
                     tabIndex={i === selected ? 0 : -1}
                     onPointerEnter={() => setHovered(i)}
@@ -598,12 +602,14 @@ function NetWorthChart({
                 style={{ left: tipLeft, top: tipTop }}
               >
                 <ChartTooltipLines label={tooltip.date} value={tooltip.value} valueRef={tipValueRef} />
+                {tooltipDetail && <ChartTooltipValue>{tooltipDetail}</ChartTooltipValue>}
               </div>
             )}
             {/* the same lines with their final text, measured to place the tooltip (the visible ones change width while they count) */}
             {tooltip && (
               <span ref={sizerRef} aria-hidden className="pointer-events-none invisible absolute top-0 left-0 flex flex-col items-start gap-2 whitespace-nowrap">
                 <ChartTooltipLines label={tooltip.date} value={tooltip.value} />
+                {tooltipDetail && <ChartTooltipValue>{tooltipDetail}</ChartTooltipValue>}
               </span>
             )}
           </div>

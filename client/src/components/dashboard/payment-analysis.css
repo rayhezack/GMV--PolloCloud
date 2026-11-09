@@ -316,3 +316,6 @@
 .payment-registration > header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
 .payment-registration > header h3 { margin:0; }
 .payment-registration-note { color:#64748d; font-size:11px; line-height:1.6; margin-top:12px; }
+
+.payment-layer-back { align-self:flex-start; padding:0; background:transparent; border:0; color:#61718a; font-size:12px; cursor:pointer; }
+.payment-layer-back:hover { color:#533afd; }

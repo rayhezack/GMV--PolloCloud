@@ -73,10 +73,16 @@ export interface PaymentAnalysisResponse {
   costs: PaymentCostPoint[];
   costAvailable: boolean;
   registration?: {
-    rows: { period: string; weekStart: string; payType: string; userLifecycle: string; regCountry: string; gmvUsd: number }[];
+    rows: { period: string; weekStart: string; payType: string; userLifecycle: string; countryTier: string; regPlatform: string; sku: string; planTier: string; planCycle: string; creditAmount: string; previousSku: string; previousPlanTier: string; previousPlanCycle: string; previousCreditAmount: string; gmvUsd: number }[];
     verifiedPayTypes: string[];
   };
   registrationStatus?: 'available' | 'source_missing' | 'table_missing';
+}
+
+export interface PaymentRegistrationTrendResponse {
+  startDate: string; endDate: string;
+  points: { period: string; total: number | null; verified: boolean }[];
+  rows: { period: string; userLifecycle: string; countryTier: string; regPlatform: string; sku: string; planTier: string; planCycle: string; creditAmount: string; previousSku: string; previousPlanTier: string; previousPlanCycle: string; previousCreditAmount: string; gmvUsd: number }[];
 }
 
 export const RENEWAL_PLAN_TIERS = ['LITE', 'PRO', 'ULTRA'] as const;
@@ -528,7 +534,7 @@ export interface ReportSummary {
 export interface PaymentTrendResponse {
   series: Array<{ key: string; label: string; points: Array<{period: string; gmvUsd: number | null; modelCostUsd?: number | null}> }>;
 
-  granularity: 'day' | 'week' | 'month';
+  granularity: 'day' | 'week' | 'month' | 'year';
   startDate: string;
   endDate: string;
   points: Array<{ period: string; gmvUsd: number | null; modelCostUsd: number | null; days: number; source: 'ads_v1' | 'legacy' | 'mixed' | null }>;

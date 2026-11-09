@@ -13,7 +13,7 @@ backfill = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(backfill)
 remote = backfill.remote
 literal = backfill.literal
-COLUMNS = ['period', 'week_start', 'platform', 'device_type', 'pay_type', 'user_lifecycle', 'reg_country', 'gmv_usd']
+COLUMNS = ['period', 'week_start', 'platform', 'device_type', 'pay_type', 'user_lifecycle', 'country_tier', 'reg_platform','sku','plan_tier','plan_cycle','credit_amount','previous_sku','previous_plan_tier','previous_plan_cycle','previous_credit_amount', 'gmv_usd']
 
 
 def reconcile(rows, start, end, table, omitted_types=()):

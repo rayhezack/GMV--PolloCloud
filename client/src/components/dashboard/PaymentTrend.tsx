@@ -60,7 +60,7 @@ export default function PaymentTrend({
 }) {
   const [params, setParams] = useSearchParams();
   const granularity = (
-    ["day", "week", "month"].includes(params.get("paymentGranularity") || "")
+    ["day", "week", "month", "year"].includes(params.get("paymentGranularity") || "")
       ? params.get("paymentGranularity")
       : "day"
   ) as PaymentTrendResponse["granularity"];
@@ -84,6 +84,7 @@ export default function PaymentTrend({
       analysisPeriod,
       attributionType: mode,
       granularity,
+      startDate: granularity === 'year' ? `${analysisPeriod.slice(0,4)}-01-01` : undefined,
       income: scope,
       groupBy: grouping,
       cacheBust: refreshToken || retry || undefined,
@@ -166,11 +167,11 @@ export default function PaymentTrend({
                       : "调用模型趋势"}
           </CardTitle>
           <span className="payment-baseline">
-            {ranges[granularity]} · 日均 GMV
+            {granularity === 'year' ? `${(data?.endDate ?? analysisPeriod).slice(0,4)} 年 · 月日均 GMV` : `${ranges[granularity]} · 日均 GMV`}
           </span>
         </div>
         <IconBar label="趋势颗粒度" value={granularity}
-          items={[{value:'day',label:'日'},{value:'week',label:'周'},{value:'month',label:'月'}] as const}
+          items={[{value:'day',label:'日'},{value:'week',label:'周'},{value:'month',label:'月'},{value:'year',label:'年'}] as const}
           onChange={value => setParams(p => { const next = new URLSearchParams(p); next.set('paymentGranularity',value); return next; }, {replace:true})}/>
       </CardHeader>
       <CardContent className="payment-viz-content">
@@ -254,7 +255,7 @@ export default function PaymentTrend({
                 <XAxis
                   dataKey="period"
                   tickFormatter={(s: string) =>
-                    s.slice(5, 10).replace("-", "/")
+                    granularity === "year" ? `${+s.slice(5,7)}月` : s.slice(5, 10).replace("-", "/")
                   }
                   axisLine={false}
                   tickLine={false}
@@ -284,7 +285,7 @@ export default function PaymentTrend({
                     active && payload?.length ? (
                       <div className="payment-history-tooltip">
                         <strong>
-                          {label}
+                          {granularity === "year" ? `${String(label).slice(0,4)}年${+String(label).slice(5,7)}月 · 日均` : label}
                         </strong>
                         {payload.map((p) => (
                           <span key={String(p.dataKey)}>

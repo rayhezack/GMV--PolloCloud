@@ -10,6 +10,7 @@ import type { AppDeviceType, DashboardPlatform, PaymentTrendResponse } from '@sh
 import { downloadCsv } from './AnalysisWidgets';
 import { latestPaymentDate, paymentShareTrend, type PaymentShareRange } from './payment-history';
 import LoadingWave from './LoadingWave';
+import { formatChartTooltipValue } from '@/lib/chart-tooltip-format';
 
 const formatShare = (value: number | null) => value == null ? '—' : `${(value * 100).toFixed(2)}%`;
 const formatTick = (value: number) => `${+(value * 100).toFixed(2)}%`;
@@ -115,6 +116,10 @@ export function PaymentShareDialog({ entity, label, history, error, context, pla
             {range !== 'week' && <p>{range === 'month' ? '业务周为周六至周五。' : '按自然月汇总。'}首尾周期仅计算所选范围内已到达的日期，不含未来日期。</p>}
             <p>上方数值为最新{range === 'week' ? '一天' : range === 'month' ? '业务周' : '月份'}的占比。</p>
           </>}
+          formatTooltipDetail={point => {
+            const value = rows.find(row => row.date === point.date)?.dailyGmv;
+            return `${range === 'week' ? 'GMV' : '日均 GMV'} ${value == null ? '—' : formatChartTooltipValue(value, 'currency')}`;
+          }}
           formatValue={formatShare}
           formatTick={formatTick}
           formatDate={formatDate}

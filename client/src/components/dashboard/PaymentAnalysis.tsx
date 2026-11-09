@@ -89,7 +89,8 @@ import PaymentDailyDetail from "./PaymentDailyDetail";
 import LoadingWave from './LoadingWave';
 import { ModelBrand } from './ModelBrand';
 import { IconBar } from '@/components/bencho/IconBar';
-import { registrationBreakdown } from './payment-registration';
+import { PaymentRegistrationTrend } from './PaymentRegistrationTrend';
+import { registrationBreakdown, registrationDimensionLabels, registrationDimensions, type RegistrationDimension } from './payment-registration';
 
 // Composition adapted from the user's Mebius Data Viz references:
 // Revenue by Product Line (paired comparisons) and Profit Margin Analysis
@@ -333,7 +334,8 @@ export default function PaymentAnalysis({
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [shareSelected, setShareSelected] = useState<string | null>(null);
-  const [registrationDimension, setRegistrationDimension] = useState<'userLifecycle' | 'regCountry'>('userLifecycle');
+  const [registrationLayer,setRegistrationLayer]=useState<string|null>(null);
+  const [registrationDimension, setRegistrationDimension] = useState<RegistrationDimension>('userLifecycle');
   const [showInsight, setShowInsight] = useState(false);
   const update = (updates: Record<string, string | undefined>) =>
     setParams(
@@ -876,7 +878,7 @@ export default function PaymentAnalysis({
                             <button
                               type="button"
                               className="payment-entity"
-                              onClick={() => setSelected(r.key)}
+                              onClick={() => {setRegistrationLayer(null);setRegistrationDimension(registrationDimensions(r.key)[0]);setSelected(r.key);}}
                               title={entityLabel(r.key)}
                             >
                               {(mode === 'MODEL' || mode === 'ACTUAL_MODEL') && grouping !== 'payType' && <ModelBrand model={r.key} kind={grouping === 'actualSupplier' ? 'supplier' : grouping === 'actualProvider' ? 'provider' : 'model'}/>}
@@ -993,7 +995,7 @@ export default function PaymentAnalysis({
               <Sheet
                 open={Boolean(selectedItem)}
                 onOpenChange={(open) => {
-                  if (!open) setSelected(null);
+                  if (!open) {setSelected(null);setRegistrationLayer(null);}
                 }}
               >
                 <SheetContent
@@ -1005,14 +1007,16 @@ export default function PaymentAnalysis({
                   aria-describedby="payment-detail-description"
                 >
                   <SheetHeader>
+                    {registrationLayer && <button type="button" className="payment-layer-back" onClick={()=>setRegistrationLayer(null)}>‹ 返回付费贡献分析</button>}
                     <SheetTitle ref={detailTitleRef} tabIndex={-1}>
                       {selectedItem && (mode === 'MODEL' || mode === 'ACTUAL_MODEL') && grouping !== 'payType' && <ModelBrand model={selectedItem.key} kind={grouping === 'actualSupplier' ? 'supplier' : grouping === 'actualProvider' ? 'provider' : 'model'}/>}
-                      {selectedItem
+                      {registrationLayer ?? (selectedItem
                         ? entityLabel(selectedItem.key)
-                        : "收入明细"}
+                        : "收入明细")}
                     </SheetTitle>
+
                     <SheetDescription id="payment-detail-description">
-                      {dimension} · {baselinePeriod.slice(5)} 与{" "}
+                      {registrationLayer && selectedItem ? `${entityLabel(selectedItem.key)} · ${registrationDimensionLabels[registrationDimension]}` : dimension} · {baselinePeriod.slice(5)} 与{" "}
                       {analysisPeriod.slice(5)} · 日均 / USD
                     </SheetDescription>
                   </SheetHeader>
@@ -1043,25 +1047,26 @@ export default function PaymentAnalysis({
                           </>
                         )}
                       </div>}
-                      {monthTrend?.length?<RevenueTrend trend={monthTrend} summaryTrend={detail.trend} costs={entityCosts}/>:<div className="payment-history-loading" role="status">{historyError?<><span>月度走势读取失败</span><button type="button" onClick={()=>setHistoryRetry(value=>value+1)}>重新加载</button></>:costHistory?'此范围暂无趋势数据':'正在读取近一个月走势…'}</div>}
-                      {mode === 'NONE' && grouping === 'payType' && <section className="payment-detail-types payment-registration">
+                      {registrationLayer && selected ? <PaymentRegistrationTrend data={data} payType={selected} dimension={registrationDimension} layer={registrationLayer} platform={platform} deviceType={deviceType} refreshToken={refreshToken} renderTrend={(trend,summary)=><RevenueTrend trend={trend} summaryTrend={summary}/>}/> : monthTrend?.length?<RevenueTrend trend={monthTrend} summaryTrend={detail.trend} costs={entityCosts}/>:<div className="payment-history-loading" role="status">{historyError?<><span>月度走势读取失败</span><button type="button" onClick={()=>setHistoryRetry(value=>value+1)}>重新加载</button></>:costHistory?'此范围暂无趋势数据':'正在读取近一个月走势…'}</div>}
+                      {mode === 'NONE' && grouping === 'payType' && !registrationLayer && <section className="payment-detail-types payment-registration">
                         <header>
                           <h3>付费贡献分析</h3>
-                          <IconBar label="付费下钻维度" value={registrationDimension} onChange={value => setRegistrationDimension(value as 'userLifecycle' | 'regCountry')} items={[{value:'userLifecycle',label:'注册新老'},{value:'regCountry',label:'注册国家'}]}/>
+                          {mode === 'NONE' && grouping === 'payType' && <IconBar label="付费下钻维度" value={registrationDimension} onChange={value => setRegistrationDimension(value as RegistrationDimension)} items={registrationDimensions(selected ?? '').map(value=>({value,label:registrationDimensionLabels[value]}))}/>}
+
                         </header>
-                        {registrationRows ? <p className="payment-registration-note">注册国家来自支付订单，注册新老由账户快照的注册日期计算；并非归因表自带维度。按日、付费类型核对了金额，未校验上游注册标签本身。</p> : null}
+                        {registrationRows ? <p className="payment-registration-note">{registrationDimension === 'regPlatform' ? '注册端取自支付订单；页面筛选按支付端，可据此区分同端与跨端付费。' : ['upgradeCombination','cycleTransition'].includes(registrationDimension) ? '变更前取同一订阅、同一支付端的上一笔有效实付；无法关联时保留未知。拆分金额已按日、付费类型核对。' : ['sku','creditAmount'].includes(registrationDimension) ? 'SKU 与积分额度取自支付订单；拆分金额已按日、付费类型核对。' : '国家层级按数仓 T1/T2/T3 映射（清单外及未知归 T2），注册新老按账户注册日期计算；拆分金额已按日、付费类型核对。'}</p> : null}
                         {registrationRows ? <Table>
                           <TableHeader><TableRow>
-                            <TableHead>{registrationDimension === 'userLifecycle' ? '注册新老' : '注册国家'}</TableHead>
+                            <TableHead>{registrationDimensionLabels[registrationDimension]}</TableHead>
                             <TableHead>分析周日均</TableHead><TableHead>变化</TableHead><TableHead>贡献度</TableHead>
                           </TableRow></TableHeader>
                           <TableBody>{registrationRows.map((row,index) => <TableRow key={row.key}>
-                            <TableCell>{row.key}</TableCell><TableCell>{money(row.analysis)}</TableCell>
+                            <TableCell><button type="button" className="payment-entity" onClick={()=>{setRegistrationLayer(row.key);detailTitleRef.current?.closest('[data-slot="sheet-content"]')?.scrollTo({top:0});}}><span className="payment-entity-label">{row.key}</span><ChevronRight size={13}/></button></TableCell><TableCell>{money(row.analysis)}</TableCell>
                             <TableCell><div>{signedMoney(row.analysis-row.baseline)}</div><Change value={relativeChange(row.analysis,row.baseline)}/></TableCell>
                             <TableCell>{registrationContributions[index] == null ? '—' : `${registrationContributions[index]! > 0 ? '+' : ''}${percent(registrationContributions[index])}`}</TableCell>
                           </TableRow>)}</TableBody>
                         </Table> : <p role="status">{data.registrationStatus === 'table_missing' ? '注册明细 D1 表缺失，无法下钻；请检查数据同步。' : data.registrationStatus === 'source_missing' ? '所选日期缺少支付订单注册明细，无法下钻；请检查数据同步。' : data.source === 'legacy' ? '历史口径没有可核对的注册明细，无法下钻。' : '此付费类型的注册明细缺失或与归因表按日金额不一致，无法下钻；请核对数据源。'}</p>}
-                        {registrationRows && <p className="payment-registration-note">新用户指所在业务周内注册；贡献度 = 该分层日均变化 ÷ 此付费类型日均总变化，抵消整体变化的分层为负。</p>}
+                        {registrationRows && <p className="payment-registration-note">{registrationDimension === 'userLifecycle' ? '新用户指所在业务周内注册；' : ''}贡献度 = 该分层日均变化 ÷ 此付费类型日均总变化，抵消整体变化的分层为负。</p>}
                       </section>}
                       {grouping !== "payType" && (
                         <div className="payment-detail-types">

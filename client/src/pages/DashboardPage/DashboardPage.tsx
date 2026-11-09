@@ -892,7 +892,7 @@ function GmvCoverageExplanation({
           <div className="dashboard-lineage-figure"><img src="/data-lineage-operations.svg" width="1280" height="720" alt="创作与投放依赖图：功能表现和创作分层共享活跃事实，广告指标与 LTV 共用注册 cohort 事实" /></div>
           <dl className="dashboard-methodology-definitions">
             <div><dt>GMV 趋势与三张指标卡</dt><dd>MaxCompute 支付归因日表 → D1 pollo_da_fact_rows（pay_type，NONE 结果行）→ overview/payTypeTrend。卡片金额为展示范围内最新日期的单日值，WoW 与 7 天前同日比较；折线展示所选范围全部可用日期。收入趋势的支付结果线同源；付费墙等诊断线另读 pollo_da_chain_funnel，不混入卡片 GMV。</dd></div>
-            <div><dt>付费类型贡献与下钻</dt><dd>支付归因日表 → D1 pollo_da_fact_rows。结果汇总取 NONE 行；功能/模型归因分别取 CREATION_MODE、MODEL 或 ACTUAL_MODEL，不能跨模式相加。注册国家和注册新老另由支付订单表关联用户账户快照 → pollo_da_payment_registration，按同口径订单结果核对后才展示，不从归因表虚构。</dd></div>
+            <div><dt>付费类型贡献与下钻</dt><dd>支付归因日表 → D1 pollo_da_fact_rows。结果汇总取 NONE 行；功能/模型归因分别取 CREATION_MODE、MODEL 或 ACTUAL_MODEL，不能跨模式相加。订单注册国家经数仓维表映射为 T1/T2/T3（清单外及未知归 T2），注册端取自支付订单，注册新老由订单关联账户注册日期计算 → pollo_da_payment_registration，按同口径订单结果核对后才展示。页面端筛选取支付端，注册端下钻用于区分同端与跨端付费。续订按 SKU、升级按前后 SKU、积分包按积分档位、周期重置按前后周期拆分；前值取同一订阅、同一支付端的上一笔有效实付，无法关联时为未知。</dd></div>
             <div><dt>支付链路与自动续订</dt><dd>付费墙用户日表 → pollo_da_chain_funnel / pollo_da_chain_breakdown → 漏斗、驱动及触点下钻。续订 cohort 表 → pollo_da_fact_rows（renewal）→ 到期用户、续订率、续订客单价；到期 cohort GMV 与支付日续费 GMV 不能直接相减。</dd></div>
             <div><dt>创作积极性与分层</dt><dd>创作功能链路日表 → pollo_da_creation_overall_daily / pollo_da_creation_function_daily → 指标卡、创作趋势、功能表现。行为日志和创作记录 → pollo_da_fact_rows（creative）→ 活跃 UV、渗透率及 30 日创作分层。创作 Tab 不展示链路表的 GMV，该字段不是本页支付结果。</dd></div>
             <div><dt>广告投放</dt><dd>广告归因日表 → pollo_da_ads_daily → 点击、成本、注册、ROAS 卡片，国家与渠道周对比，以及注册 Cohort 的 LTV/CAC。国家表按当前选择的分析周指标降序；Cohort 收入按注册日归组，不等同于支付日 GMV。</dd></div>

@@ -77,7 +77,13 @@ def main():
         raise ValueError('Payment results do not reconcile; local data was not changed')
     if args.apply_local:
         db.executescript((ROOT/'db/0015_payment_registration.sql').read_text())
-        columns = ['period','week_start','platform','device_type','pay_type','user_lifecycle','reg_country','gmv_usd']
+        if 'reg_platform' not in [row[1] for row in db.execute('PRAGMA table_info(pollo_da_payment_registration)')]:
+            db.executescript((ROOT/'db/0020_payment_registration_platform.sql').read_text())
+        if 'country_tier' not in [row[1] for row in db.execute('PRAGMA table_info(pollo_da_payment_registration)')]:
+            db.executescript((ROOT/'db/0021_payment_registration_country_tier.sql').read_text())
+        if 'reg_country' in [row[1] for row in db.execute('PRAGMA table_info(pollo_da_payment_registration)')]:
+            db.execute('ALTER TABLE pollo_da_payment_registration DROP COLUMN reg_country')
+        columns = ['period','week_start','platform','device_type','pay_type','user_lifecycle','country_tier','reg_platform','sku','plan_tier','plan_cycle','credit_amount','previous_sku','previous_plan_tier','previous_plan_cycle','previous_credit_amount','gmv_usd']
         with db:
             db.execute('DELETE FROM pollo_da_payment_registration WHERE period BETWEEN ? AND ?', (str(args.start), str(args.end)))
             db.executemany(f"INSERT INTO pollo_da_payment_registration ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})", [[row[c] for c in columns] for row in rows])

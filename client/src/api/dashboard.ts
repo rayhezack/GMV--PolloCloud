@@ -76,7 +76,7 @@ export async function getChainFunnel(params: {
   return response.data as ChainFunnelResponse;
 }
 
-export async function getPaymentTrend(params: {platform:DashboardPlatform;deviceType?:AppDeviceType;analysisPeriod:string;attributionType:GmvAttributionType;granularity:'day'|'week'|'month';income:string;groupBy?:string;startDate?:string;endDate?:string;cacheBust?:number}):Promise<PaymentTrendResponse> {
+export async function getPaymentTrend(params: {platform:DashboardPlatform;deviceType?:AppDeviceType;analysisPeriod:string;attributionType:GmvAttributionType;granularity:'day'|'week'|'month'|'year';income:string;groupBy?:string;startDate?:string;endDate?:string;cacheBust?:number}):Promise<PaymentTrendResponse> {
   const response=await readDashboard<PaymentTrendResponse>(`/api/dashboard/payment-trend${buildQueryString(params)}`);
   return response.data;
 }
@@ -185,4 +185,12 @@ export async function getWorkbookPreview(params: {
 
 export async function getProductActions(): Promise<ProductActionSource> {
   return (await readDashboard<ProductActionSource>('/api/dashboard/product-actions')).data;
+}
+
+
+export async function getPaymentRegistrationTrend(params: {
+  platform: DashboardPlatform; deviceType?: AppDeviceType; startDate: string; endDate: string; payType: string; cacheBust?: number;
+}): Promise<import('@shared/api.interface').PaymentRegistrationTrendResponse> {
+  const response = await readDashboard<import('@shared/api.interface').PaymentRegistrationTrendResponse>(`/api/dashboard/payment-registration-trend${buildQueryString(params)}`);
+  return response.data;
 }
