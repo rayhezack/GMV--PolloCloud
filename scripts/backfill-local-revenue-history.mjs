@@ -26,7 +26,7 @@ export async function backfillLocalRevenueHistory(directory, options = {}) {
   }
   const db = new DatabaseSync(database);
   try {
-    const coverage = db.prepare("SELECT platform, COUNT(*) AS rows, COUNT(DISTINCT period) AS days, SUM(gmv_usd) AS gmv FROM pollo_da_fact_rows WHERE dataset='pay_type' AND attribution_type='NONE' AND pay_type<>'汇总' GROUP BY platform").all();
+    const coverage = db.prepare("SELECT platform, COUNT(*) AS rows, COUNT(DISTINCT period) AS days, SUM(gmv_usd) AS gmv FROM pollo_da_fact_rows_read WHERE dataset='pay_type' AND attribution_type='NONE' AND pay_type<>'汇总' GROUP BY platform").all();
     if (!coverage.length || coverage.some(row => row.days < 188)) throw new Error('季度付费结果及异动基准期不足188天');
     if (manifest) {
       manifest.revenueHistoryStartDate = start;

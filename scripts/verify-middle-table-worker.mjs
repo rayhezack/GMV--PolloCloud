@@ -17,7 +17,7 @@ for (const platform of ['web','app','all']) {
         assert(r.data.paymentBreakdown.length>0,mode);
         assert(r.data.paymentBreakdown.every(row=>row.attributionType===mode));
         // Every mode must sum to the same active-payment GMV for the comparison window.
-        const expected=database.prepare("SELECT SUM(gmv_usd) total FROM pollo_da_fact_rows WHERE dataset='pay_type' AND platform=? AND period BETWEEN '2026-10-17' AND '2026-10-30' AND attribution_type='NONE' AND pay_category='ACTIVE_PAYMENT' AND pay_type<>'汇总'").get(platform).total;
+        const expected=database.prepare("SELECT SUM(gmv_usd) total FROM pollo_da_fact_rows_read WHERE dataset='pay_type' AND platform=? AND period BETWEEN '2026-10-17' AND '2026-10-30' AND attribution_type='NONE' AND pay_category='ACTIVE_PAYMENT' AND pay_type<>'汇总'").get(platform).total;
         const actual=r.data.paymentBreakdown.reduce((total,row)=>total+row.gmvUsd,0);
         assert(Math.abs(actual-expected)<0.00001,`${platform}/${mode}: ${actual} vs ${expected}`);
       }

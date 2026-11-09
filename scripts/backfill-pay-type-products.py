@@ -109,7 +109,7 @@ def validate(start, end):
         if key in identities:
             raise ValueError(('duplicate grain', key))
         identities.add(key)
-        scopes = ['all'] + (['web'] if row['device_type'] == 'web' else ['app'] if row['device_type'] in ('ios', 'android') else [])
+        scopes = ['all']
         for scope in scopes:
             platforms[scope] += 1
             if row['pay_type'] != '汇总':
@@ -250,7 +250,7 @@ def stage(start, end, summary):
 
     try:
         for row in rows_for(start):
-            scopes = ['all'] + (['web'] if row['device_type'] == 'web' else ['app'] if row['device_type'] in ('ios', 'android') else [])
+            scopes = ['all']
             for scope in scopes:
                 value = staged_row(row, scope, now)
                 length = len(value.encode())

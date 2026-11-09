@@ -61,7 +61,7 @@ def main():
     db = sqlite3.connect(args.database)
     expected = dict(((p, platform, device or '', kind), amount) for p, platform, device, kind, amount in db.execute("""
         SELECT period,platform,COALESCE(device_type,''),pay_type,SUM(gmv_usd)
-        FROM pollo_da_fact_rows WHERE dataset='pay_type' AND dataset_kind='daily'
+        FROM pollo_da_fact_rows_read WHERE dataset='pay_type' AND dataset_kind='daily'
           AND attribution_type='NONE' AND pay_type<>'汇总'
           AND pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL','API') AND period BETWEEN ? AND ?
         GROUP BY period,platform,COALESCE(device_type,''),pay_type

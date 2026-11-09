@@ -30,9 +30,9 @@ test('registration migration keeps existing money and permits SKU/platform split
 test('registration trend API conserves matched payments, isolates payment platforms and leaves missing/mismatched dates empty',async()=>{
  const directory=mkdtempSync(join(tmpdir(),'registration-api-')),db=new DatabaseSync(':memory:');
  try{
-  for(const file of ['0009_pollo_da_analytics.sql','0011_middle_table_dimensions.sql','0015_payment_registration.sql'])db.exec(sql(file));
+  for(const file of ['0009_pollo_da_analytics.sql','0010_pay_type_subscription_tier.sql','0011_middle_table_dimensions.sql','0018_payment_product_dimensions.sql','0022_single_payment_facts.sql','0015_payment_registration.sql'])db.exec(sql(file));
   const parent=db.prepare("INSERT INTO pollo_da_fact_rows(dataset,source_record_id,period,week_start,platform,device_type,dataset_kind,attribution_type,pay_category,pay_type,gmv_usd,fields_json,updated_at) VALUES('pay_type',?,?, '2026-10-17',?,'web','daily','NONE','ACTIVE_PAYMENT',?,?, '{}',0)");
-  for(const scope of ['all','web']){parent.run(scope+'20','2026-10-20',scope,'首订',100);parent.run(scope+'21','2026-10-21',scope,'首订',110);parent.run(scope+'22','2026-10-22',scope,'积分包',20);}
+  for(const scope of ['all']){parent.run(scope+'20','2026-10-20',scope,'首订',100);parent.run(scope+'21','2026-10-21',scope,'首订',110);parent.run(scope+'22','2026-10-22',scope,'积分包',20);}
   const insert=db.prepare("INSERT INTO pollo_da_payment_registration(period,week_start,platform,device_type,pay_type,user_lifecycle,country_tier,reg_platform,sku,gmv_usd) VALUES(?,'2026-10-17',?,'web','首订','OLD','T1',?,'Pro_月订_800',?)");
   insert.run('2026-10-20','web','WEB',60);insert.run('2026-10-20','web','IOS',40);
   insert.run('2026-10-21','web','WEB',99);insert.run('2026-10-20','app','ANDROID',900);
@@ -51,9 +51,8 @@ test('registration trend API conserves matched payments, isolates payment platfo
 test('year payment trend reads January through the analysis window and uses actual monthly day denominators',async()=>{
  const directory=mkdtempSync(join(tmpdir(),'payment-year-')),db=new DatabaseSync(':memory:');
  try{
-  for(const file of ['0009_pollo_da_analytics.sql','0011_middle_table_dimensions.sql'])db.exec(sql(file));
-  db.exec('ALTER TABLE pollo_da_fact_rows ADD COLUMN subscription_tier TEXT');
-  const insert=db.prepare("INSERT INTO pollo_da_fact_rows(dataset,source_record_id,period,week_start,platform,device_type,dataset_kind,attribution_type,pay_category,pay_type,gmv_usd,fields_json,updated_at) VALUES('pay_type',?,?,?,'web','web','daily','NONE','AUTO_RENEWAL','自动续订',?,'{}',0)");
+  for(const file of ['0009_pollo_da_analytics.sql','0010_pay_type_subscription_tier.sql','0011_middle_table_dimensions.sql','0018_payment_product_dimensions.sql','0022_single_payment_facts.sql'])db.exec(sql(file));
+  const insert=db.prepare("INSERT INTO pollo_da_fact_rows(dataset,source_record_id,period,week_start,platform,device_type,dataset_kind,attribution_type,pay_category,pay_type,gmv_usd,fields_json,updated_at) VALUES('pay_type',?,?,?,'all','web','daily','NONE','AUTO_RENEWAL','自动续订',?,'{}',0)");
   for(const [date,value] of [['2025-12-31',900],['2026-01-01',10],['2026-01-02',30],['2026-02-01',90],['2026-02-02',110],['2026-02-03',900]])insert.run(date,date,date,value);
   const adapter={prepare(statement){let args=[];return {bind(...a){args=a;return this;},async run(){db.prepare(statement).run(...args);return {success:true};},async all(){return {results:db.prepare(statement).all(...args)};},async first(){return db.prepare(statement).get(...args)??null;}};}};
   const bundle=join(directory,'worker.mjs');buildSync({entryPoints:[fileURLToPath(new URL('./index.ts',import.meta.url))],bundle:true,platform:'node',format:'esm',outfile:bundle,logLevel:'silent'});

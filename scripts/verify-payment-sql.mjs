@@ -13,6 +13,7 @@ db.exec(`CREATE TABLE pollo_da_fact_rows (
   function_name TEXT, user_tag TEXT, subscription_tier TEXT,
   gmv_usd REAL, model_cost_usd REAL
 )`);
+db.exec('CREATE VIEW pollo_da_fact_rows_read AS SELECT * FROM pollo_da_fact_rows');
 const insert = db.prepare('INSERT INTO pollo_da_fact_rows VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
 const dates = Array.from({ length: 365 }, (_, i) => new Date(Date.UTC(2026, 0, i + 1)).toISOString().slice(0, 10));
 for (const date of dates) for (const mode of ['NONE', 'CREATION_MODE', 'MODEL', 'ACTUAL_MODEL', null]) {

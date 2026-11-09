@@ -48,7 +48,7 @@ for (const row of schema) db.exec(row.sql);
 db.exec(await readFile(path.join(root, 'db/0002_dashboard_response_cache.sql'), 'utf8'));
 db.exec(await readFile(path.join(root, 'db/0003_report_jobs.sql'), 'utf8'));
 db.exec(await readFile(path.join(root, 'db/0004_sync_jobs.sql'), 'utf8'));
-for (const migration of ['0015_payment_registration.sql','0016_chain_sync_stage.sql','0017_payment_sync_stage.sql']) db.exec(await readFile(path.join(root,'db',migration),'utf8'));
+for (const migration of ['0015_payment_registration.sql','0016_chain_sync_stage.sql','0017_payment_sync_stage.sql','0022_single_payment_facts.sql']) db.exec(await readFile(path.join(root,'db',migration),'utf8'));
 const statements = new Map();
 for (const table of tables) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((row) => row.name);

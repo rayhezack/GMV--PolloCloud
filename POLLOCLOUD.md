@@ -119,3 +119,16 @@ The task monitor is a compact floating control shared across dashboard routes, c
 The default model is `kimi-k3` at `https://api.moonshot.ai/v1`; optional `KIMI_MODEL` and `KIMI_BASE_URL` override those settings. Secrets are managed with `pollocloud secret set`, never committed. Progress percentages count completed steps; model inference uses an indeterminate bar instead of invented percentage estimates.
 
 “管理成员” opens Pollo Cloud's native embedded share page (`https://pollocloud.com/apps/pollo-ai/share?embed=1`) directly inside the dashboard dialog. This avoids the native button's one-time SPA initialization and keeps report execution alive in the parent layout. The dialog fits the viewport and does not change member access without an explicit user action.
+
+
+## 支付事实单份存储（2026-11-09）
+
+`pollo_da_fact_rows` 的 `pay_type` 仅持久化 `platform=all`，通过 `device_type` 保留 Web、iOS、Android 和未知端。`pollo_da_fact_rows_read` 提供原有全端 / Web / App 查询语义，不存储副本；未知支付端仅计入全端。其他数据集的全端 UV 不可由分端相加，维持原有存储。
+
+部署顺序：先应用 `db/0022_single_payment_facts.sql`，发布单份查询与写入代码，再运行 `python3 scripts/compact-payment-scopes.py --apply`。脚本校验无运行中同步、逐月核对逻辑行数及 GMV / 成本 / 订单当量、安装 `0023` 写入保护，之后删除支付表中的 Web/App 副本。默认不加 `--apply` 只校验。仅删除可由保留的按设备事实完整重建的副本。
+
+付费同步只生成一次 `all-pay_type` 步骤；即便手动选择 Web 或 App，支付数据也统一按全部支付设备刷新该日期范围，并与注册明细一并事务发布。其他数据集仍按选择范围同步。手动支付回刷使用 `backfill-pay-type-products.py`；较早 `backfill-middle-tables.py` 的镜像写入方式已废弃，数据库保护会拒绝旧格式，不能绕过保护运行。注册对账与看板查询应读取只读视图；物理存储量检查读取事实表。
+
+注册端、国家层级、注册新老、SKU、升级组合、积分档位和周期组合保持不变。新增事实字段时，须同步更新 `0022` 视图的显式列清单。不要创建远程整表副本来执行这次压缩。
+
+本次清理和空间回收结果见 `D1_STORAGE_OPTIMIZATION.md`。`VACUUM` 经当前平台执行入口会因事务限制失败；本次已通过副本删除和逐个索引重建回收空间，未声称完成整库紧凑化。

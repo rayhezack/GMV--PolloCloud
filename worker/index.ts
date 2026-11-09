@@ -141,7 +141,7 @@ async function cachedDashboardResponse(env: Env, request: Request, context: { wa
   const url = new URL(request.url);
   url.searchParams.delete('cacheBust');
   url.searchParams.sort();
-  const version = url.pathname === '/api/dashboard/chain-funnel' ? 'v12-chain-enums' : url.pathname === '/api/dashboard/attributions' ? 'v9-lmdi' : url.pathname === '/api/dashboard/payment-analysis' ? 'v7-registration-country-tier' : url.pathname === '/api/dashboard/creative-overview' ? 'v9-creative-history' : url.pathname === '/api/dashboard/overview' ? 'v8' : url.pathname === '/api/dashboard/ads-overview' ? 'v6-ads-lazy' : 'v3';
+  const version = url.pathname === '/api/dashboard/chain-funnel' ? 'v12-chain-enums' : url.pathname === '/api/dashboard/attributions' ? 'v9-lmdi' : url.pathname === '/api/dashboard/payment-analysis' ? 'v8-single-payment-facts' : url.pathname === '/api/dashboard/creative-overview' ? 'v9-creative-history' : url.pathname === '/api/dashboard/overview' ? 'v8' : url.pathname === '/api/dashboard/ads-overview' ? 'v6-ads-lazy' : 'v3';
   const key = `${version}:${url.pathname}?${url.searchParams}`;
   const isCacheablePayload = (payload: string) => {
     if (!['/api/dashboard/chain-funnel','/api/dashboard/creative-overview','/api/dashboard/ads-overview'].includes(url.pathname)) return true;
@@ -522,6 +522,7 @@ async function replaceFactRange(env: Env, dataset: string, platform: string, sta
 }
 
 async function replacePaymentRange(env: Env, platform: string, startDate: string, endDate: string, rows: D1Row[]) {
+  platform = 'all'; // One canonical payment copy; payment device retains scope.
   if (!env.DB?.batch) throw new Error('付费同步需要批量事务');
   const parents = rows.filter(row => row.source_kind !== 'registration');
   const children = rows.filter(row => row.source_kind === 'registration');
@@ -649,7 +650,7 @@ async function dailyRows(env: Env, table: 'pay_type_daily' | 'chain_daily' | 'cr
   if (params.startDate) { conditions.push('period >= ?'); binds.push(params.startDate); }
   if (params.endDate) { conditions.push('period <= ?'); binds.push(params.endDate); }
   if (params.deviceType) { conditions.push('device_type = ?'); binds.push(params.deviceType); }
-  return queryRows(env, `SELECT * FROM pollo_da_fact_rows WHERE ${conditions.join(' AND ')} ORDER BY period`, ...binds);
+  return queryRows(env, `SELECT * FROM pollo_da_fact_rows_read WHERE ${conditions.join(' AND ')} ORDER BY period`, ...binds);
 }
 
 async function latestDailyPeriod(
@@ -660,7 +661,7 @@ async function latestDailyPeriod(
     const rows = await queryRows(env, 'SELECT MAX(period) AS period FROM pollo_da_chain_funnel');
     return asText(rows[0]?.period);
   }
-  const row = await env.DB!.prepare('SELECT MAX(period) AS period FROM pollo_da_fact_rows WHERE dataset = ?')
+  const row = await env.DB!.prepare('SELECT MAX(period) AS period FROM pollo_da_fact_rows_read WHERE dataset = ?')
     .bind(factDataset(table)).first<{ period: string | null }>();
   return row?.period || '';
 }
@@ -1248,7 +1249,7 @@ async function paymentTrend(env: Env, request: Request) {
   if (![startDate, endDate].every((date) => /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date))) || startDate > endDate) return errorResponse('趋势日期范围无效');
   // Only date/source membership is needed here. Reading every SKU/model row for
   // a whole year overloads D1 before the actual grouped revenue query runs.
-  const daily = await queryRows(env, `SELECT period,MAX(attribution_type) AS attribution_type FROM pollo_da_fact_rows
+  const daily = await queryRows(env, `SELECT period,MAX(attribution_type) AS attribution_type FROM pollo_da_fact_rows_read
     WHERE dataset='pay_type' AND platform=? AND period>=? AND period<=?
       AND (attribution_type IS NULL OR (attribution_type='NONE' AND pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL','API') AND pay_type<>'汇总'))
       ${deviceType ? 'AND device_type=?' : ''} GROUP BY period ORDER BY period`, platform,startDate,endDate,...(deviceType ? [deviceType] : []));
@@ -1257,7 +1258,7 @@ async function paymentTrend(env: Env, request: Request) {
   // Canonical revenue history may predate model attribution coverage. Missing model
   // facts must stay unavailable instead of becoming invented zero-cost observations.
   if (hasModels) {
-    const available = await queryRows(env, `SELECT DISTINCT period FROM pollo_da_fact_rows WHERE dataset='pay_type' AND platform=? AND attribution_type=? AND period>=? AND period<=?${deviceType ? ' AND device_type=?' : ''}`, platform, attributionType, startDate, endDate, ...(deviceType ? [deviceType] : []));
+    const available = await queryRows(env, `SELECT DISTINCT period FROM pollo_da_fact_rows_read WHERE dataset='pay_type' AND platform=? AND attribution_type=? AND period>=? AND period<=?${deviceType ? ' AND device_type=?' : ''}`, platform, attributionType, startDate, endDate, ...(deviceType ? [deviceType] : []));
     const dates = new Set(available.map(row=>asText(row.period)));
     for (const date of byDate.keys()) if (!dates.has(date)) byDate.delete(date);
   }
@@ -1786,7 +1787,7 @@ async function creativeOverview(env: Env, request: Request): Promise<Response> {
     const currentDays = dayCounts.get(analysisPeriod) || WEEK_DAYS;
     const baselineDays = dayCounts.get(baselinePeriod) || WEEK_DAYS;
     const periodKeys = [...new Set(overallRows.map((row) => asText(row.period)))].sort();
-    const activityRows = await queryRows(env, "SELECT period,SUM(active_uv) active_uv,SUM(creation_uv) creation_uv,SUM(creation_task_cnt) creation_task_cnt FROM pollo_da_fact_rows WHERE dataset='creative' AND dataset_kind='daily' AND platform=? AND period BETWEEN ? AND ? GROUP BY period",platform,startDate,endDate);
+    const activityRows = await queryRows(env, "SELECT period,SUM(active_uv) active_uv,SUM(creation_uv) creation_uv,SUM(creation_task_cnt) creation_task_cnt FROM pollo_da_fact_rows_read WHERE dataset='creative' AND dataset_kind='daily' AND platform=? AND period BETWEEN ? AND ? GROUP BY period",platform,startDate,endDate);
     const trend = periodKeys.map((period) => {
       const point = creativeChainPoint(period, overallRows.filter(row => asText(row.period) === period));
       const activity = activityRows.filter(row => asText(row.period) === period);
@@ -1939,7 +1940,7 @@ async function attributions(env: Env, request: Request) {
       binds.push(deviceType);
     }
     const breakdownRows = breakdownDates.length
-      ? await queryRows(env, `SELECT period, week_start, pay_type, COALESCE(product_type, subscription_tier) AS subscription_tier, COALESCE(attribution_name, function_name) AS function_name, user_tag, actual_supplier, actual_provider, SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows WHERE ${conditions.join(' AND ')} GROUP BY period, week_start, pay_type, COALESCE(product_type, subscription_tier), COALESCE(attribution_name, function_name), user_tag, actual_supplier, actual_provider`, ...binds)
+      ? await queryRows(env, `SELECT period, week_start, pay_type, COALESCE(product_type, subscription_tier) AS subscription_tier, COALESCE(attribution_name, function_name) AS function_name, user_tag, actual_supplier, actual_provider, SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows_read WHERE ${conditions.join(' AND ')} GROUP BY period, week_start, pay_type, COALESCE(product_type, subscription_tier), COALESCE(attribution_name, function_name), user_tag, actual_supplier, actual_provider`, ...binds)
       : [];
     const paymentBreakdown = breakdownRows.map((row) => ({
       period: asText(row.period),
@@ -2275,6 +2276,7 @@ async function pullDailyFacts(env: Env, platform: string, dataset: DatasetKind, 
     for (let day = startDate; day <= endDate; day = shiftDate(day, 1)) rows.push(...await pullDailyFacts(env, platform, dataset, day, day));
     return rows;
   }
+  if (dataset === 'pay_type') platform = 'all';
   const connection = maxComputeConnection(env);
   const queries = dataset === 'pay_type'
     ? (['NONE', 'CREATION_MODE', 'MODEL', 'ACTUAL_MODEL'] as const).map(mode => buildMiddleTableSql('pay_type', platform, startDate.replaceAll('-', ''), endDate.replaceAll('-', ''), mode))
@@ -2288,8 +2290,8 @@ async function pullDailyFacts(env: Env, platform: string, dataset: DatasetKind, 
       const value = values[index];
       row[key] = value == null ? null : MAXCOMPUTE_NUMBER_FIELDS.has(key) ? Number(value) : asText(value);
     });
-    // The query aggregates by the requested scope; stamp that scope explicitly
-    // so D1 reads can always select all / web / app without inference.
+    // Payment facts use canonical all scope; the read view projects Web/App
+    // from payment device. Other datasets retain their original UV scopes.
     return { ...row, platform: dataset === 'chain' ? row.platform : platform, dataset_kind: 'daily' };
     });
   });
@@ -2331,9 +2333,9 @@ function newSyncJob(
     rowsSynced: 0,
     startedAt: new Date().toISOString(),
     steps: [
-      ...platforms.flatMap(platform => datasets.map(dataset => ({
-        key: `${platform}-${dataset}`,
-        label: `${platform === 'all' ? '全端' : platform === 'web' ? 'Web' : 'App'} · ${SYNC_DATASET_LABELS[dataset]}`,
+      ...platforms.flatMap((platform, index) => datasets.filter(dataset => dataset !== 'pay_type' || index === 0).map(dataset => ({
+        key: `${dataset === 'pay_type' ? 'all' : platform}-${dataset}`,
+        label: `${dataset === 'pay_type' || platform === 'all' ? '全端' : platform === 'web' ? 'Web' : 'App'} · ${SYNC_DATASET_LABELS[dataset]}`,
         status: 'waiting' as const,
       }))),
       { key: 'finish', label: '完成同步', status: 'waiting' as const },

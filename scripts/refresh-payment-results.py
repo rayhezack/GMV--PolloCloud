@@ -64,7 +64,7 @@ def main():
             if row[field] is not None and not math.isfinite(float(row[field])): raise ValueError('Invalid amount')
         if row['pay_type'] != '汇总':
             totals[(row['period'],row['device_type'])][row['attribution_type']] += float(row['gmv_usd'] or 0)
-        scopes = ['all'] + (['web'] if row['device_type']=='web' else ['app'] if row['device_type'] in ('ios','android') else [])
+        scopes = ['all']
         for scope in scopes:
             item = {**row,'dataset':'pay_type','platform':scope,'dataset_kind':'daily','fields_json':'{}','updated_at':now}
             item['source_record_id'] = '|'.join(str(item.get(key) or '') for key in IDENTITY)
@@ -75,6 +75,7 @@ def main():
     identities = [row['source_record_id'] for row in records]
     if len(identities) != len(set(identities)): raise ValueError('Duplicate dashboard identities')
     db = sqlite3.connect(args.database)
+    db.executescript((ROOT/'db/0022_single_payment_facts.sql').read_text())
     if args.apply_local:
         backup_path = directory/f'dashboard-before-source-migration-{now}.sqlite'
         backup = sqlite3.connect(backup_path); db.backup(backup); backup.close()

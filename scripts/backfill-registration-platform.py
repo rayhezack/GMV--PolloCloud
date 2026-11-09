@@ -30,7 +30,7 @@ def validate_stage(start, end, count, allowed_dates=()):
       SELECT period,'all' AS platform,device_type,pay_type,SUM(gmv_usd) AS gmv FROM {STAGE} WHERE {bounds} GROUP BY 1,3,4
       UNION ALL SELECT period,platform,device_type,pay_type,SUM(gmv_usd) AS gmv FROM {STAGE} WHERE {bounds} AND platform IN ('web','app') GROUP BY 1,2,3,4
     ), expected AS (
-      SELECT period,platform,device_type,pay_type,SUM(gmv_usd) AS gmv FROM pollo_da_fact_rows
+      SELECT period,platform,device_type,pay_type,SUM(gmv_usd) AS gmv FROM pollo_da_fact_rows_read
       WHERE dataset='pay_type' AND dataset_kind='daily' AND attribution_type='NONE' AND pay_type<>'汇总' AND {bounds}
       GROUP BY 1,2,3,4
     ), differences AS (

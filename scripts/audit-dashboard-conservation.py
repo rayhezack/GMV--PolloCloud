@@ -14,7 +14,7 @@ QUERIES = {
     'payment_modes': """
 WITH amounts AS (
   SELECT period,platform,attribution_type,SUM(gmv_usd) g
-  FROM pollo_da_fact_rows WHERE dataset='pay_type' AND pay_type<>'汇总'
+  FROM pollo_da_fact_rows_read WHERE dataset='pay_type' AND pay_type<>'汇总'
   GROUP BY 1,2,3
 ), groups AS (
   SELECT COUNT(*) modes,MIN(g) low,MAX(g) high FROM amounts GROUP BY period,platform
@@ -25,7 +25,7 @@ SELECT COUNT(*) groups,SUM(CASE WHEN modes<>4 OR ROUND((high-low)*100)<>0 THEN 1
 WITH totals AS (
   SELECT period,attribution_type,
     ROUND(SUM(CASE WHEN platform='all' THEN gmv_usd ELSE -gmv_usd END)*100) delta_cents
-  FROM pollo_da_fact_rows WHERE dataset='pay_type' AND pay_type<>'汇总'
+  FROM pollo_da_fact_rows_read WHERE dataset='pay_type' AND pay_type<>'汇总'
   GROUP BY 1,2
 )
 SELECT COUNT(*) groups,SUM(CASE WHEN delta_cents<>0 THEN 1 ELSE 0 END) failures FROM totals
@@ -35,7 +35,7 @@ WITH amounts AS (
   SELECT period,platform,device_type,pay_category,pay_type,
     COALESCE(product_type,'') product_type,COALESCE(product_type_lv2,'') product_type_lv2,
     attribution_type,SUM(gmv_usd) g
-  FROM pollo_da_fact_rows WHERE dataset='pay_type' AND pay_type<>'汇总'
+  FROM pollo_da_fact_rows_read WHERE dataset='pay_type' AND pay_type<>'汇总'
     AND period BETWEEN '__START__' AND '__END__'
   GROUP BY 1,2,3,4,5,6,7,8
 ), groups AS (
@@ -46,7 +46,7 @@ SELECT COUNT(*) groups,SUM(CASE WHEN modes<>4 OR ROUND((high-low)*100)<>0 THEN 1
 """,
     'payment_registration': """
 WITH parents AS (
-  SELECT period,device_type,pay_type,SUM(gmv_usd) g FROM pollo_da_fact_rows
+  SELECT period,device_type,pay_type,SUM(gmv_usd) g FROM pollo_da_fact_rows_read
   WHERE dataset='pay_type' AND platform='all' AND attribution_type='NONE' AND pay_type<>'汇总'
   GROUP BY 1,2,3
 ), children AS (
@@ -100,7 +100,7 @@ FROM parents LEFT JOIN children USING(period,platform_type)
 """,
     'renewal_plan': """
 SELECT COUNT(*) rows,SUM(CASE WHEN product_type IS NULL THEN 1 ELSE 0 END) missing_tiers
-FROM pollo_da_fact_rows WHERE dataset='pay_type' AND attribution_type='NONE'
+FROM pollo_da_fact_rows_read WHERE dataset='pay_type' AND attribution_type='NONE'
   AND pay_category='AUTO_RENEWAL' AND pay_type<>'汇总'
 """,
     'ads': """
@@ -126,8 +126,8 @@ SELECT COUNT(*) groups,SUM(CASE WHEN parents.cost<>countries.cost
 FROM parents JOIN countries USING(period,platform) JOIN channels USING(period,platform)
 """,
     'freshness': """
-SELECT 'pay_type' source,MAX(period) last_day FROM pollo_da_fact_rows WHERE dataset='pay_type'
-UNION ALL SELECT 'renewal',MAX(period) FROM pollo_da_fact_rows WHERE dataset='renewal'
+SELECT 'pay_type' source,MAX(period) last_day FROM pollo_da_fact_rows_read WHERE dataset='pay_type'
+UNION ALL SELECT 'renewal',MAX(period) FROM pollo_da_fact_rows_read WHERE dataset='renewal'
 UNION ALL SELECT 'chain',MAX(period) FROM pollo_da_chain_funnel
 UNION ALL SELECT 'creative',MAX(period) FROM pollo_da_creation_overall_daily
 UNION ALL SELECT 'ads',MAX(period) FROM pollo_da_ads_daily

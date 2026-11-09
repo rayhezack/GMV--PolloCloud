@@ -22,7 +22,7 @@ def reconcile(rows, start, end, table, omitted_types=()):
         for platform in ['all', row['platform']] if row['platform'] in ('web', 'app') else ['all']:
             source[(row['period'], platform, row['device_type'], row['pay_type'])] += decimal.Decimal(str(row['gmv_usd']))
     facts = remote(f"SELECT period,platform,device_type,pay_type,SUM(gmv_usd) AS gmv "
-                   f"FROM pollo_da_fact_rows WHERE dataset='pay_type' AND attribution_type='NONE' "
+                   f"FROM pollo_da_fact_rows_read WHERE dataset='pay_type' AND attribution_type='NONE' "
                    f"AND pay_type<>'汇总' AND period BETWEEN {literal(start)} AND {literal(end)} "
                    "GROUP BY period,platform,device_type,pay_type")[0]['results']
     expected = {(row['period'], row['platform'], row['device_type'], row['pay_type']): decimal.Decimal(str(row['gmv'])) for row in facts if row['pay_type'] not in omitted_types}

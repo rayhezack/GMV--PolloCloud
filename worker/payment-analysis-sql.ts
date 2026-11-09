@@ -60,8 +60,8 @@ export function paymentAnalysisSql(
   return {
     sql:
       measure === "cost"
-        ? `SELECT ${dimensions},SUM(model_cost_usd) AS model_cost_usd FROM pollo_da_fact_rows WHERE ${filters.join(" AND ")} GROUP BY ${group} HAVING SUM(model_cost_usd)<>0`
-        : `SELECT ${dimensions},${category} AS pay_category,pay_type,SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows WHERE ${filters.join(" AND ")} GROUP BY ${group},${category},pay_type`,
+        ? `SELECT ${dimensions},SUM(model_cost_usd) AS model_cost_usd FROM pollo_da_fact_rows_read WHERE ${filters.join(" AND ")} GROUP BY ${group} HAVING SUM(model_cost_usd)<>0`
+        : `SELECT ${dimensions},${category} AS pay_category,pay_type,SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows_read WHERE ${filters.join(" AND ")} GROUP BY ${group},${category},pay_type`,
     binds,
   };
 }
