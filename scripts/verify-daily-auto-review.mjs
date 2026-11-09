@@ -11,7 +11,8 @@ const prepare = sql => {
   const bound = (values = []) => ({ bind: (...v) => bound(v), all: async () => ({ results: stmt.all(...values) }), first: async () => stmt.get(...values) || null, run: async () => stmt.run(...values) });
   return bound();
 };
-const env = { DB: { prepare }, KIMI_MODEL: 'kimi-k3' };
+const STORAGE={getText:async key=>readFile(`.local-data/daily-review-files/${key}`,'utf8'),put:async()=>{throw Error('Reusing unchanged input must not rewrite files');}};
+const env = { DB: { prepare }, STORAGE, KIMI_MODEL: 'kimi-k3' };
 const compiled = await build({ entryPoints: ['worker/daily-diagnosis-jobs.ts'], bundle: true, platform: 'node', format: 'esm', write: false, logLevel: 'silent' });
 const { tickDailyDiagnoses, markDailyDiagnosisDirty, getDailyDiagnosis } = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputFiles[0].text).toString('base64')}`);
 try {
@@ -22,7 +23,7 @@ try {
   let modelCalls = 0;
   const dependencies = {
     detect: async () => detection,
-    collect: async signals => JSON.parse(db.prepare("SELECT evidence FROM daily_diagnosis_jobs WHERE platform=? AND status='success' ORDER BY created_at DESC,rowid DESC LIMIT 1").get(signals[0].platform).evidence),
+    collect: async signals => {const raw=db.prepare("SELECT evidence FROM daily_diagnosis_jobs WHERE platform=? AND status='success' ORDER BY created_at DESC,rowid DESC LIMIT 1").get(signals[0].platform).evidence;return JSON.parse(raw.startsWith('daily-storage:')?await STORAGE.getText(raw.slice('daily-storage:'.length)):raw);},
     generate: async () => { modelCalls++; throw Error('Repeated input must not call the model'); },
   };
   const before = count();

@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS daily_diagnosis_jobs (
   run_id TEXT PRIMARY KEY, platform TEXT NOT NULL, period TEXT NOT NULL,
   baseline TEXT NOT NULL, input_hash TEXT NOT NULL, evidence TEXT NOT NULL,
   status TEXT NOT NULL, requested_by TEXT NOT NULL,
-  markdown TEXT, model TEXT, error TEXT, created_at TEXT NOT NULL, finished_at TEXT
+  markdown TEXT, model TEXT, error TEXT, created_at TEXT NOT NULL, finished_at TEXT,
+  stage TEXT, progress_at TEXT
 );
 CREATE INDEX IF NOT EXISTS daily_diagnosis_queue ON daily_diagnosis_jobs(status,created_at);
 CREATE INDEX IF NOT EXISTS daily_diagnosis_history ON daily_diagnosis_jobs(platform,period,created_at DESC);

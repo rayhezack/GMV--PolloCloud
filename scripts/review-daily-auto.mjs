@@ -26,7 +26,12 @@ const local=new DatabaseSync('.local-data/daily-auto-review.sqlite');
 local.exec(await readFile('db/0025_daily_diagnoses.sql','utf8'));local.exec('CREATE TABLE IF NOT EXISTS sync_jobs(run_id TEXT,status TEXT)');
 const prepare=(sql)=>{const isLocal=/\bdaily_diagnosis_|\bsync_jobs\b/.test(sql);const bound=(binds=[])=>({bind:(...b)=>bound(b),all:async()=>({results:isLocal?local.prepare(sql).all(...binds):await remote(sql,...binds)}),first:async()=>isLocal?local.prepare(sql).get(...binds)||null:(await remote(sql,...binds))[0]||null,run:async()=>{if(!isLocal)throw Error('远程写入禁止');return local.prepare(sql).run(...binds);}});return bound();};
 const config=args.includes('--config')?parse(await readFile(opt('--config'),'utf8')):{};
-const env={DB:{prepare},...config};
+const storagePath=key=>`.local-data/daily-review-files/${key}`;
+const STORAGE={
+ put:async(key,value)=>{const path=storagePath(key);await mkdir(path.slice(0,path.lastIndexOf('/')),{recursive:true});await writeFile(path,value);},
+ getText:async key=>readFile(storagePath(key),'utf8').catch(e=>{if(e.code==='ENOENT')return null;throw e;}),
+};
+const env={DB:{prepare},STORAGE,...config};
 const bundle=async file=>{const b=await build({entryPoints:[file],bundle:true,platform:'node',format:'esm',write:false,logLevel:'silent'});return import(`data:text/javascript;base64,${Buffer.from(b.outputFiles[0].text).toString('base64')}`);};
 try{
  const {gmvAnomalies}=await bundle('worker/index.ts');
@@ -45,6 +50,6 @@ try{
   if(state.report)await save(`${platform}-模型完整诊断.md`,state.report.markdown);
  }
  const jobs=local.prepare('SELECT platform,period,baseline,input_hash,status,evidence,error FROM daily_diagnosis_jobs ORDER BY created_at').all();
- for(const j of jobs){await save(`${j.platform}-evidence.json`,JSON.parse(j.evidence));console.log('Job',j.platform,j.status,j.error||'');}
+ for(const j of jobs){const raw=j.evidence.startsWith('daily-storage:')?await STORAGE.getText(j.evidence.slice('daily-storage:'.length)):j.evidence;await save(`${j.platform}-evidence.json`,JSON.parse(raw));console.log('Job',j.platform,j.status,j.error||'');}
  await save('read-receipts.json',{receipts,remoteRowsWritten:0,reviewDate:'2026-11-08',generatedAt:new Date().toISOString()});
 }catch(error){console.error(String(error.message).replace(/sk-[\w-]+/g,'[已隐藏密钥]'));process.exitCode=1;}finally{local.close();}

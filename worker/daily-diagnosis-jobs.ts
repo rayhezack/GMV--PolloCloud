@@ -41,7 +41,7 @@ async function readContent(env: Env, content: string) {
 /** Read timestamps and row order must not create new paid calls. Full evidence is retained separately. */
 export async function dailyInputHash(evidence: unknown, model = 'kimi-k3') {
   const stable = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(stable).sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+    if (Array.isArray(value)) return value.map(v=>{const data=stable(v);return {data,key:JSON.stringify(data)};}).sort((a,b)=>a.key.localeCompare(b.key)).map(v=>v.data);
     if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).filter(([k]) => k !== 'readAt').sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,stable(v)]));
     return value;
   };
@@ -143,14 +143,17 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies) {
     }
     const job = (await rows<Job>(env,"SELECT j.* FROM daily_diagnosis_jobs j JOIN daily_diagnosis_state s ON s.platform=j.platform AND s.period=j.period AND s.input_hash=j.input_hash WHERE j.status='queued' AND s.active=1 ORDER BY j.created_at,j.rowid LIMIT 1"))[0];
     if (!job) return {status:'idle'};
-    await run(env,"UPDATE daily_diagnosis_jobs SET status='running' WHERE run_id=?",job.run_id);
+    await run(env,"UPDATE daily_diagnosis_jobs SET status='running',stage='loading_evidence',progress_at=? WHERE run_id=?",now(),job.run_id);
     await run(env,"UPDATE daily_diagnosis_state SET status='running',error=NULL,updated_at=? WHERE platform=? AND period=? AND input_hash=?",now(),job.platform,job.period,job.input_hash);
     try {
       if (!env.KIMI_API_KEY && !dependencies.generate) throw new Error('日诊断模型未配置');
       const evidence = prepareReportData(JSON.parse(await readContent(env,job.evidence)));
-      const markdown = await (dependencies.generate ?? (e=>generateMarkdown(env,e)))(evidence);
+      const progress = (stage:string)=>run(env,'UPDATE daily_diagnosis_jobs SET stage=?,progress_at=? WHERE run_id=?',stage,now(),job.run_id);
+      await progress('calling_model');
+      const markdown = await (dependencies.generate ?? (e=>generateMarkdown(env,e,'',progress)))(evidence);
+      await progress('saving_report');
       const storedMarkdown = await saveContent(env,`daily-diagnoses/reports/${job.run_id}.md`,markdown);
-      await run(env,"UPDATE daily_diagnosis_jobs SET status='success',markdown=?,model=?,finished_at=? WHERE run_id=?",storedMarkdown,env.KIMI_MODEL||'kimi-k3',now(),job.run_id);
+      await run(env,"UPDATE daily_diagnosis_jobs SET status='success',stage='complete',error=NULL,markdown=?,model=?,finished_at=? WHERE run_id=?",storedMarkdown,env.KIMI_MODEL||'kimi-k3',now(),job.run_id);
       // Changes arriving during generation invalidate publication, while retaining the historical result.
       await run(env,`UPDATE daily_diagnosis_state SET current_report_id=?,status=CASE WHEN (SELECT revision FROM daily_diagnosis_monitor WHERE id=1)=? THEN 'success' ELSE 'waiting' END,updated_at=? WHERE platform=? AND period=? AND active=1 AND input_hash=?`,job.run_id,revision,now(),job.platform,job.period,job.input_hash);
     } catch(e) {

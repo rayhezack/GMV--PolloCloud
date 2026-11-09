@@ -209,7 +209,7 @@ export async function executeReport(env: Env, job: ReportGenerationStatus, deps:
   } finally { clearInterval(heartbeat); await persist(); }
 }
 
-export async function generateMarkdown(env: Env, evidence: unknown, revision = ''): Promise<string> {
+export async function generateMarkdown(env: Env, evidence: unknown, revision = '', onProgress?: (stage: string) => Promise<void>): Promise<string> {
   const data = prepareReportData(evidence);
   const response = await fetch(`${(env.KIMI_BASE_URL || 'https://api.moonshot.ai/v1').replace(/\/+$/, '')}/chat/completions`, {
     method: 'POST', signal: AbortSignal.timeout(600000),
@@ -221,6 +221,7 @@ export async function generateMarkdown(env: Env, evidence: unknown, revision = '
     const detail=[payload.error?.type,payload.error?.message].filter(Boolean).join('：').replace(/sk-[A-Za-z0-9_-]+/g,'[已隐藏密钥]').slice(0,300);
     throw new Error(`报告模型请求失败（${response.status}）${detail?'：'+detail:'，请检查模型配置或额度。'}`);
   }
+  await onProgress?.('model_accepted');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '', result = '', finish = '';
@@ -233,12 +234,14 @@ export async function generateMarkdown(env: Env, evidence: unknown, revision = '
     result += chunk.choices?.[0]?.delta?.content ?? '';
     finish = chunk.choices?.[0]?.finish_reason || finish;
   };
+  let lastProgress = 0;
   while (true) {
     const { done, value } = await reader.read();
     buffer += decoder.decode(value, { stream: !done });
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() || '';
     lines.forEach(consume);
+    if (!done && onProgress && Date.now() - lastProgress > 30000) { await onProgress('model_streaming'); lastProgress = Date.now(); }
     if (done) { if (buffer) consume(buffer); break; }
   }
   if (!result.trim() || finish !== 'stop') throw new Error(`模型未完整生成报告（结束状态：${finish || '缺失'}），请重试。`);
