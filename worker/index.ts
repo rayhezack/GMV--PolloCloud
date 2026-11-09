@@ -1246,7 +1246,12 @@ async function paymentTrend(env: Env, request: Request) {
   const shiftMonth = (value:string,n:number) => { const d=new Date(monthStart(value)+'T00:00:00Z');d.setUTCMonth(d.getUTCMonth()+n);return d.toISOString().slice(0,10); };
   const startDate = p.get('startDate') || (granularity==='day' ? shiftDate(endDate,-29) : granularity==='week' ? shiftDate(analysis,-84) : granularity==='year' ? endDate.slice(0,4)+'-01-01' : shiftMonth(endDate,-2));
   if (![startDate, endDate].every((date) => /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date))) || startDate > endDate) return errorResponse('趋势日期范围无效');
-  const daily = await dailyRows(env,'pay_type_daily',{platform,deviceType,startDate,endDate});
+  // Only date/source membership is needed here. Reading every SKU/model row for
+  // a whole year overloads D1 before the actual grouped revenue query runs.
+  const daily = await queryRows(env, `SELECT period,MAX(attribution_type) AS attribution_type FROM pollo_da_fact_rows
+    WHERE dataset='pay_type' AND platform=? AND period>=? AND period<=?
+      AND (attribution_type IS NULL OR (attribution_type='NONE' AND pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL','API') AND pay_type<>'汇总'))
+      ${deviceType ? 'AND device_type=?' : ''} GROUP BY period ORDER BY period`, platform,startDate,endDate,...(deviceType ? [deviceType] : []));
   const hasModels = ['MODEL','ACTUAL_MODEL'].includes(attributionType);
   const byDate = new Map(daily.filter((r)=>!hasModels || isAttributedPayRow(r)).map((r)=>[asText(r.period),r]));
   // Canonical revenue history may predate model attribution coverage. Missing model
