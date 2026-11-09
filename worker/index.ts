@@ -517,8 +517,15 @@ async function replaceFactRange(env: Env, dataset: string, platform: string, sta
   if ((dataset === 'pay_type' || dataset === 'chain') && !rows.length) throw new Error('中间表返回空结果，已阻止覆盖已有数据');
   if (dataset === 'chain') return replaceChainRange(env, platform, startDate, endDate, rows);
   if (dataset === 'pay_type') return replacePaymentRange(env, platform, startDate, endDate, rows);
-  await clearFactRange(env, dataset, startDate, endDate, platform);
-  return writeFactRows(env, dataset, rows);
+  if (!env.DB?.batch) throw new Error('同步需要 D1 批量事务');
+  if (!rows.length || rows.some(row => asText(row.platform) !== platform || !dateInRange(asText(row.period), startDate, endDate))) {
+    throw new Error('源数据为空或日期、端口不符，已保留原数据');
+  }
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM pollo_da_fact_rows WHERE dataset = ? AND period >= ? AND period <= ? AND platform = ?').bind(dataset, startDate, endDate, platform),
+    ...rows.map(row => env.DB!.prepare(FACT_INSERT_SQL).bind(...factValues(dataset, row))),
+  ]);
+  return rows.length;
 }
 
 async function replacePaymentRange(env: Env, platform: string, startDate: string, endDate: string, rows: D1Row[]) {
@@ -661,7 +668,7 @@ async function latestDailyPeriod(
     const rows = await queryRows(env, 'SELECT MAX(period) AS period FROM pollo_da_chain_funnel');
     return asText(rows[0]?.period);
   }
-  const row = await env.DB!.prepare('SELECT MAX(period) AS period FROM pollo_da_fact_rows_read WHERE dataset = ?')
+  const row = await env.DB!.prepare('SELECT MAX(period) AS period FROM pollo_da_fact_rows WHERE dataset = ?')
     .bind(factDataset(table)).first<{ period: string | null }>();
   return row?.period || '';
 }
@@ -2187,6 +2194,29 @@ async function latestSync(env: Env) {
   return json(latest ? JSON.parse(latest.payload) : null);
 }
 
+// Presence checks return at most three rows per day, never financial payloads.
+async function syncCoverage(env: Env, sheet: DailySheet, startDate: string, endDate: string) {
+  if (sheet === 'chain_daily') {
+    return queryRows(env, `WITH coverage AS (
+      SELECT period, platform FROM pollo_da_chain_funnel WHERE period BETWEEN ? AND ? GROUP BY period, platform
+    ) SELECT period, platform FROM coverage UNION SELECT period, 'all' AS platform FROM coverage`, startDate, endDate);
+  }
+  const dataset = factDataset(sheet);
+  if (dataset === 'pay_type') {
+    return queryRows(env, `WITH coverage AS (
+      SELECT period, device_type FROM pollo_da_fact_rows
+      WHERE dataset = 'pay_type' AND platform = 'all' AND period BETWEEN ? AND ?
+        AND (analysis_level IS NULL OR analysis_level = '')
+        AND (attribution_type IS NULL OR (attribution_type = 'NONE'
+          AND pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL','API') AND pay_type <> '汇总'))
+      GROUP BY period, device_type
+    ) SELECT period, 'all' AS platform FROM coverage GROUP BY period
+      UNION SELECT period, CASE WHEN device_type = 'web' THEN 'web' ELSE 'app' END AS platform
+      FROM coverage WHERE device_type IN ('web','ios','android') GROUP BY period, platform`, startDate, endDate);
+  }
+  return queryRows(env, 'SELECT period, platform FROM pollo_da_fact_rows WHERE dataset = ? AND period BETWEEN ? AND ? GROUP BY period, platform', dataset, startDate, endDate);
+}
+
 async function syncPlan(env: Env, mode: SyncMode, requestedDatasets?: SyncDataset[]) {
   const datasetsToCheck = requestedDatasets?.length ? requestedDatasets : [...SYNC_DATASETS];
   const sheets = datasetsToCheck.map((dataset) => `${dataset}_daily`) as Array<'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily'>;
@@ -2214,15 +2244,14 @@ async function syncPlan(env: Env, mode: SyncMode, requestedDatasets?: SyncDatase
       : yesterday;
     const entries = await Promise.all(sheets.map(async (sheet) => [
       sheet,
-      await dailyRows(env, sheet, { startDate, endDate: startDate }),
+      await syncCoverage(env, sheet, startDate, startDate),
     ] as const));
     const rowsBySheet = new Map(entries);
     const missingItems = platforms.flatMap((platform) => sheets
       .filter((sheet) => {
         const rows = rowsBySheet.get(sheet) ?? [];
         const platformRows = rows.filter((row) => asText(row.platform) === platform && asText(row.period) === startDate);
-        const hasExpectedPayTypeShape = sheet !== 'pay_type_daily' || platformRows.some((row) => !asText(row.analysis_level));
-        return platformRows.length === 0 || !hasExpectedPayTypeShape;
+        return platformRows.length === 0;
       })
       .map((sheet) => ({ sheet, platform, datasetKind: 'daily', expectedPeriod: startDate, recordCount: 0 })));
     const alreadySynced = startDate === yesterday && missingItems.length === 0;
@@ -2237,14 +2266,13 @@ async function syncPlan(env: Env, mode: SyncMode, requestedDatasets?: SyncDatase
   const endDate = end.toISOString().slice(0, 10);
   const entries = await Promise.all(sheets.map(async (sheet) => [
     sheet,
-    await dailyRows(env, sheet, { startDate, endDate }),
+    await syncCoverage(env, sheet, startDate, endDate),
   ] as const));
   const rowsBySheet = new Map(entries);
   const missingItems = platforms.flatMap((platform) => sheets.flatMap((sheet) => {
     const platformRows = (rowsBySheet.get(sheet) ?? []).filter((row) => asText(row.platform) === platform && asText(row.period) >= startDate && asText(row.period) <= endDate);
     const days = new Set(platformRows.map((row) => asText(row.period)));
-    const hasExpectedPayTypeShape = sheet !== 'pay_type_daily' || platformRows.some((row) => !asText(row.analysis_level));
-    return days.size === 7 && hasExpectedPayTypeShape ? [] : [{ sheet, platform, datasetKind: 'daily', expectedPeriod: `${startDate} ~ ${endDate}`, recordCount: days.size }];
+    return days.size === 7 ? [] : [{ sheet, platform, datasetKind: 'daily', expectedPeriod: `${startDate} ~ ${endDate}`, recordCount: days.size }];
   }));
   return json({ mode, startDate, endDate, platforms, alreadySynced: missingItems.length === 0, canSync: missingItems.length > 0, running: false, missingItems, datasets: datasetsToCheck });
 }
@@ -2309,7 +2337,7 @@ async function pullDailyFacts(env: Env, platform: string, dataset: DatasetKind, 
 
 type DailySheet = 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily';
 
-type SyncJobState = SyncRunStatus & { runLogId?: string; writtenSteps?: string[] };
+type SyncJobState = SyncRunStatus & { runLogId?: string; writtenSteps?: string[]; completedRows?: number };
 const SYNC_DATASETS = ['pay_type', 'chain', 'creative', 'renewal'] as const;
 const SYNC_DATASET_LABELS = { pay_type: '付费类型', chain: '支付链路', creative: '创作积极性', renewal: '自动续订' };
 
@@ -2328,6 +2356,7 @@ function newSyncJob(
     stage: 'pull',
     startDate,
     endDate,
+    currentDate: startDate,
     platforms,
     datasets,
     rowsSynced: 0,
@@ -2398,11 +2427,25 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
         const dataset = item.key.slice(separator + 1) as DatasetKind;
         const rows = await loadStagedRows(env, job.runId, item.key);
         if (!FACT_DATASETS.has(dataset)) throw new Error(`同步数据集无效：${dataset}`);
-        job.rowsSynced += await replaceFactRange(env, dataset, platform, job.startDate, job.endDate, rows);
+        job.rowsSynced += await replaceFactRange(env, dataset, platform, job.currentDate ?? job.startDate, job.currentDate ?? job.endDate, rows);
         job.writtenSteps = [...(job.writtenSteps ?? []), item.key];
-        finish.detail = `已写入 ${job.writtenSteps.length}/${dataSteps.length} 端 · ${job.rowsSynced.toLocaleString('en-US')} 条分析记录`;
+        finish.detail = `${job.currentDate ?? job.startDate} · 已写入 ${job.writtenSteps.length}/${dataSteps.length} 项 · ${job.rowsSynced.toLocaleString('en-US')} 条分析记录`;
         job.status = 'queued';
         await saveSyncJob(env, job);
+        return;
+      }
+      if (job.currentDate && job.currentDate < job.endDate) {
+        const nextDate = shiftDate(job.currentDate, 1);
+        // Persist the daily cursor. Each new pull replaces its own chunk set,
+        // so interruption here is safe to repeat without growing staging.
+        job.currentDate = nextDate;
+        job.completedRows = job.rowsSynced;
+        job.writtenSteps = [];
+        for (const step of job.steps ?? []) { step.status = 'waiting'; step.detail = undefined; }
+        job.status = 'queued';
+        job.stage = 'pull';
+        await saveSyncJob(env, job);
+        await invalidateDashboardCache(env);
         return;
       }
       const runLogId = await ensureSyncRunLog(env, job);
@@ -2429,14 +2472,14 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
     const platform = step.key.slice(0, step.key.indexOf('-'));
     if (!DASHBOARD_PLATFORMS.has(platform)) throw new Error(`同步步骤无效：${step.key}`);
     step.status = 'running';
-    step.detail = '正在并发查询业务数据库';
+    step.detail = `${job.currentDate ?? job.startDate} · 正在查询业务数据库`;
   }
   job.stage = 'pull';
   await saveSyncJob(env, job);
 
   const results = await Promise.allSettled(batchSteps.map(async step => {
     const platform = step.key.slice(0, step.key.indexOf('-'));
-    const rows = await pullDailyFacts(env, platform, dataset, job.startDate, job.endDate);
+    const rows = await pullDailyFacts(env, platform, dataset, job.currentDate ?? job.startDate, job.currentDate ?? job.endDate);
     return { step, rows };
   }));
   let failure: unknown;
@@ -2469,10 +2512,20 @@ async function createSyncRun(env: Env, request: Request) {
   // plan: it still needs to complete its run log and release the active slot.
   const active = await activeJob();
   if (active) return json(JSON.parse(active.payload));
-  const body = await request.json().catch(() => ({})) as { mode?: SyncMode; platforms?: string[]; datasets?: string[] };
-  const mode: SyncMode = body.mode === 'full_refresh' ? 'full_refresh' : body.mode === 'latest_week' ? 'latest_week' : 'latest_day';
+  const body = await request.json().catch(() => ({})) as { mode?: SyncMode; platforms?: string[]; datasets?: string[]; startDate?: string; endDate?: string };
+  const mode: SyncMode = body.mode === 'date_range' ? 'date_range' : body.mode === 'full_refresh' ? 'full_refresh' : body.mode === 'latest_week' ? 'latest_week' : 'latest_day';
   const requestedDatasets = body.datasets?.filter((dataset): dataset is SyncDataset => SYNC_DATASETS.includes(dataset as SyncDataset)) ?? [];
-  const planResponse = await syncPlan(env, mode, requestedDatasets.length ? requestedDatasets : undefined);
+  const yesterday = new Date(Date.now() + 8 * 3600000 - 86400000).toISOString().slice(0, 10);
+  if (mode === 'date_range') {
+    const validDate = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+      && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+    if (!validDate(body.startDate) || !validDate(body.endDate) || body.startDate > body.endDate || body.endDate > yesterday) {
+      return errorResponse('请选择已结束日期的有效区间，单日回刷请选择相同的起止日期', 400);
+    }
+  }
+  const planResponse = mode === 'date_range'
+    ? json({ startDate: body.startDate, endDate: body.endDate, platforms: ['all','web','app'], alreadySynced: false })
+    : await syncPlan(env, mode, requestedDatasets.length ? requestedDatasets : undefined);
   const plan = await planResponse.json() as {
     startDate: string;
     endDate: string;
@@ -2513,6 +2566,9 @@ async function retrySyncRun(env: Env, request: Request) {
   if (active) return errorResponse('已有数据同步任务正在运行，请完成后再试', 409);
   const platforms = [...new Set(source.platforms)] as SyncRunStatus['platforms'];
   const job = newSyncJob(source.mode ?? 'latest_day', source.startDate, source.endDate, platforms, source.datasets ?? [...SYNC_DATASETS]);
+  job.currentDate = source.currentDate ?? source.startDate;
+  job.rowsSynced = source.completedRows ?? 0;
+  job.completedRows = source.completedRows;
   await env.DB.prepare("INSERT INTO sync_jobs (run_id, status, payload, created_at, updated_at) VALUES (?, 'queued', ?, ?, ?)")
     .bind(job.runId, JSON.stringify(job), Date.now(), Date.now()).run();
   return json(job, 202);

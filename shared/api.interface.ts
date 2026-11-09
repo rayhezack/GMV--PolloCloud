@@ -245,11 +245,13 @@ export interface CreativeOverviewResponse {
 
 /* ===== 同步链路 ===== */
 
-export type SyncMode = 'latest_day' | 'latest_week' | 'full_refresh';
+export type SyncMode = 'latest_day' | 'latest_week' | 'full_refresh' | 'date_range';
 export type SyncDataset = 'pay_type' | 'chain' | 'creative' | 'renewal';
 
 export interface SyncRunRequest {
   mode?: SyncMode;
+  startDate?: string;
+  endDate?: string;
   platforms?: DashboardPlatform[];
   datasets?: SyncDataset[];
 }
@@ -270,6 +272,7 @@ export interface SyncRunResponse {
 
 export interface SyncRunStatus {
   runId: string;
+  currentDate?: string;
   mode?: SyncMode;
   status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed';
   stage: SyncStage;

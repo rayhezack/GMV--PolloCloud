@@ -17,6 +17,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@client/src/components/ui/dialog';
+import DashboardDateRangePicker from '@/components/dashboard/DashboardDateRangePicker';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@client/src/components/ui/badge';
 import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
 import { canManagePollocloudApp } from '@/lib/pollocloud';
@@ -99,6 +101,10 @@ function readErrorResponseMessage(data: unknown): string {
 const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
   const { trackSync } = useOutletContext<{ trackSync: (job: SyncRunStatus) => void }>();
   const { user, loading: accessLoading } = usePollocloudUser();
+  const [mode, setMode] = useState<'latest_day' | 'date_range'>('latest_day');
+  const yesterday = new Date(Date.now() + 8 * 3600000 - 86400000).toISOString().slice(0, 10);
+  const [rangeValid, setRangeValid] = useState(true);
+  const [range, setRange] = useState({ startDate: yesterday, endDate: yesterday });
   const [syncing, setSyncing] = useState(false);
   const [status, setStatus] = useState<SyncRunStatus | null>(null);
   const [plan, setPlan] = useState<LatestDaySyncPlan | null>(null);
@@ -177,7 +183,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
   }, [startPolling, stopPolling, trackSync]);
 
   const handleSync = useCallback(async () => {
-    if (syncing || !plan?.canSync || accessLoading) return;
+    if (syncing || (mode === 'date_range' ? !rangeValid : !plan?.canSync) || accessLoading) return;
     if (!canManagePollocloudApp(user)) return;
     setSyncing(true);
     setErrorMsg('');
@@ -185,8 +191,9 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
     let startedAsync = false;
     try {
       const response = await createSyncRun({
-        mode: 'latest_day',
-        platforms: plan.platforms,
+        mode,
+        ...(mode === 'date_range' ? range : {}),
+        platforms: plan?.platforms ?? ['all', 'web', 'app'],
       });
       if (['running', 'queued', 'pausing'].includes(response.status)) {
         startedAsync = true;
@@ -228,6 +235,9 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
     accessLoading,
     onSyncSettled,
     plan,
+    mode,
+    range,
+    rangeValid,
     refreshPlan,
     startPolling,
     stopPolling,
@@ -238,8 +248,8 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
   const running =
     syncing || ['queued', 'running', 'pausing', 'paused'].includes(status?.status ?? '') || Boolean(plan?.running);
   const isAdmin = canManagePollocloudApp(user);
-  const canSync = isAdmin && Boolean(plan?.canSync) && !running && !planLoading;
-  const planStatusLabel = planLoading
+  const canSync = isAdmin && (mode === 'date_range' ? rangeValid : Boolean(plan?.canSync)) && !running && !accessLoading && (mode === 'date_range' || !planLoading);
+  const planStatusLabel = mode === 'date_range' ? '覆盖已有 · 补齐缺失' : planLoading
     ? '检查中'
     : plan?.alreadySynced
       ? '最新日期已更新'
@@ -252,16 +262,27 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
       <div className="flex flex-wrap items-end gap-4">
         <div className="flex flex-col gap-1.5">
           <span className="text-xs text-muted-foreground">同步模式</span>
-          <div className="flex h-8 min-w-[164px] items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-sm text-foreground">
-            <ShieldCheck className="size-3.5 text-primary" />
-            最新可用日期
-          </div>
+          <Select value={mode} onValueChange={value => setMode(value as 'latest_day' | 'date_range')} disabled={running}>
+            <SelectTrigger size="sm" aria-label="同步模式" className={`${SYNC_PILL_CLASS} min-w-[164px]`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="latest_day">最新可用日期</SelectItem>
+              <SelectItem value="date_range">指定日期回刷</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="flex flex-col gap-1.5">
           <span className="text-xs text-muted-foreground">同步区间</span>
-          <div className="flex h-8 min-w-[214px] items-center rounded-full border border-gray-200 bg-white px-3 font-mono text-sm text-muted-foreground">
-            {plan ? `${plan.startDate} ~ ${plan.endDate}` : '-'}
-          </div>
+          {mode === 'date_range' ? (
+            <div className={running ? 'pointer-events-none opacity-50' : ''}>
+              <DashboardDateRangePicker selectedRange={range} onRangeChange={setRange} onValidityChange={setRangeValid} ariaLabel="回刷日期" isDisabled={running} availableRange={{ startDate: '2000-01-01', endDate: yesterday }} />
+            </div>
+          ) : (
+            <div className="flex h-8 min-w-[214px] items-center rounded-full border border-gray-200 bg-white px-3 font-mono text-sm text-muted-foreground">
+              {plan ? `${plan.startDate} ~ ${plan.endDate}` : '-'}
+            </div>
+          )}
         </div>
         <div className="flex flex-1 flex-col gap-1.5">
           <span className="text-xs text-muted-foreground">更新预检</span>
@@ -322,15 +343,15 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
                 : accessLoading
                   ? '检查权限'
                   : isAdmin
-                    ? '同步最新日期'
+                    ? mode === 'date_range' ? '回刷所选日期' : '同步最新日期'
                     : '仅管理员可同步'}
             </Button>
           </DialogTrigger>
           <DialogContent className="sync-confirm-dialog" showCloseButton={false}>
             <DialogHeader className="sync-confirm-header">
-              <DialogTitle>确认拉取最新数据</DialogTitle>
+              <DialogTitle>{mode === 'date_range' ? '确认回刷所选日期' : '确认拉取最新数据'}</DialogTitle>
               <DialogDescription className="sync-confirm-description">
-                系统会先完成全部查询并暂存结果；确认全部成功后，再统一更新本次日期的数据。
+                按天查询并校验后更新：已有数据覆盖、缺失数据新增。查询或校验失败时保留该日原数据。
               </DialogDescription>
             </DialogHeader>
             <div className="sync-confirm-summary">
@@ -343,7 +364,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
               <div className="sync-confirm-meta-row">
                 <span>本次拉取日期</span>
                 <strong>
-                  {plan ? `${plan.startDate} ~ ${plan.endDate}` : '-'}
+                  {mode === 'date_range' ? `${range.startDate} ~ ${range.endDate}` : plan ? `${plan.startDate} ~ ${plan.endDate}` : '-'}
                 </strong>
               </div>
               <div className="sync-confirm-meta-row">
@@ -355,7 +376,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
               <div className="sync-confirm-updates">
                 <div className="sync-confirm-updates-label">本次待更新</div>
                 <div className="sync-confirm-tags">
-                  {plan?.missingItems.slice(0, 8).map((item) => (
+                  {mode === 'date_range' ? <Badge variant="outline" className="sync-confirm-tag">付费类型 · 支付链路 · 创作积极性 · 自动续订</Badge> : plan?.missingItems.slice(0, 8).map((item) => (
                     <Badge
                       key={`${item.platform}-${item.sheet}`}
                       variant="outline"
@@ -364,7 +385,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
                       {item.platform} · {SHEET_LABELS[item.sheet]}
                     </Badge>
                   ))}
-                  {plan && plan.missingItems.length > 8 ? (
+                  {mode !== 'date_range' && plan && plan.missingItems.length > 8 ? (
                     <Badge variant="outline" className="sync-confirm-tag">
                       +{plan.missingItems.length - 8}
                     </Badge>

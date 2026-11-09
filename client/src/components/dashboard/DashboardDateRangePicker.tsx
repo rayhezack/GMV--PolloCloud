@@ -11,13 +11,16 @@ type SelectedRange = { startDate: string; endDate: string };
 
 type Props = {
   selectedRange: SelectedRange;
+  ariaLabel?: string;
+  isDisabled?: boolean;
+  onValidityChange?: (valid: boolean) => void;
   onRangeChange: (range: SelectedRange) => void;
   // Retained for existing callers; local coverage bounds always apply.
   allowLocalSelection?: boolean;
   availableRange?: SelectedRange | null;
 };
 
-export default function DashboardDateRangePicker({ selectedRange, onRangeChange, availableRange = LOCAL_DATA_WINDOW }: Props) {
+export default function DashboardDateRangePicker({ selectedRange, onRangeChange, availableRange = LOCAL_DATA_WINDOW, ariaLabel = '趋势日期', isDisabled = false, onValidityChange }: Props) {
   const minDate = availableRange?.startDate ?? '2026-01-01';
   const maxDate = availableRange?.endDate ?? today(getLocalTimeZone()).subtract({ days: 1 }).toString();
   const minimum = useMemo(() => parseDate(minDate), [minDate]);
@@ -36,6 +39,7 @@ export default function DashboardDateRangePicker({ selectedRange, onRangeChange,
   const isValid = (range: DateRange) => range.start.compare(minimum) >= 0
     && range.end.compare(maximum) <= 0 && range.start.compare(range.end) <= 0;
   const invalid = value !== null && !isValid(value);
+  useEffect(() => { onValidityChange?.(value !== null && !invalid); }, [value, invalid, onValidityChange]);
   const commit = (range: DateRange | null) => {
     setValue(range);
     // Incomplete or invalid keyboard edits never reach the dashboard request.
@@ -52,7 +56,8 @@ export default function DashboardDateRangePicker({ selectedRange, onRangeChange,
     <I18nProvider locale="zh-CN">
       <DateRangePicker
         className="dashboard-date-picker"
-        aria-label="趋势日期"
+        aria-label={ariaLabel}
+        isDisabled={isDisabled}
         granularity="day"
         shouldForceLeadingZeros
         minValue={minimum}
@@ -88,10 +93,10 @@ export default function DashboardDateRangePicker({ selectedRange, onRangeChange,
           placement="bottom end"
           shouldFlip={false}
           offset={8}
-          aria-label="选择趋势日期"
+          aria-label={`选择${ariaLabel}`}
         >
           <RangeCalendar
-            aria-label="趋势日期日历"
+            aria-label={`${ariaLabel}日历`}
             minValue={minimum}
             maxValue={maximum}
             className="dashboard-date-picker__calendar"
