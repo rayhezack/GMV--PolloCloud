@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import type { DailyDiagnosisStatus, DashboardPlatform } from '@shared/api.interface';
 import { completedDailyDiagnosisScopes } from '@/lib/daily-diagnosis-scope';
+import { DocumentStack } from '@/components/bencho/DocumentStack';
 import './daily-report-stack.css';
 
 const Reader = lazy(() => import('./DailyReportReader'));
@@ -24,7 +25,7 @@ export default function DailyReportStack({ platform, platforms, period, refreshT
   const dayOfWeek = new Date(`${period}T00:00:00Z`).getUTCDay();
   const weekEnd = period ? new Date(Date.parse(period) - ((dayOfWeek + 2) % 7) * 86400000).toISOString().slice(0, 10) : '';
   const weekStart = weekEnd ? new Date(Date.parse(weekEnd) - 13 * 86400000).toISOString().slice(0, 10) : '';
-  // Only request scopes that actually triggered an anomaly on this day.
+  // Overall context plus the clients that actually triggered on this day.
   const scopeKey = (weekly ? ['web', 'app'] : platformOrder.filter(scope => platforms.includes(scope))).join(',');
   // A retry can start in the shared task dock after this stack stopped polling.
   // Reload the full report on lifecycle changes, not on every task heartbeat.
@@ -34,11 +35,7 @@ export default function DailyReportStack({ platform, platforms, period, refreshT
   const [errors, setErrors] = useState<Partial<Record<DashboardPlatform, string>>>({});
   const [selected, setSelected] = useState(platform);
   const [open, setOpen] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const [pinned, setPinned] = useState(false);
-  const [focused, setFocused] = useState(false);
   const coverRef = useRef<HTMLButtonElement>(null);
-  const expanded = hovered || pinned || focused;
   const [submitting, setSubmitting] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
   useEffect(() => {
@@ -116,21 +113,9 @@ export default function DailyReportStack({ platform, platforms, period, refreshT
     finally { setSubmitting(false); }
   };
   return <Sheet open={open} onOpenChange={setOpen}>
-    <div className="daily-report-stack" data-expanded={completed.length > 0 && expanded} data-count={papers.length} role="group" aria-label={weekly ? '周诊断报告' : '当日异动诊断报告'}
-      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      onFocusCapture={event => setFocused((event.target as HTMLElement).matches(':focus-visible'))} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setFocused(false); }}
-      onKeyDown={event => { if (event.key === 'Escape') { setPinned(false); setHovered(false); setFocused(false); } }}>
-      <button ref={coverRef} type="button" className="daily-report-cover" aria-expanded={papers.length > 0 && expanded} aria-controls="daily-report-papers" onClick={() => papers.length ? setPinned(value => !value) : setOpen(true)} aria-label={`${title}，${papers.length ? `${papers.length}份报告，展开选择` : label}`}>
-        <span className="daily-report-cover-heading"><strong>{title}</strong><time dateTime={weekly ? weekEnd : period}>{period ? (weekly ? weekEnd : period).slice(5).replace('-', '/') : '—'}</time></span>
-        <span className="daily-report-cover-count">{papers.length ? <><b>{papers.length}</b> 份报告</> : label}</span>
-      </button>
-      <div id="daily-report-papers" className="daily-report-papers">
-        {papers.map((scope, index) => <button key={scope} type="button" className="daily-report-paper" data-layer={papers.length - index} tabIndex={expanded ? 0 : -1} onClick={() => { setSelected(scope); setOpen(true); }} aria-label={`打开${platformLabels[scope]} ${weekly ? weekEnd : period} ${title}`}>
-          <span className="daily-report-paper-title">{platformLabels[scope]} · {title}</span>
-          <span className="daily-report-paper-lines" aria-hidden="true"><i /><i /><i /><i /></span>
-        </button>)}
-      </div>
-    </div>
+    <DocumentStack title={title} date={weekly ? weekEnd : period} emptyLabel={label} coverRef={coverRef}
+      documents={papers.map(scope => ({ id: scope, title: `${platformLabels[scope]} · ${title}`, ariaLabel: `打开${platformLabels[scope]} ${weekly ? weekEnd : period} ${title}` }))}
+      onOpen={id => { setSelected(id as DashboardPlatform); setOpen(true); }} onEmptyClick={() => setOpen(true)} />
     {!weekly && canManage && <div className="daily-report-tasks">
       {scopes.map(scope => {
         const item = statuses[scope];

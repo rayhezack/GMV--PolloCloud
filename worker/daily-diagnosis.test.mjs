@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildDailyDiagnosis, dailyComparison } from './daily-diagnosis.ts';
+import { buildDailyDiagnosis, collectDailyDiagnosis, dailyComparison } from './daily-diagnosis.ts';
 import { buildReportEvidence, selectProductActions } from './report-evidence.ts';
 import { reportEvidenceQueries } from './report-evidence-loader.ts';
 import { prepareReportData } from './report-data.ts';
@@ -127,4 +127,24 @@ test('daily model call receives every prepared platform datum and returns its co
     return new Response(`data: ${JSON.stringify({choices:[{delta:{content:text},finish_reason:'stop'}]})}\n\ndata: [DONE]\n\n`);
   };
   try{assert.equal(await generateMarkdown({KIMI_API_KEY:'fixture'},e),text);}finally{globalThis.fetch=original;}
+});
+
+test('overall companion uses actual overall amounts below threshold, preserving the real client trigger',()=>{
+ const original=signal();
+ const e=buildDailyDiagnosis([original],{web:fixture(),app:fixture()},{baseline:1100,current:1080,source:'overall payment source'});
+ assert.equal(prepareReportData(e),e);assert.equal(e.comparison.platform,'all');
+ assert.equal(e.comparison.primary.previousDailyAvg,1100);assert.equal(e.comparison.primary.currentDailyAvg,1080);
+ assert.ok(Math.abs(e.comparison.primary.change)<.10);assert.equal(e.comparison.primary.threshold,undefined);
+ assert.deepEqual(e.comparison.context.triggerSignals,[original]);
+ assert.equal(e.platformComparison.denominator,-20);assert.equal(e.platformComparison.residual.baseline,40);assert.equal(e.platformComparison.residual.current,140);
+ assert.throws(()=>buildDailyDiagnosis([original],{web:fixture()},{baseline:1100,current:1080,source:'actual'}),/缺少 app/);
+ assert.throws(()=>buildDailyDiagnosis([original],{web:fixture(),app:fixture()},{baseline:NaN,current:1080,source:'actual'}),/真实总/);
+});
+test('companion collection reads separate all rows exactly once and refuses missing overall comparison dates',async()=>{
+ const queries=[];const io={query:async(sql,...binds)=>{queries.push({sql,binds});if(sql.includes("platform='all'"))return [{period:B,gmv_usd:1100},{period:D,gmv_usd:1080}];
+  const key=sql.includes("dataset='pay_type'")?'pay':sql.includes('chain_funnel')?'funnel':sql.includes('chain_breakdown')?'breakdown':sql.includes("dataset='renewal'")?'renewal':null;
+  return key?fixture()[key].rows:[];},actions:async()=>source()};
+ const e=await collectDailyDiagnosis([signal()],io,true);assert.equal(e.comparison.primary.currentDailyAvg,1080);
+ assert.equal(queries.filter(q=>q.sql.includes("platform='all'")).length,1);
+ await assert.rejects(()=>collectDailyDiagnosis([signal()],{...io,query:async(sql,...binds)=>sql.includes("platform='all'")?[]:io.query(sql,...binds)},true),/真实总/);
 });

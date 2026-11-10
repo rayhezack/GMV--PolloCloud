@@ -3,7 +3,8 @@ import type { DashboardGmvAnomalyResponse, DashboardPlatform, DailyDiagnosisStat
 const order: DashboardPlatform[] = ['all', 'web', 'app'];
 
 export function dailyDiagnosisScopes(alerts: DashboardGmvAnomalyResponse['alerts'], period: string): DashboardPlatform[] {
-  return order.filter(scope => alerts.some(alert => alert.platform === scope && alert.period === period));
+  const triggered = alerts.filter(alert => alert.period === period && alert.metric === 'totalGmv');
+  return triggered.length ? order.filter(scope => scope === 'all' || triggered.some(alert => alert.platform === scope)) : [];
 }
 
 export function completedDailyDiagnosisScopes(scopes: DashboardPlatform[], statuses: Partial<Record<DashboardPlatform, DailyDiagnosisStatus>>, period: string): DashboardPlatform[] {

@@ -11,8 +11,8 @@ const saved = (platform, date = period, status = 'success') => ({ platform, peri
 
 test('today’s stack includes only triggered scopes, even when another scope has a saved report', () => {
   const scopes = api.dailyDiagnosisScopes([
-    { platform: 'all', period }, { platform: 'web', period }, { platform: 'web', period },
-    { platform: 'app', period: '2026-11-07' },
+    { metric: 'totalGmv', platform: 'all', period }, { metric: 'totalGmv', platform: 'web', period }, { metric: 'totalGmv', platform: 'web', period },
+    { metric: 'totalGmv', platform: 'app', period: '2026-11-07' },
   ], period);
   assert.deepEqual(scopes, ['all', 'web']);
   assert.deepEqual(api.completedDailyDiagnosisScopes(scopes, { all: saved('all'), web: saved('web'), app: saved('app') }, period), ['all', 'web']);
@@ -23,4 +23,13 @@ test('unfinished or historical reports never count as completed reports for toda
     all: saved('all'), web: saved('web', period, 'running'), app: saved('app', '2026-11-07'),
   }, period), ['all']);
   assert.deepEqual(api.dailyDiagnosisScopes([], period), []);
+});
+
+for (const [clients, expected] of [[['web'], ['all','web']], [['app'], ['all','app']], [['web','app'], ['all','web','app']], [['all'], ['all']]]) {
+  test(`report scopes include overall context for ${clients.join('+')}`, () => {
+    assert.deepEqual(api.dailyDiagnosisScopes(clients.map(platform => ({ platform, period, metric: 'totalGmv' })), period), expected);
+  });
+}
+test('other metrics and historical client anomalies do not create reports today', () => {
+  assert.deepEqual(api.dailyDiagnosisScopes([{platform:'app',period,metric:'activeGmv'}, {platform:'web',period:'2026-11-07',metric:'totalGmv'}],period), []);
 });

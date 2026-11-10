@@ -14,6 +14,7 @@ function setup(){
  return {db,env:{DB:{prepare}}};
 }
 function signal(platform='web',window='day'){return {platform,period:day,metric:'totalGmv',window,baselinePeriod:window==='day'?'2026-11-07':'2026-11-01',direction:'down',change:-.2,threshold:-.1,currentDailyAvg:80,previousDailyAvg:100,historyCount:84,baselineWindow:'12_complete_weeks'};}
+// The default fixture has only Web evidence; overall context must wait for App.
 function evidence(n=80){return {schemaVersion:3,mode:'day',checks:[],comparison:{date:day,amount:n},platformEvidence:[{evidence:{schemaVersion:2,checks:[],sources:Object.fromEntries(['pay','funnel','renewal'].map(k=>[k,{complete:true,readAt:new Date().toISOString()}]))}}]};}
 function deps(overrides={}){return {detect:async()=>({latestDay:day,alerts:[signal()]}),collect:async()=>evidence(),generate:async()=> '# 日诊断\n\n**模型原文，禁止程序拼写。**\n\n## 原因诊断\n\n1. **已知边界：** 待检查。',...overrides};}
 test('backend tick creates report without any browser request; repeated refresh reuses exact model output',async()=>{
@@ -88,7 +89,7 @@ test('missing historical monitor scope is not marked clear',async()=>{
 test('actual cron HTTP route invokes the model without a dashboard visit; GET remains read-only',async()=>{
  const {env,db}=setup();const b=await build({entryPoints:['worker/index.ts'],bundle:true,platform:'node',format:'esm',write:false,logLevel:'silent'});const {default:worker}=await import(`data:text/javascript;base64,${Buffer.from(b.outputFiles[0].text).toString('base64')}`);
  const stamp=new Date().toISOString(),today=new Date(Date.now()+8*3600000).toISOString().slice(0,10),input=JSON.stringify(evidence());
- db.prepare('UPDATE daily_diagnosis_monitor SET checked_revision=revision,checked_day=?,checked_version=?').run(today,`${REPORT_SKILL_SHA256}:kimi-k3`);
+ db.prepare('UPDATE daily_diagnosis_monitor SET checked_revision=revision,checked_day=?,checked_version=?').run(today,`${REPORT_SKILL_SHA256}:kimi-k3:overall-companion-v1`);
  db.prepare("INSERT INTO daily_diagnosis_jobs(run_id,platform,period,baseline,input_hash,evidence,status,requested_by,created_at) VALUES('http','web',?,'2026-11-01','hash',?,'queued','automatic',?)").run(day,input,stamp);
  db.prepare("INSERT INTO daily_diagnosis_state(platform,period,baseline,active,status,input_hash,updated_at) VALUES('web',?,'2026-11-01',1,'queued','hash',?)").run(day,stamp);
  const original=globalThis.fetch;let calls=0;globalThis.fetch=async()=>{calls++;return new Response(`data: ${JSON.stringify({choices:[{delta:{content:'**HTTP模型原文**'},finish_reason:'stop'}]})}\n\ndata: [DONE]\n\n`);};
@@ -188,7 +189,7 @@ test('manual dispatch starts only the selected queued scope, bypasses automatic 
  assert.equal((await tickDailyDiagnoses(env,d)).status,'waiting_report');
  await markDailyDiagnosisDirty(env);
  const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
- db.prepare('UPDATE daily_diagnosis_monitor SET checked_revision=revision,checked_day=?,checked_version=?').run(today,`${REPORT_SKILL_SHA256}:kimi-k3`);
+ db.prepare('UPDATE daily_diagnosis_monitor SET checked_revision=revision,checked_day=?,checked_version=?').run(today,`${REPORT_SKILL_SHA256}:kimi-k3:overall-companion-v1`);
  db.exec('UPDATE diagnosis_dispatch SET lease_until=0');
  await regenerateDailyDiagnosis(env,'app',day);
  await regenerateDailyDiagnosis(env,'app',day);
@@ -218,7 +219,7 @@ test('cache-only invalidation never resets the diagnosis buffer or revision',asy
 test('manual run HTTP endpoint authenticates and completes exactly one existing queued diagnosis',async()=>{
  const {env,db}=setup();
  const stamp=new Date().toISOString(),today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
- db.prepare('UPDATE daily_diagnosis_monitor SET checked_revision=revision,checked_day=?,checked_version=?').run(today,`${REPORT_SKILL_SHA256}:kimi-k3`);
+ db.prepare('UPDATE daily_diagnosis_monitor SET checked_revision=revision,checked_day=?,checked_version=?').run(today,`${REPORT_SKILL_SHA256}:kimi-k3:overall-companion-v1`);
  db.prepare("INSERT INTO daily_diagnosis_jobs(run_id,platform,period,baseline,input_hash,evidence,status,requested_by,created_at) VALUES('manual-http','web',?,'2026-11-01','hash',?,'queued','automatic',?)").run(day,JSON.stringify(evidence()),stamp);
  db.prepare("INSERT INTO daily_diagnosis_state(platform,period,baseline,active,status,input_hash,updated_at) VALUES('web',?,'2026-11-01',1,'queued','hash',?)").run(day,stamp);
  const b=await build({entryPoints:['worker/index.ts'],bundle:true,platform:'node',format:'esm',write:false,logLevel:'silent'});
@@ -278,7 +279,7 @@ test('Web success and 大盘 failure retain independent task and report states w
 
 test('cron response waits for the persisted diagnosis, rather than returning early streaming headers',async()=>{
  const {env,db}=setup();const stamp=new Date().toISOString(),today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
- db.prepare('UPDATE daily_diagnosis_monitor SET checked_revision=revision,checked_day=?,checked_version=?').run(today,`${REPORT_SKILL_SHA256}:kimi-k3`);
+ db.prepare('UPDATE daily_diagnosis_monitor SET checked_revision=revision,checked_day=?,checked_version=?').run(today,`${REPORT_SKILL_SHA256}:kimi-k3:overall-companion-v1`);
  db.prepare("INSERT INTO daily_diagnosis_jobs(run_id,platform,period,baseline,input_hash,evidence,status,requested_by,created_at) VALUES('await-cron','web',?,'2026-11-01','hash',?,'queued','automatic',?)").run(day,JSON.stringify(evidence()),stamp);
  db.prepare("INSERT INTO daily_diagnosis_state(platform,period,baseline,active,status,input_hash,updated_at) VALUES('web',?,'2026-11-01',1,'queued','hash',?)").run(day,stamp);
  const b=await build({entryPoints:['worker/index.ts'],bundle:true,platform:'node',format:'esm',write:false,logLevel:'silent'});const {default:worker}=await import(`data:text/javascript;base64,${Buffer.from(b.outputFiles[0].text).toString('base64')}`);
@@ -289,4 +290,25 @@ test('cron response waits for the persisted diagnosis, rather than returning ear
   let responded=false;const response=worker.fetch(new Request('http://local/api/cron/reports',{headers:{'x-pollocloud-trigger':'cron','x-pollocloud-scheduled-time':'2026-11-10T00:00:00Z'}}),{...env,KIMI_API_KEY:'fixture'},{waitUntil:()=>{}}).then(r=>{responded=true;return r;});
   await ready;assert.equal(responded,false);release();assert.equal((await (await response).json()).status,'processed');assert.equal((await getDailyDiagnosis(env,'web',day)).status,'success');
  }finally{globalThis.fetch=original;release();}
+});
+
+for (const clients of [['web'], ['app'], ['web','app']]) {
+ test(`client-only anomalies queue overall plus ${clients.join('+')}, reuse completed reports`,async()=>{
+  const {env,db}=setup();let calls=0;
+  const d=deps({detect:async()=>({latestDay:day,alerts:clients.map(p=>signal(p)),monitoredPlatforms:clients}),
+    collect:async(signals,overall)=>{const e=evidence();e.comparison={...e.comparison,platform:overall?'all':signals[0].platform};
+      e.platformEvidence=(overall?['web','app']:[signals[0].platform]).map(platform=>({platform,evidence:e.platformEvidence[0].evidence}));return e;},
+    generate:async()=>{calls++;return 'complete original report';}});
+  for(let i=0;i<clients.length+1;i++)await tickDailyDiagnoses(env,d);
+  assert.equal(calls,clients.length+1);
+  assert.deepEqual(db.prepare('SELECT platform FROM daily_diagnosis_jobs ORDER BY platform').all().map(r=>r.platform),['all',...clients].sort());
+  for(const scope of ['all',...clients])assert.equal((await getDailyDiagnosis(env,scope,day)).status,'success');
+  await markDailyDiagnosisDirty(env,0);await tickDailyDiagnoses(env,d);assert.equal(calls,clients.length+1,'no duplicate paid calls');
+ });
+}
+test('missing overall sources keep the companion visible as waiting without blocking the anomalous client',async()=>{
+ const {env}=setup();await tickDailyDiagnoses(env,deps());
+ assert.equal((await getDailyDiagnosis(env,'web',day)).status,'success');
+ assert.equal((await getDailyDiagnosis(env,'all',day)).status,'waiting');
+ assert.match((await getDailyDiagnosis(env,'all',day)).error,/Web.*App/);
 });

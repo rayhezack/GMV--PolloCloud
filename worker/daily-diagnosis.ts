@@ -26,9 +26,19 @@ export function dailyComparison(signals: DailySignal[]) {
   return { mode: 'day' as const, platform: first.platform, metric: first.metric, date: first.period, baselineDate: primary.baselinePeriod, primary, supplementary: signals.filter(s => s !== primary) };
 }
 
+export type OverallDailyContext = { baseline: number; current: number; source: string };
+
 /** All prepared facts are retained. The Skill/model chooses the relevant platform and branches. */
-export function buildDailyDiagnosis(signals: DailySignal[], sources: Partial<Record<'web' | 'app', EvidenceSources>>) {
-  const comparison = dailyComparison(signals);
+export function buildDailyDiagnosis(signals: DailySignal[], sources: Partial<Record<'web' | 'app', EvidenceSources>>, overall?: OverallDailyContext) {
+  const trigger = dailyComparison(signals);
+  if (overall && (trigger.metric !== 'totalGmv' || ![overall.baseline, overall.current].every(n => Number.isFinite(n) && n > 0))) throw new Error('缺少大盘两日真实总 GMV');
+  // A client anomaly requires overall context even when the overall threshold did not fire.
+  // The comparison uses overall source amounts; original detector signals stay separate.
+  const comparison = overall ? { ...trigger, platform: 'all' as const, primary: {
+    platform: 'all' as const, metric: trigger.metric, period: trigger.date, baselinePeriod: trigger.baselineDate, window: trigger.primary.window,
+    currentDailyAvg: overall.current, previousDailyAvg: overall.baseline, change: overall.current / overall.baseline - 1,
+    direction: overall.current >= overall.baseline ? 'up' as const : 'down' as const,
+  }, supplementary: [], context: { kind: 'client_anomaly_companion' as const, source: overall.source, triggerSignals: signals } } : trigger;
   const platforms = comparison.platform === 'all' ? ['web','app'] as const : [comparison.platform];
   const platformEvidence = platforms.map(platform => {
     if (!sources[platform]) throw new Error(`缺少 ${platform} 日诊断数据`);
@@ -47,10 +57,16 @@ export function buildDailyDiagnosis(signals: DailySignal[], sources: Partial<Rec
   return { schemaVersion: 3 as const, mode: 'day' as const, comparison, platformComparison: { contributions, residual, denominator, metric: comparison.metric }, platformEvidence, checks };
 }
 
-export async function collectDailyDiagnosis(signals: DailySignal[], io: Parameters<typeof loadReportSources>[1]) {
+export async function collectDailyDiagnosis(signals: DailySignal[], io: Parameters<typeof loadReportSources>[1], overallContext = false) {
   const comparison = dailyComparison(signals);
-  const platforms = comparison.platform === 'all' ? ['web','app'] as const : [comparison.platform];
+  const platforms = overallContext || comparison.platform === 'all' ? ['web','app'] as const : [comparison.platform];
   const sources: Partial<Record<'web' | 'app', EvidenceSources>> = {};
   for (const platform of platforms) sources[platform] = await loadReportSources({ platform, startDate: comparison.baselineDate, endDate: comparison.date, mode: 'day' }, io);
-  return buildDailyDiagnosis(signals, sources);
+  let overall: OverallDailyContext | undefined;
+  if (overallContext) {
+    const amounts = await io.query("SELECT period,SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows_read WHERE platform='all' AND period IN (?,?) AND dataset='pay_type' AND dataset_kind='daily' AND attribution_type='NONE' AND pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL','API') AND pay_type<>'汇总' GROUP BY period", comparison.baselineDate, comparison.date);
+    const amount = (date: string) => { const row = amounts.find(row => row.period === date); return row?.gmv_usd == null ? NaN : Number(row.gmv_usd); };
+    overall = { baseline: amount(comparison.baselineDate), current: amount(comparison.date), source: 'pollo_da_fact_rows_read/pay_type/NONE/all' };
+  }
+  return buildDailyDiagnosis(signals, sources, overall);
 }
