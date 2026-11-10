@@ -335,7 +335,7 @@ const Layout = () => {
         </div>
         <main id="main-content">
           <Suspense fallback={<div className="px-8 py-12 text-sm text-muted-foreground" role="status">正在打开页面…</div>}>
-            <Outlet context={{ trackReport, trackSync, trackDaily, jobs, syncJob, canManage: isAdmin }} />
+            <Outlet context={{ trackReport, trackSync, trackDaily, dailyJobs, jobs, syncJob, canManage: isAdmin }} />
           </Suspense>
         </main>
       </div>

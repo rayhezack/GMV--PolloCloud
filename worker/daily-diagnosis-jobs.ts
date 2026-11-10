@@ -207,7 +207,7 @@ function dailyTask(job: Job): NonNullable<DailyDiagnosisStatus['task']> {
   const index = stage === 'complete' ? 4 : stage === 'model_streaming' || stage === 'continuing' ? 2 : stage === 'retry_wait' ? 1 : Math.max(0,keys.indexOf(stage));
   return {
     runId:job.run_id,status:job.status as 'queued'|'running'|'success'|'failed',startedAt:job.created_at,
-    updatedAt:job.progress_at||job.finished_at||job.created_at,finishedAt:job.finished_at||undefined,
+    updatedAt:job.finished_at||job.progress_at||job.created_at,finishedAt:job.finished_at||undefined,
     stage,errorMessage:job.error||undefined,retryCount:job.retry_count||0,
     nextAttemptAt:job.next_attempt_at ? new Date(job.next_attempt_at).toISOString() : undefined,
     steps:['读取诊断证据','请求诊断模型','生成诊断正文','保存报告'].map((label,i)=>({key:keys[i],label,

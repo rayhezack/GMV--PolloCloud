@@ -18,7 +18,7 @@ const platformOrder: DashboardPlatform[] = ['all', 'web', 'app'];
 export default function DailyReportStack({ platform, platforms, period, refreshToken, canManage = false, mode = 'day' }: {
   platform: DashboardPlatform; platforms: DashboardPlatform[]; period: string; refreshToken: number; canManage?: boolean; mode?: 'day' | 'week';
 }) {
-  const { trackDaily } = useOutletContext<{ trackDaily: (job: DailyDiagnosisStatus) => void }>();
+  const { trackDaily, dailyJobs = [] } = useOutletContext<{ trackDaily: (job: DailyDiagnosisStatus) => void; dailyJobs?: DailyDiagnosisStatus[] }>();
   const weekly = mode === 'week';
   const title = weekly ? '周诊断' : '日诊断';
   const dayOfWeek = new Date(`${period}T00:00:00Z`).getUTCDay();
@@ -26,6 +26,10 @@ export default function DailyReportStack({ platform, platforms, period, refreshT
   const weekStart = weekEnd ? new Date(Date.parse(weekEnd) - 13 * 86400000).toISOString().slice(0, 10) : '';
   // Only request scopes that actually triggered an anomaly on this day.
   const scopeKey = (weekly ? ['web', 'app'] : platformOrder.filter(scope => platforms.includes(scope))).join(',');
+  // A retry can start in the shared task dock after this stack stopped polling.
+  // Reload the full report on lifecycle changes, not on every task heartbeat.
+  const taskStateKey = weekly ? '' : dailyJobs.filter(job => job.period === period && platforms.includes(job.platform))
+    .map(job => `${job.platform}:${job.task?.runId || ''}:${job.status}`).sort().join('|');
   const [statuses, setStatuses] = useState<Partial<Record<DashboardPlatform, DailyDiagnosisStatus>>>({});
   const [errors, setErrors] = useState<Partial<Record<DashboardPlatform, string>>>({});
   const [selected, setSelected] = useState(platform);
@@ -79,7 +83,7 @@ export default function DailyReportStack({ platform, platforms, period, refreshT
     void load();
     document.addEventListener('visibilitychange', onVisible);
     return () => { active = false; window.clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
-  }, [scopeKey, period, refreshToken, retryToken, weekly, weekStart, weekEnd, title, trackDaily]);
+  }, [scopeKey, period, refreshToken, retryToken, weekly, weekStart, weekEnd, title, trackDaily, taskStateKey]);
 
   const scopes = weekly ? ['web', 'app'] as DashboardPlatform[] : platformOrder.filter(scope => platforms.includes(scope));
   const completed = (weekly ? scopes.filter(scope => statuses[scope]?.status === 'success' && statuses[scope]?.report?.periodEnd === weekEnd) : completedDailyDiagnosisScopes(scopes, statuses, period)).filter(scope => !errors[scope]);
