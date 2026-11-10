@@ -5,10 +5,6 @@ import { CheckCircle2, Loader2, AlertCircle, Circle, ChevronUp, ChevronDown, X, 
 import { formatAnalysisWeekLabel, formatGeneratedAt, getReportPeriodKey } from '@/pages/ReportPage/report-page.utils';
 import { generateReport, pauseReportGeneration, resumeReportGeneration } from '@/api/report';
 import { pauseSyncRun, resumeSyncRun, retrySyncRun } from '@/api/sync';
-import { getGmvAnomalies } from '@/api/dashboard';
-import { toast } from 'sonner';
-import { pushToast } from '@/components/bencho/ToastStack';
-import { claimFailureNotification } from './task-failure-notifications';
 
 type Step = { key: string; label: string; status: 'waiting' | 'running' | 'success' | 'failed'; detail?: string };
 type Task = {
@@ -26,111 +22,7 @@ type Task = {
 };
 
 const DISMISSED_TASKS_KEY = 'pollo-dismissed-task-runs';
-const NOTIFIED_TASKS_KEY = 'pollo-notified-task-runs';
-const NOTIFIED_ANOMALIES_KEY = 'pollo-notified-gmv-anomalies';
-
 const isActiveStatus = (status: Task['status']) => ['queued', 'running', 'pausing', 'paused'].includes(status);
-
-const platformLabel = (platform: 'all' | 'web' | 'app') => platform === 'all' ? '大盘' : platform === 'web' ? 'Web' : 'App';
-const metricLabel = (metric: string) => metric === 'totalGmv' ? '大盘GMV' : metric === 'activeGmv' ? '主动付费GMV' : '续订GMV';
-
-async function notifyGmvAnomalies() {
-  const result = await getGmvAnomalies();
-  let notified: string[] = [];
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(NOTIFIED_ANOMALIES_KEY) || '[]');
-    if (Array.isArray(stored)) notified = stored.filter((item): item is string => typeof item === 'string');
-  } catch { /* optional */ }
-  const dayKey = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date());
-  const alerts = result.alerts;
-  if (alerts.length === 0) return;
-  // One GMV event per user per Shanghai calendar day. All platform/metric
-  // signals and both comparison windows are evidence for that single event.
-  const fingerprint = `${dayKey}:gmv-anomaly`;
-  if (notified.includes(fingerprint)) return;
-  notified = [...notified.slice(-99), fingerprint];
-  try {
-    window.localStorage.setItem(NOTIFIED_ANOMALIES_KEY, JSON.stringify(notified));
-  } catch { /* optional */ }
-  const evidence = alerts.map((alert) => {
-    const label = alert.window === 'day' ? '日环比' : '周同比';
-    const change = `${alert.change >= 0 ? '+' : ''}${(alert.change * 100).toFixed(1)}%`;
-    return { alert, label, change };
-  });
-  const period = alerts[0]?.period || result.latestDay;
-  const evidenceGroups = new Map<string, typeof evidence>();
-  evidence.forEach((item) => {
-    const key = `${item.alert.platform}:${item.alert.metric}`;
-    const group = evidenceGroups.get(key) ?? [];
-    group.push(item);
-    evidenceGroups.set(key, group);
-  });
-  const evidenceDetail = [...evidenceGroups.values()]
-    .map((group) => {
-      const first = group[0].alert;
-      const comparisons = group
-        .sort((a, b) => (a.alert.window === 'week' ? 0 : 1) - (b.alert.window === 'week' ? 0 : 1))
-        .map(({ label, change }) => `${label} ${change}`)
-        .join('，');
-      return `${platformLabel(first.platform)}${metricLabel(first.metric)} ${comparisons}`;
-    })
-    .join('\n');
-  const metricOrder = { totalGmv: 0, activeGmv: 1, renewalGmv: 2 } as const;
-  const platformOrder = { all: 0, app: 1, web: 2 } as const;
-  const target = [...alerts].sort((a, b) => {
-    const directionRank = Number(a.direction !== 'down') - Number(b.direction !== 'down');
-    if (directionRank !== 0) return directionRank;
-    const magnitudeRank = Math.abs(b.change) - Math.abs(a.change);
-    if (magnitudeRank !== 0) return magnitudeRank;
-    const metricRank = metricOrder[a.metric] - metricOrder[b.metric];
-    if (metricRank !== 0) return metricRank;
-    return platformOrder[a.platform] - platformOrder[b.platform];
-  })[0];
-  const kind = alerts.some((alert) => alert.direction === 'down') ? 'error' : 'warning';
-  const focusParams = new URLSearchParams({
-    tab: 'trend',
-    platform: target.platform,
-    granularity: 'day',
-    metricDate: target.period,
-    focusMetric: target.metric,
-    focusPlatform: target.platform,
-    focusPeriod: target.period,
-  });
-  pushToast({
-    kind,
-    title: 'GMV 异动',
-    body: `${period} 多种对比口径共同提示 GMV 异动`,
-    detail: `分析日期：${period}\n${evidenceDetail}\n日环比与周同比共同说明最新 GMV 存在异动。可继续下钻主动付费和自动续订，定位具体变化来源。`,
-    href: `/?${focusParams.toString()}`,
-    linkLabel: '查看 GMV 趋势',
-  });
-}
-
-function notifyTaskCompletion(task: Task) {
-  let notified: string[] = [];
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(NOTIFIED_TASKS_KEY) || '[]');
-    if (Array.isArray(stored)) notified = stored.filter((item): item is string => typeof item === 'string');
-  } catch { /* optional */ }
-  if (notified.includes(task.id)) return false;
-  try {
-    window.localStorage.setItem(NOTIFIED_TASKS_KEY, JSON.stringify([...notified.slice(-49), task.id]));
-  } catch { /* optional */ }
-  const failed = task.status === 'failed';
-  if (failed && !claimFailureNotification(task, window.localStorage)) return false;
-  pushToast({
-    id: failed ? `task-error:${task.kind}:${task.errorMessage || '任务执行失败'}` : `task-complete:${task.id}`,
-    kind: failed ? 'error' : 'success',
-    title: task.kind === 'sync' ? (failed ? '数据同步失败' : '数据同步完成') : (failed ? '诊断报告生成失败' : '诊断报告已生成'),
-    body: failed ? (task.errorMessage || '任务执行失败，请打开任务详情查看') : task.context,
-    detail: failed
-      ? (task.errorMessage || '任务执行失败，请打开任务详情查看')
-      : `${task.kind === 'sync' ? '数据同步任务' : '诊断报告任务'}已完成。\n${task.context}`,
-    href: task.href,
-    linkLabel: task.kind === 'sync' ? '查看数据与口径' : '查看诊断报告',
-  });
-  return true;
-}
 
 function readDismissedTasks(): string[] {
   try {
@@ -158,6 +50,7 @@ export function ReportTask({
   const [selected, setSelected] = useState('');
   const [dismissed, setDismissed] = useState(readDismissedTasks);
   const [retrying, setRetrying] = useState('');
+  const [operationError, setOperationError] = useState('');
   const previousStatuses = useRef(new Map<string, Task['status']>());
   const completionTimers = useRef(new Map<string, number>());
   const tasks: Task[] = [
@@ -188,16 +81,7 @@ export function ReportTask({
   useEffect(() => {
     const nextStatuses = new Map(tasks.map(task => [task.id, task.status]));
     for (const task of tasks) {
-      if (task.status === 'success') claimFailureNotification(task, window.localStorage);
       const previous = previousStatuses.current.get(task.id);
-      if (!previous && !isActiveStatus(task.status)) {
-        if (task.kind !== 'sync' || task.status !== 'success') notifyTaskCompletion(task);
-        if (task.kind === 'sync' && task.status === 'success') void notifyGmvAnomalies().catch(() => undefined);
-      }
-      if (previous && isActiveStatus(previous) && !isActiveStatus(task.status)) {
-        if (task.kind !== 'sync' || task.status !== 'success') notifyTaskCompletion(task);
-        if (task.kind === 'sync' && task.status === 'success') void notifyGmvAnomalies().catch(() => undefined);
-      }
       if (!isActiveStatus(task.status) && !dismissed.includes(task.id) && !completionTimers.current.has(task.id)) {
         const age = previous ? 0 : Date.now() - Date.parse(task.updatedAt);
         const delay = previous ? (task.status === 'failed' ? 6500 : 4000) : Math.max(1000, 3500 - Math.max(0, age));
@@ -253,6 +137,7 @@ export function ReportTask({
   const rerun = async () => {
     if (active(job) || retrying) return;
     setRetrying(job.id);
+    setOperationError('');
     try {
       if (job.kind === 'report') {
         const source = jobs.find(item => item.runId === job.id);
@@ -260,15 +145,13 @@ export function ReportTask({
         const next = await generateReport({ platform: source.platform, granularity: 'week', startDate: source.periodStart, endDate: source.periodEnd });
         onTrackReport(next);
         setSelected(next.runId);
-        toast.info('报告任务已重新启动');
       } else {
         const next = await retrySyncRun(job.id);
         onTrackSync(next);
         setSelected(next.runId);
-        toast.info('数据同步任务已重新启动');
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '任务重新运行失败');
+      setOperationError(error instanceof Error ? error.message : '任务重新运行失败');
     } finally {
       setRetrying('');
     }
@@ -276,15 +159,15 @@ export function ReportTask({
   const pauseOrResume = async () => {
     if (retrying || job.status === 'pausing') return;
     setRetrying(job.id);
+    setOperationError('');
     try {
       const next = job.kind === 'report'
         ? job.status === 'paused' ? await resumeReportGeneration(job.id) : await pauseReportGeneration(job.id)
         : job.status === 'paused' ? await resumeSyncRun(job.id) : await pauseSyncRun(job.id);
       if (job.kind === 'report') onTrackReport(next as ReportGenerationStatus);
       else onTrackSync(next as SyncRunStatus);
-      toast.info(job.status === 'paused' ? '任务已继续运行' : next.status === 'paused' ? '任务已暂停' : '将在当前阶段完成后暂停');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '任务状态更新失败');
+      setOperationError(error instanceof Error ? error.message : '任务状态更新失败');
     } finally {
       setRetrying('');
     }
@@ -305,7 +188,7 @@ export function ReportTask({
           </li>)}
         </ol>
         <footer>
-          {job.status === 'failed' && <p role="alert">{job.errorMessage}</p>}
+          {(operationError || job.status === 'failed') && <p role="alert">{operationError || job.errorMessage}</p>}
           <span>更新于 {formatGeneratedAt(job.updatedAt)}</span>
           <div className="report-task-actions">
             {active(job) && <button type="button" onClick={() => void pauseOrResume()} disabled={retrying === job.id || job.status === 'pausing'}>

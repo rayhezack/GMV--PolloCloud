@@ -14,7 +14,7 @@ import {
 } from './dashboard/navigation';
 import './dashboard/dashboard.css';
 import './dashboard/v23-atmosphere.css';
-import { ShieldCheck } from 'lucide-react';
+import { WorkbenchIcon } from './icons/WorkbenchIcon';
 import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
 import { canManagePollocloudApp } from '@/lib/pollocloud';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -23,26 +23,9 @@ import type { Platform, ReportGenerationStatus } from '@shared/api.interface';
 import type { SyncRunStatus } from '@shared/api.interface';
 import { executeSyncRun, getLatestSyncRun } from '@/api/sync';
 import { ReportTask } from './dashboard/ReportTask';
-import { pushToast, ToastStack } from './bencho/ToastStack';
 
 const REPORT_GENERATION_KEEPALIVE_INTERVAL_MS = 10_000;
 const REPORT_GENERATION_PLATFORMS: Platform[] = ['web', 'app'];
-const SYNC_TOAST_SEEN_PREFIX = 'pollo-sync-toast-seen';
-
-function shanghaiDate(value: string | Date): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(
-    typeof value === 'string' ? new Date(value) : value,
-  );
-}
-
-function shanghaiTime(value: string): string {
-  return new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value));
-}
-
 const Layout = () => {
   const location = useLocation();
   useEffect(() => {
@@ -68,26 +51,6 @@ const Layout = () => {
   const [syncJob, setSyncJob] = useState<SyncRunStatus | null>(null);
   const executingJobs = useRef(new Set<string>());
   const executingSyncJobs = useRef(new Set<string>());
-  const notifiedSyncDays = useRef(new Set<string>());
-  useEffect(() => {
-    if (!import.meta.env.DEV || !new URLSearchParams(window.location.search).has('toastTest')) return;
-    pushToast({
-      kind: 'success',
-      title: '数据同步完成',
-      body: '测试：已更新 1,248 条分析记录',
-      detail: '完成时间：今天 09:30\n已从 MaxCompute 拉取并写入 D1，共更新 1,248 条分析记录。',
-      href: '/?tab=data',
-      linkLabel: '查看数据与口径',
-    });
-    pushToast({
-      kind: 'warning',
-      title: 'GMV 异动',
-      body: '测试：多种对比口径共同提示最新 GMV 异动',
-      detail: '分析日期：2026-10-18\nApp主动付费GMV 周同比 -17.2%，日环比 -29.3%。\n日环比与周同比共同说明最新 GMV 存在异动。',
-      href: '/?tab=trend&platform=app&granularity=day&metricDate=2026-10-18&focusMetric=activeGmv&focusPlatform=app&focusPeriod=2026-10-18',
-      linkLabel: '查看 GMV 趋势',
-    });
-  }, []);
   const trackReport = useCallback((job: ReportGenerationStatus) => { setJobs(current => [...current.filter(item => item.platform !== job.platform), job]); }, []);
   const trackSync = useCallback((job: SyncRunStatus) => { setSyncJob(job); }, []);
   useEffect(() => {
@@ -148,8 +111,9 @@ const Layout = () => {
     !accessLoading && canManagePollocloudApp(userInfo);
 
   useEffect(() => {
-    if (!isAdmin) return undefined;
+    if (!userInfo) return undefined;
     let cancelled = false;
+    let timer: number | undefined;
     const refreshGenerationJobs = async () => {
       try {
         const latestJobs = await Promise.all(
@@ -165,58 +129,31 @@ const Layout = () => {
           );
       } catch {
         if (cancelled) return;
+      } finally {
+        if (!cancelled) timer = window.setTimeout(refreshGenerationJobs, REPORT_GENERATION_KEEPALIVE_INTERVAL_MS);
       }
     };
     void refreshGenerationJobs();
-    const timer = window.setInterval(
-      refreshGenerationJobs,
-      REPORT_GENERATION_KEEPALIVE_INTERVAL_MS,
-    );
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
     };
-  }, [isAdmin]);
+  }, [userInfo]);
 
   useEffect(() => {
     if (!userInfo) return;
     let cancelled = false;
+    let timer: number | undefined;
     const refresh = async () => {
       try {
         const job = await getLatestSyncRun();
         if (!cancelled) setSyncJob(job);
       } catch { /* The dock keeps its last known state until the next poll. */ }
+      finally { if (!cancelled) timer = window.setTimeout(refresh, 3000); }
     };
     void refresh();
-    const timer = window.setInterval(refresh, 3000);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    return () => { cancelled = true; window.clearTimeout(timer); };
   }, [userInfo]);
-
-  useEffect(() => {
-    if (!userInfo || syncJob?.status !== 'success' || syncJob.skipped || !syncJob.finishedAt) return;
-    const today = shanghaiDate(new Date());
-    if (shanghaiDate(syncJob.finishedAt) !== today) return;
-    const seenKey = `${SYNC_TOAST_SEEN_PREFIX}:${userInfo.userId}:${today}`;
-    if (notifiedSyncDays.current.has(seenKey)) return;
-    try {
-      if (window.localStorage.getItem(seenKey)) {
-        notifiedSyncDays.current.add(seenKey);
-        return;
-      }
-      window.localStorage.setItem(seenKey, syncJob.runId);
-    } catch {
-      // The in-memory guard still prevents duplicate notifications in this tab.
-    }
-    notifiedSyncDays.current.add(seenKey);
-    pushToast({
-      kind: 'success',
-      title: '数据同步完成',
-      body: `已更新 ${syncJob.rowsSynced.toLocaleString('en-US')} 条分析记录`,
-      detail: `完成时间：今天 ${shanghaiTime(syncJob.finishedAt)}\n数据已从 MaxCompute 拉取并写入 D1。`,
-      href: '/?tab=data',
-      linkLabel: '查看数据与口径',
-    });
-  }, [syncJob, userInfo]);
 
   const displayName = accessLoading ? '读取权限' : userInfo?.userName || 'Pollo Cloud';
   const avatarUrl = userInfo?.avatar;
@@ -297,13 +234,13 @@ const Layout = () => {
                       }
                     />
                   )}
-                <view.icon size={18} strokeWidth={1.7} />
+                <WorkbenchIcon name={view.icon} active={currentView.id === view.id && !location.pathname.endsWith('/permissions')} />
                 <span>{view.label}</span>
               </Link>
             </div>
           ))}
           <NavLink to="/permissions" className="sidebar-link">
-            <ShieldCheck size={18} />
+            <WorkbenchIcon name="shield-check" active={location.pathname.endsWith('/permissions')} />
             <span>账号与权限</span>
           </NavLink>
         </nav>
@@ -348,7 +285,7 @@ const Layout = () => {
             onMouseDown={(event) => event.currentTarget.blur()}
           >
             <span className="dock-label">{view.label}</span>
-            <view.icon size={20} strokeWidth={1.8} />
+            <WorkbenchIcon name={view.icon} active={currentView.id === view.id && !location.pathname.endsWith('/permissions')} />
             {currentView.id === view.id ? <i aria-hidden="true" /> : null}
           </Link>
         ))}
@@ -375,12 +312,11 @@ const Layout = () => {
         </div>
         <main id="main-content">
           <Suspense fallback={<div className="px-8 py-12 text-sm text-muted-foreground" role="status">正在打开页面…</div>}>
-            <Outlet context={{ trackReport, trackSync }} />
+            <Outlet context={{ trackReport, trackSync, jobs, syncJob, canManage: isAdmin }} />
           </Suspense>
         </main>
       </div>
-      {isAdmin && <ReportTask jobs={jobs} syncJob={syncJob} onTrackReport={trackReport} onTrackSync={trackSync} />}
-      <ToastStack />
+      {isAdmin && currentView.id !== 'trend' && <ReportTask jobs={jobs} syncJob={syncJob} onTrackReport={trackReport} onTrackSync={trackSync} />}
     </div>
   );
 };

@@ -15,7 +15,7 @@ process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
 function fixture() {
   const db = new DatabaseSync(':memory:');
   db.exec('CREATE TABLE pollo_da_chain_funnel(period TEXT, platform TEXT); CREATE TABLE pollo_da_chain_breakdown(period TEXT, platform TEXT)');
-  for (const file of readdirSync(new URL('../db/', import.meta.url)).filter(n => n.endsWith('.sql') && !n.startsWith('0020_') && !n.startsWith('0021_')).sort()) db.exec(readFileSync(new URL(`../db/${file}`, import.meta.url), 'utf8'));
+  for (const file of readdirSync(new URL('../db/', import.meta.url)).filter(n => n.endsWith('.sql') && !n.startsWith('0020_') && !n.startsWith('0021_') && !n.startsWith('0026_')).sort()) db.exec(readFileSync(new URL(`../db/${file}`, import.meta.url), 'utf8'));
   const queries = [];
   const adapter = {
     prepare(sql) {

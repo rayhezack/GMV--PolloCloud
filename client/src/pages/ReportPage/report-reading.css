@@ -62,6 +62,7 @@
 @media (max-width: 1100px) {
   .report-reading { grid-template-columns: minmax(0, 1fr); gap: 28px; padding: 32px; }
   .report-reading-rail { position: static; }
+  .report-reading-platform-select { width: fit-content; max-width: 100%; }
   .report-edition strong br, .report-edition p, .report-update { display: none; }
   .report-edition > span { margin-bottom: 5px; }
   .report-reading-rail nav { flex-direction: row; flex-wrap: wrap; gap: 12px 22px; margin: 20px 0 0; padding-top: 16px; }

@@ -4,7 +4,7 @@ import { ChevronDown, Copy } from 'lucide-react';
 import { omit } from 'es-toolkit';
 import { Streamdown } from '@/components/ui/streamdown';
 import { copyAnalysis } from '@/components/dashboard/AnalysisWidgets';
-import type { ReportSummary } from '@shared/api.interface';
+import type { ReportSummary, DailyDiagnosisReport } from '@shared/api.interface';
 import { formatGeneratedAt } from './report-page.utils';
 import { ReportPlatformSelect } from './ReportPlatformSelect';
 import type { Platform } from '@shared/api.interface';
@@ -60,13 +60,13 @@ function emphasizedLead(lead: string) {
     ? { judgment: match[1].trim(), context: match[2].trim() }
     : { judgment: normalized.replace(/\*\*/g, '').trim(), context: '' };
 }
-function formatSummary(summary: string) {
-  const paragraphs = summary.replace(/\*\*/g, '')
-    .replace(/[。；](?=在主动付费)/g, '。\n\n')
-    .replace(/；(?=该分层)/g, '。\n\n');
-  return paragraphs.split(/\n\s*\n/)
-    .map(paragraph => `**${paragraph.trim()}**`)
-    .join('\n\n');
+function causeLeadAndDetail(body: string) {
+  const boundary = /^###\s+原因论证\s*$/m.exec(body);
+  if (!boundary) return leadAndDetail(body);
+  return {
+    lead: body.slice(0, boundary.index).trim(),
+    detail: body.slice(boundary.index + boundary[0].length).trim(),
+  };
 }
 const sectionTitle = (title: string) => title.replace(/^[一二三四五六七八九十]+[、．.]\s*/, '');
 export const normalizeReportNarrative = (markdown: string) => markdown
@@ -75,27 +75,27 @@ export const normalizeReportNarrative = (markdown: string) => markdown
   .replace(/分析期前\s*30\s*日(?=无创作|创作)/g, '近30日');
 const analysisWeekStart = (baselineStart: string) => new Date(Date.parse(`${baselineStart}T00:00:00Z`) + 7 * 86400000).toISOString().slice(0, 10);
 
-export function ReportInsightArticle({ report }: { report: ReportSummary }) {
+export function ReportInsightArticle({ report, mode = 'week' }: { report: ReportSummary | DailyDiagnosisReport; mode?: 'week' | 'day' }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { summary, sections } = parseReport(normalizeReportNarrative(report.markdown));
   const cause = sections.find(section => /原因诊断/.test(section.title));
   const advice = sections.find(section => /行动建议|优化建议|建议/.test(section.title));
   const evidence = sections.filter(section => section !== cause && section !== advice);
-  const causeParts = leadAndDetail(cause?.body || '');
+  const causeParts = causeLeadAndDetail(cause?.body || '');
   return (
     <article className="report-reading" key={`${report.platform}-${report.periodStart}-${report.generatedAt}`}>
       <aside className="report-reading-rail">
         <div className="report-edition">
-          <ReportPlatformSelect
-            value={report.platform}
+          {mode === 'day' ? <span>{({ all: '大盘', web: 'Web', app: 'App' })[report.platform]} · 日异动诊断</span> : <ReportPlatformSelect
+            value={report.platform as Platform}
             className="report-reading-platform-select"
             onValueChange={(platform: Platform) => {
               const next = new URLSearchParams(searchParams);
               next.set('platform', platform);
               setSearchParams(next);
             }}
-          />
-          <strong>{analysisWeekStart(report.periodStart)}<br /><span className="report-date-to">至</span> {report.periodEnd}</strong>
+          />}
+          <strong>{mode === "day" ? report.periodEnd : analysisWeekStart(report.periodStart)}<br /><span className="report-date-to">{mode === "day" ? "对比" : "至"}</span> {mode === "day" ? report.periodStart : report.periodEnd}</strong>
         </div>
         <nav aria-label="报告目录">
           <a href="#report-conclusion">核心结论</a>
@@ -109,11 +109,11 @@ export function ReportInsightArticle({ report }: { report: ReportSummary }) {
       <div className="report-reading-body">
         <section id="report-conclusion" className="report-conclusion">
           <div className="report-section-heading"><h2>核心结论</h2><button aria-label="复制核心结论" title="复制核心结论" onClick={() => void copyAnalysis(summary)}><Copy size={16} /></button></div>
-          <Markdown>{formatSummary(summary)}</Markdown>
+          <Markdown>{summary}</Markdown>
         </section>
         {cause && <section id="report-cause" className="report-reading-section">
           <h2>原因判断</h2>
-          <Markdown>{causeParts.lead.replace(/^(\*\*)?核心判断[：:]\s*/, '$1')}</Markdown>
+          <Markdown>{causeParts.lead}</Markdown>
           {causeParts.detail && <details className="report-inline-detail"><summary>查看原因论证<ChevronDown size={15} /></summary><Markdown>{causeParts.detail}</Markdown></details>}
         </section>}
         <section id="report-actions" className="report-reading-section">

@@ -47,6 +47,11 @@ test('payment sync deduplicates scopes and refreshes one canonical copy idempote
    assert.deepEqual(job.steps.filter(s=>s.key.endsWith('-pay_type')).map(s=>s.key),['all-pay_type']);
    assert.equal(job.steps.filter(s=>s.key.endsWith('-creative')).length,platforms.length);
   }
+  for(const platforms of [['all','web','app'],['web','all','app'],['web','app'],['app']]) {
+   const job=newSyncJob('backfill','2026-10-20','2026-10-20',platforms,['chain','renewal']);
+   assert.deepEqual(job.steps.filter(s=>s.key.endsWith('-chain')).map(s=>s.key),platforms.includes('all')?['all-chain']:platforms.map(p=>`${p}-chain`));
+   assert.equal(job.steps.filter(s=>s.key.endsWith('-renewal')).length,platforms.length);
+  }
   for(const file of ['0009_pollo_da_analytics.sql','0010_pay_type_subscription_tier.sql','0011_middle_table_dimensions.sql','0018_payment_product_dimensions.sql','0015_payment_registration.sql','0017_payment_sync_stage.sql','0022_single_payment_facts.sql','0023_payment_single_scope_guard.sql'])db.exec(sql(file));
   const adapter={prepare(statement){return {bind(...args){return {execute(){db.prepare(statement).run(...args);}};}};},async batch(statements){db.exec('BEGIN');try{for(const s of statements)s.execute();db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}}};
   const records=[];

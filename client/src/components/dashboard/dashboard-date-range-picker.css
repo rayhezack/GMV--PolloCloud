@@ -193,3 +193,34 @@
   opacity: 1;
   visibility: visible;
 }
+
+/* Single-day backfill uses the same surface and focus treatment as the toolbar. */
+.dashboard-single-date-picker [data-slot='date-picker-trigger'] {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  color: #61718a;
+  background: transparent;
+}
+.dashboard-single-date-picker [data-slot='date-picker-trigger']:hover {
+  background: #f0f1f4;
+}
+.dashboard-single-date-picker [data-slot='date-picker-trigger-indicator'],
+.dashboard-single-date-picker [data-slot='date-picker-trigger-indicator'] svg {
+  color: #61718a;
+  opacity: 1;
+  width: 16px;
+  height: 16px;
+}
+.dashboard-single-date-popover .calendar__cell {
+  font-size: 12px;
+}
+.dashboard-single-date-popover .calendar__header-cell {
+  color: #68718a;
+  font-size: 11px;
+}
+.dashboard-single-date-popover .calendar__cell[data-selected='true'] {
+  color: #533afd;
+  background: #f0f1f4;
+}

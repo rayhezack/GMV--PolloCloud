@@ -379,6 +379,7 @@ export interface GmvAnomalyAlert {
 }
 
 export interface DashboardGmvAnomalyResponse {
+  monitoredPlatforms?: DashboardPlatform[];
   latestWeek: string;
   latestDay: string;
   method: 'daily_and_weekly_rolling_p95_p05_min_10pct';
@@ -518,6 +519,7 @@ export interface WorkbookPreviewResponse {
 /* ===== 诊断报告 ===== */
 
 export interface ReportGenerationRequest {
+  trigger?: 'manual' | 'scheduled' | 'anomaly';
   platform: Platform;
   granularity: Granularity;
   startDate: string;
@@ -545,7 +547,20 @@ export interface PaymentTrendResponse {
 
 export type ReportHistoryItem = Omit<ReportSummary, 'markdown'>;
 
+/** Daily diagnoses use a separate API and never overwrite weekly history. */
+export type DailyDiagnosisReport = Omit<ReportSummary, 'platform'> & { platform: DashboardPlatform; runId: string };
+export interface DailyDiagnosisStatus {
+  platform: DashboardPlatform;
+  period: string;
+  baseline: string;
+  status: 'waiting' | 'queued' | 'running' | 'success' | 'failed' | 'clear' | 'normal';
+  updatedAt: string;
+  error?: string;
+  report?: DailyDiagnosisReport;
+}
+
 export interface ReportGenerationStatus {
+  trigger?: 'manual' | 'scheduled' | 'anomaly';
   runId: string;
   platform: Platform;
   periodStart: string;

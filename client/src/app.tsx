@@ -12,9 +12,8 @@ const ReportPage = React.lazy(() => import('./pages/ReportPage/ReportPage'));
 const AdminManagementPage = React.lazy(() => import('./pages/AdminManagementPage/AdminManagementPage'));
 const PermissionsPage = React.lazy(() => import('./pages/PermissionsPage/PermissionsPage'));
 
-if (import.meta.env.DEV && new URLSearchParams(location.search).has('perf')) {
-  // Delay until React has mounted the shell used by the acceptance probe.
-  window.addEventListener('load', () => { void import('./lib/dashboard-performance'); }, { once: true });
+if (new URLSearchParams(location.search).has('perf')) {
+  void import('./lib/dashboard-performance');
 }
 
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
