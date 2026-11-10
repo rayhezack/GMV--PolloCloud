@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "c7f21f7d-0d68-41b0-a02f-419d126f8814",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/ray/.codex/visualizations/2026/11/09/01a1be99-070c-7c31-93d9-89c5b9e3702f/gmv-daily-rail/.archify/lineage-20261111/payment.json",
+  "output": "/Users/ray/.codex/visualizations/2026/11/09/01a1be99-070c-7c31-93d9-89c5b9e3702f/gmv-daily-rail/client/public/lineage/payment.html",
+  "specification": {
+    "sha256": "5776f8976ce8b7517e0e1d19d6c4b001afd54c8113bb1717b933956a13d66e67",
+    "bytes": 5762
+  },
+  "artifact": {
+    "sha256": "4e875dca39027f9500151cfe6a70dfdae679768d71d6710d7231524ce0fd1ea3",
+    "bytes": 826547
+  }
+}

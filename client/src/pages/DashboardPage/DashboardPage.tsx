@@ -891,9 +891,7 @@ function GmvCoverageExplanation({
           <h3>图表与数据源</h3>
           <p>看板读取 D1 同步表，按页面所选端口、日期与业务周聚合；以下为每类图表的实际依赖，源表缺失或对账未通过时不推定缺失维度。</p>
           <a href="/data-lineage.html" target="_blank" rel="noreferrer">查看完整血缘图</a>
-          <div className="dashboard-lineage-figure"><img src="/data-lineage-overview.svg" width="1280" height="720" alt="数据管道总览：MaxCompute 和飞书 Base 经独立同步进入 D1，再由 Worker API 聚合及校验后供看板读取" /></div>
-          <div className="dashboard-lineage-figure"><img src="/data-lineage-payment.svg" width="1280" height="720" alt="支付依赖图：GMV 与付费类型共享支付结果，注册拆分同时依赖支付结果对账和注册明细，支付链路独立读取漏斗及续订 cohort" /></div>
-          <div className="dashboard-lineage-figure"><img src="/data-lineage-operations.svg" width="1280" height="720" alt="创作与投放依赖图：功能表现和创作分层共享活跃事实，广告指标与 LTV 共用注册 cohort 事实" /></div>
+          <iframe className="dashboard-lineage-viewer" src="/data-lineage.html" title="交互式数据血缘：上游表、D1 与看板依赖" loading="lazy" />
           <dl className="dashboard-methodology-definitions">
             <div><dt>GMV 趋势与三张指标卡</dt><dd>MaxCompute 支付归因日表 → D1 pollo_da_fact_rows（pay_type，NONE 结果行）→ overview/payTypeTrend。卡片金额为展示范围内最新日期的单日值，WoW 与 7 天前同日比较；折线展示所选范围全部可用日期。收入趋势的支付结果线同源；付费墙等诊断线另读 pollo_da_chain_funnel，不混入卡片 GMV。</dd></div>
             <div><dt>付费类型贡献与下钻</dt><dd>支付归因日表 → D1 pollo_da_fact_rows。结果汇总取 NONE 行；功能/模型归因分别取 CREATION_MODE、MODEL 或 ACTUAL_MODEL，不能跨模式相加。订单注册国家经数仓维表映射为 T1/T2/T3（清单外及未知归 T2），注册端取自支付订单，注册新老由订单关联账户注册日期计算 → pollo_da_payment_registration，按同口径订单结果核对后才展示。页面端筛选取支付端，注册端下钻用于区分同端与跨端付费。续订按 SKU、升级按前后 SKU、积分包按积分档位、周期重置按前后周期拆分；前值取同一订阅、同一支付端的上一笔有效实付，无法关联时为未知。</dd></div>

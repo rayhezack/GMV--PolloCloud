@@ -1,3 +1,4 @@
+import { advanceDailyRefresh, type RefreshBatch } from './daily-refresh';
 import { claimSourceRefresh, finishSourceRefresh } from './source-refresh-policy';
 import { encodeDashboardCache, decodeDashboardCache } from './dashboard-cache';
 import { normalizeChartActions } from '../shared/product-actions';
@@ -2687,15 +2688,15 @@ function reportDependencies(env: Env) {
   };
 }
 
-async function runScheduledSync(env: Env, datasets: SyncDataset[]) {
+async function runScheduledSync(env: Env, datasets: SyncDataset[], date?: string) {
   const response = await createSyncRun(env, new Request('https://schedule.internal/api/sync-runs', {
-    method: 'POST', body: JSON.stringify({ mode: 'latest_day', platforms: ['all', 'web', 'app'], datasets }),
+    method: 'POST', body: JSON.stringify({ mode: date ? 'date_range' : 'latest_day', startDate: date, endDate: date, platforms: ['all', 'web', 'app'], datasets }),
     headers: { 'content-type': 'application/json' },
   }));
   const job = await response.json() as SyncRunResponse;
   if (!response.ok || job.status === 'failed') throw new Error(job.errorMessage || '定时同步任务创建失败');
   if (job.skipped || job.status === 'success' || job.status === 'paused') return job;
-  if (!datasets.every(dataset => job.datasets?.includes(dataset))) return { ...job, skipped: true, skipReason: '另一数据集正在同步' };
+  const ownsRequestedDatasets=datasets.every(dataset=>job.datasets?.includes(dataset)) && (!date || (job.startDate===date && job.endDate===date));
   const executionResponse = await executeSyncRun(env, new Request('https://schedule.internal/api/sync-runs/run', {
     method: 'POST', body: JSON.stringify({ runId: job.runId }), headers: { 'content-type': 'application/json' },
   }));
@@ -2707,7 +2708,7 @@ async function runScheduledSync(env: Env, datasets: SyncDataset[]) {
     if (status.errorMessage?.includes('中间表返回空结果')) return { ...status, skipped: true, skipReason: '源数据尚未产出，等待下次同步' };
     throw new Error(status.errorMessage || '定时同步失败');
   }
-  return status;
+  return !ownsRequestedDatasets && status.status==='success' ? {...status,status:'queued' as const} : status;
 }
 
 async function syncAdsDate(env: Env, date: string): Promise<number> {
@@ -2904,10 +2905,78 @@ export async function queueWeeklyReport(env: Env, platform: 'web' | 'app', anoma
   return status;
 }
 
+// Data starts once at 09:20 Asia/Shanghai; report ticks only continue this durable batch.
+export async function dailyDataRefresh(env: Env, start = false, force = false) {
+  if (!env.DB) throw new Error('D1 未配置');
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS daily_refresh_batches (day TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at INTEGER NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0)`).run();
+  const day = new Date(Date.now()+8*3600000).toISOString().slice(0,10);
+  if (start) {
+    const date = shiftDate(day,-1);
+    const ads = [...new Set([...Array.from({length:7},(_,i)=>shiftDate(date,-i)),...[14,30,60,90,180].map(i=>shiftDate(date,-i))])];
+    const creation = [...new Set([...Array.from({length:4},(_,i)=>shiftDate(date,-i)),shiftDate(date,-7),shiftDate(date,-30)])];
+    const fresh: RefreshBatch = {day,tasks:['actions',...(['pay_type','chain','renewal','creative'].map(d=>'facts:'+d)),...ads.map(d=>'ads:'+d),...creation.map(d=>'creation:'+d)],cursor:0,status:'running'};
+    // A delayed previous day must not make us miss today's 09:20 start. Manual
+    // retries resume the failed cursor; already successful work is not restarted.
+    await env.DB.prepare(`INSERT INTO daily_refresh_batches(day,payload,updated_at) VALUES(?,?,?)
+      ON CONFLICT(day) DO UPDATE SET payload=json_remove(json_set(payload,'$.status','running'),'$.error'),updated_at=excluded.updated_at
+      WHERE ?=1 AND json_extract(payload,'$.status')='failed'`).bind(day,JSON.stringify(fresh),Date.now(),force?1:0).run();
+  }
+  const lease=Date.now()+15*60000;
+  // Claim AND read the payload atomically, so concurrent callbacks cannot save a stale cursor.
+  const claim=await env.DB.prepare(`UPDATE daily_refresh_batches SET lease_until=?
+    WHERE day=(SELECT day FROM daily_refresh_batches WHERE json_extract(payload,'$.status')='running' ORDER BY day LIMIT 1)
+    AND lease_until<? RETURNING payload`).bind(lease,Date.now()).first<{payload:string}>();
+  if(!claim) {
+    const latest=await env.DB.prepare("SELECT payload FROM daily_refresh_batches ORDER BY CASE WHEN json_extract(payload,'$.status')='running' THEN 0 ELSE 1 END,day DESC LIMIT 1").first<{payload:string}>();
+    return latest ? JSON.parse(latest.payload) as RefreshBatch : undefined;
+  }
+  const batch=JSON.parse(claim.payload) as RefreshBatch;
+  const save=async(value:RefreshBatch)=>{
+    const saved=await env.DB!.prepare('UPDATE daily_refresh_batches SET payload=?,updated_at=? WHERE day=? AND lease_until=? RETURNING day')
+      .bind(JSON.stringify(value),Date.now(),value.day,lease).first();
+    if(!saved)throw new Error('每日批次执行锁已失效，已停止当前执行');
+  };
+  try { return await advanceDailyRefresh(batch,async task=>{
+    if (task==='actions') {
+      const result=await syncProductActions(env.DB!, (pageToken,signal)=>{
+        const query=new URLSearchParams({page_size:'500'}); if(pageToken)query.set('page_token',pageToken);
+        return baseRequest<ActionPage>(env,'product_actions',`/records?${query}`,undefined,'GET',signal);
+      },{scheduled:true});
+      if(result.status==='skipped') {
+        const snapshot=await readProductActions(env.DB!);
+        return snapshot.available && snapshot.readAt>=`${batch.day}T01:20:00.000Z`;
+      }
+      await markDailyDiagnosisDirty(env); return true;
+    }
+    if (task.startsWith('facts:')) {
+      const dataset=task.slice(6) as SyncDataset;
+      const deadline=Date.now()+90000;
+      let result=await runScheduledSync(env,[dataset],shiftDate(batch.day,-1));
+      while(result.status==='queued' && !result.skipped && Date.now()<deadline)result=await runScheduledSync(env,[dataset],shiftDate(batch.day,-1));
+      if(result.status==='paused') throw new Error('同步已暂停，请在任务后台恢复后手动继续每日批次');
+      if(result.status==='failed') throw new Error(result.errorMessage || '源数据未就绪，保留原数据；请手动重试');
+      return result.status==='success';
+    }
+    const [source,date]=task.split(':');
+    const attempt=await claimSourceRefresh(env,source==='ads'?'ads':'creation',date);
+    if(attempt===null) {
+      const state=await env.DB!.prepare('SELECT status,refreshed_day FROM source_refresh_state WHERE source=? AND period=?')
+        .bind(source,date).first<{status:string;refreshed_day:string}>();
+      if(state?.status==='success' && state.refreshed_day===day)return true;
+      throw new Error(`${source} ${date} 正在执行或等待重试，请检查源任务后手动继续每日批次`);
+    }
+    try {
+      if(source==='ads')await syncAdsDate(env,date);else await syncCreationChainDate(env,date);
+      await finishSourceRefresh(env,source==='ads'?'ads':'creation',date,attempt,true);
+      await markDailyDiagnosisDirty(env); return true;
+    } catch(error) {await finishSourceRefresh(env,source==='ads'?'ads':'creation',date,attempt,false);throw error;}
+  },save); } finally {await env.DB.prepare('UPDATE daily_refresh_batches SET lease_until=0 WHERE day=? AND lease_until=?').bind(batch.day,lease).run();}
+}
+
 // The platform allows five schedules. Share the report slot while preserving weekly times.
 export function weeklyReportPlatformAt(time: Date): 'web' | 'app' | null {
   const shanghai = new Date(time.getTime() + 8 * 3600000);
-  if (shanghai.getUTCDay() !== 6) return null;
+  if (shanghai.getUTCDay() !== 6 || shanghai.getUTCHours() !== 12) return null;
   return shanghai.getUTCMinutes() === 0 ? 'web' : shanghai.getUTCMinutes() === 10 ? 'app' : null;
 }
 
@@ -2918,10 +2987,17 @@ async function cronHandler(
 ): Promise<Response> {
   if (request.headers.get('x-pollocloud-trigger') !== 'cron') return errorResponse('仅允许 Pollo Cloud 定时任务触发', 403);
   const path = new URL(request.url).pathname;
+  if (path === '/api/cron/daily-data') {
+    const batch=await dailyDataRefresh(env,true,request.headers.get('x-pollocloud-cron-run')==='manual');
+    return json({ok:batch?.status!=='failed',task:'daily-data',batch},batch?.status==='failed'?500:200);
+  }
   if (path === '/api/cron/reports') {
+    const batch=await dailyDataRefresh(env);
     const scheduled = request.headers.get('x-pollocloud-scheduled-time');
     const platform = weeklyReportPlatformAt(scheduled ? new Date(scheduled) : new Date());
     if (platform) await queueWeeklyReport(env, platform);
+    if(batch?.status==='running')return json({ok:true,task:'daily-data-continuation',batch});
+    if(batch?.status==='failed')return json({ok:false,task:'daily-data-failed',batch});
   }
   if (path === '/api/cron/daily-diagnoses' || path === '/api/cron/reports') {
     // Do not return streaming headers early: the platform scheduler can record

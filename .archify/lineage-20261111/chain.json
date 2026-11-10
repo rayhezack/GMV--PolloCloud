@@ -1,0 +1,222 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Pollo · 支付链路与到期续订血缘",
+    "output": "client/public/lineage/chain.html",
+    "quality_profile": "showcase",
+    "locale": "zh-CN",
+    "repository": {
+      "url": "https://github.com/rayhezack/GMV--PolloCloud.git",
+      "revision": "a5e1d1afd385605830704980442f50ca231e7f7b"
+    }
+  },
+  "components": [
+    {
+      "id": "chain-0-0",
+      "type": "database",
+      "label": "用户日漏斗",
+      "sublabel": "ads_pollo_transaction_paywall_user_daily_dip",
+      "tag": "MaxCompute",
+      "pos": [
+        40,
+        100
+      ],
+      "size": [
+        320,
+        100
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/chain-funnel-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "chain-0-1",
+      "type": "database",
+      "label": "D1 · 总体指标",
+      "sublabel": "pollo_da_chain_funnel",
+      "tag": "同步校验后写入",
+      "pos": [
+        490,
+        40
+      ],
+      "size": [
+        280,
+        85
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/chain-funnel-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "chain-0-2",
+      "type": "backend",
+      "label": "支付链路 / 驱动归因",
+      "sublabel": "chain-funnel · attributions?dimension=chain",
+      "tag": "Worker API",
+      "pos": [
+        900,
+        100
+      ],
+      "size": [
+        280,
+        100
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/chain-funnel-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "chain-1-0",
+      "type": "database",
+      "label": "到期 cohort",
+      "sublabel": "ads_pollo_renewal_cohort_dip",
+      "tag": "MaxCompute",
+      "pos": [
+        40,
+        400
+      ],
+      "size": [
+        320,
+        170
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/sql-templates.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "chain-1-1",
+      "type": "database",
+      "label": "D1 · 分析事实",
+      "sublabel": "pollo_da_fact_rows · renewal",
+      "tag": "同步校验后写入",
+      "pos": [
+        490,
+        400
+      ],
+      "size": [
+        280,
+        170
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/sql-templates.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "chain-1-2",
+      "type": "backend",
+      "label": "到期用户 / 续订率 / 客单价",
+      "sublabel": "attributions?chainType=renewal",
+      "tag": "Worker API",
+      "pos": [
+        900,
+        400
+      ],
+      "size": [
+        280,
+        170
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/sql-templates.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "chain-0-detail",
+      "type": "database",
+      "label": "D1 · 维度拆解",
+      "sublabel": "pollo_da_chain_breakdown",
+      "tag": "同步校验后写入",
+      "pos": [
+        490,
+        170
+      ],
+      "size": [
+        280,
+        85
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/chain-funnel-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "chain-0-0",
+      "to": "chain-0-1",
+      "label": "SQL 聚合 / 校验",
+      "variant": "dashed"
+    },
+    {
+      "from": "chain-0-1",
+      "to": "chain-0-2",
+      "label": "读取 / 聚合"
+    },
+    {
+      "from": "chain-1-0",
+      "to": "chain-1-1",
+      "label": "SQL 聚合 / 校验",
+      "variant": "dashed"
+    },
+    {
+      "from": "chain-1-1",
+      "to": "chain-1-2",
+      "label": "读取 / 聚合"
+    },
+    {
+      "from": "chain-0-0",
+      "to": "chain-0-detail",
+      "label": "SQL 聚合 / 校验",
+      "variant": "dashed"
+    },
+    {
+      "from": "chain-0-detail",
+      "to": "chain-0-2",
+      "label": "读取 / 聚合"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "slate",
+      "title": "口径边界",
+      "items": [
+        "漏斗按用户日行为顺序归因；未串联支付不分摊给过程指标。",
+        "续订 cohort 按到期日归组；支付结果按支付日归组，两者不能直接相减。"
+      ]
+    }
+  ]
+}

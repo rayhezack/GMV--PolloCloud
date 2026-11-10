@@ -1,0 +1,273 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Pollo · 支付结果与注册分层血缘",
+    "output": "client/public/lineage/payment.html",
+    "quality_profile": "showcase",
+    "locale": "zh-CN",
+    "repository": {
+      "url": "https://github.com/rayhezack/GMV--PolloCloud.git",
+      "revision": "a5e1d1afd385605830704980442f50ca231e7f7b"
+    }
+  },
+  "components": [
+    {
+      "id": "payment-0-0",
+      "type": "database",
+      "label": "支付结果",
+      "sublabel": "ads_pollo_transaction_gmv_attribution_daily_dip",
+      "tag": "MaxCompute",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        320,
+        170
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/middle-table-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "payment-0-1",
+      "type": "database",
+      "label": "D1 · 分析事实",
+      "sublabel": "pollo_da_fact_rows · pay_type",
+      "tag": "同步校验后写入",
+      "pos": [
+        490,
+        40
+      ],
+      "size": [
+        280,
+        170
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/middle-table-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "payment-0-2",
+      "type": "backend",
+      "label": "GMV 趋势 / 付费类型",
+      "sublabel": "overview · payment-trend · attributions",
+      "tag": "Worker API",
+      "pos": [
+        900,
+        40
+      ],
+      "size": [
+        280,
+        170
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/middle-table-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "payment-1-0",
+      "type": "database",
+      "label": "注册 / 商品 / 国家层级",
+      "sublabel": "dwd_pollo_transaction_order_dip",
+      "tag": "MaxCompute",
+      "pos": [
+        40,
+        330
+      ],
+      "size": [
+        320,
+        80
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/payment-registration-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "payment-1-1",
+      "type": "database",
+      "label": "D1 · 分析事实",
+      "sublabel": "pollo_da_payment_registration",
+      "tag": "同步校验后写入",
+      "pos": [
+        490,
+        475
+      ],
+      "size": [
+        280,
+        170
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/payment-registration-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "payment-1-2",
+      "type": "backend",
+      "label": "付费下钻",
+      "sublabel": "结果对账通过后读取注册与 SKU 维度",
+      "tag": "Worker API",
+      "pos": [
+        900,
+        475
+      ],
+      "size": [
+        280,
+        170
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/payment-registration-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "payment-reg-1",
+      "type": "database",
+      "label": "订单订阅快照",
+      "sublabel": "dwd_pollo_transaction_order_snapshot_dip",
+      "tag": "MaxCompute",
+      "pos": [
+        40,
+        440
+      ],
+      "size": [
+        320,
+        80
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/payment-registration-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "payment-reg-2",
+      "type": "database",
+      "label": "账户注册快照",
+      "sublabel": "dim_pollo_user_account_dfp",
+      "tag": "MaxCompute",
+      "pos": [
+        40,
+        550
+      ],
+      "size": [
+        320,
+        80
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/payment-registration-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "payment-reg-3",
+      "type": "database",
+      "label": "国家层级映射",
+      "sublabel": "dim_pollo_common_country_tier_nfn",
+      "tag": "MaxCompute",
+      "pos": [
+        40,
+        660
+      ],
+      "size": [
+        320,
+        80
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/payment-registration-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "payment-0-0",
+      "to": "payment-0-1",
+      "label": "SQL 聚合 / 校验",
+      "variant": "dashed"
+    },
+    {
+      "from": "payment-0-1",
+      "to": "payment-0-2",
+      "label": "读取 / 聚合"
+    },
+    {
+      "from": "payment-1-0",
+      "to": "payment-1-1",
+      "label": "SQL 聚合 / 校验",
+      "variant": "dashed"
+    },
+    {
+      "from": "payment-1-1",
+      "to": "payment-1-2",
+      "label": "读取 / 聚合"
+    },
+    {
+      "from": "payment-reg-1",
+      "to": "payment-1-1",
+      "label": "关联"
+    },
+    {
+      "from": "payment-reg-2",
+      "to": "payment-1-1",
+      "label": "关联"
+    },
+    {
+      "from": "payment-reg-3",
+      "to": "payment-1-1",
+      "label": "关联"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "slate",
+      "title": "口径边界",
+      "items": [
+        "all、web、app 是独立筛选；all 不能与子端再次相加。",
+        "NONE 是支付结果；CREATION_MODE / MODEL / ACTUAL_MODEL 不跨模式相加。",
+        "注册拆分独立聚合，必须与同日同端支付结果对账；未知分组保留。"
+      ]
+    }
+  ]
+}

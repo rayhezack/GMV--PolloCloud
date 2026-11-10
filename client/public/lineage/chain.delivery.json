@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "51ebcecd-e7a3-4f48-a3e8-0181e235bb39",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/ray/.codex/visualizations/2026/11/09/01a1be99-070c-7c31-93d9-89c5b9e3702f/gmv-daily-rail/.archify/lineage-20261111/chain.json",
+  "output": "/Users/ray/.codex/visualizations/2026/11/09/01a1be99-070c-7c31-93d9-89c5b9e3702f/gmv-daily-rail/client/public/lineage/chain.html",
+  "specification": {
+    "sha256": "519b62c83b473b6cd2e986e68b2de959a353b0f1d0d05ca30e1e6ff6b0ca6593",
+    "bytes": 4633
+  },
+  "artifact": {
+    "sha256": "48199d62005ad4b5f372ddeba501606a3ea79b83c250d61396bd86e068550a79",
+    "bytes": 821769
+  }
+}

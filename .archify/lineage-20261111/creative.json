@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Pollo · 创作表现与活跃分层血缘",
+    "output": "client/public/lineage/creative.html",
+    "quality_profile": "showcase",
+    "locale": "zh-CN",
+    "repository": {
+      "url": "https://github.com/rayhezack/GMV--PolloCloud.git",
+      "revision": "a5e1d1afd385605830704980442f50ca231e7f7b"
+    }
+  },
+  "components": [
+    {
+      "id": "creative-0-0",
+      "type": "database",
+      "label": "功能链路 ADS",
+      "sublabel": "ads_pollo_creation_function_chain_daily_dip",
+      "tag": "MaxCompute",
+      "pos": [
+        40,
+        100
+      ],
+      "size": [
+        320,
+        100
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/creation-chain-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "creative-0-1",
+      "type": "database",
+      "label": "D1 · 总体指标",
+      "sublabel": "pollo_da_creation_overall_daily",
+      "tag": "同步校验后写入",
+      "pos": [
+        490,
+        40
+      ],
+      "size": [
+        280,
+        85
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/creation-chain-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "creative-0-2",
+      "type": "backend",
+      "label": "创作指标 / 功能表现",
+      "sublabel": "creative-overview",
+      "tag": "Worker API",
+      "pos": [
+        900,
+        100
+      ],
+      "size": [
+        280,
+        100
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/creation-chain-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "creative-1-0",
+      "type": "database",
+      "label": "活跃事件日志",
+      "sublabel": "ods_pollo_log_event_dip",
+      "tag": "MaxCompute",
+      "pos": [
+        40,
+        400
+      ],
+      "size": [
+        320,
+        85
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/sql-templates.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "creative-1-1",
+      "type": "database",
+      "label": "D1 · 分析事实",
+      "sublabel": "pollo_da_fact_rows · creative",
+      "tag": "同步校验后写入",
+      "pos": [
+        490,
+        465
+      ],
+      "size": [
+        280,
+        100
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/sql-templates.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "creative-1-2",
+      "type": "backend",
+      "label": "活跃 UV / 30 日创作分层",
+      "sublabel": "creative-overview · attributions?dimension=creative",
+      "tag": "Worker API",
+      "pos": [
+        900,
+        465
+      ],
+      "size": [
+        280,
+        100
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/sql-templates.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "creative-0-detail",
+      "type": "database",
+      "label": "D1 · 功能指标",
+      "sublabel": "pollo_da_creation_function_daily",
+      "tag": "同步校验后写入",
+      "pos": [
+        490,
+        170
+      ],
+      "size": [
+        280,
+        85
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/creation-chain-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "creative-generated-record",
+      "type": "database",
+      "label": "生成记录",
+      "sublabel": "dwd_video_pollo_video_generate_record_dfp",
+      "tag": "MaxCompute",
+      "pos": [
+        40,
+        530
+      ],
+      "size": [
+        320,
+        85
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/sql-templates.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "creative-0-0",
+      "to": "creative-0-1",
+      "label": "SQL 聚合 / 校验",
+      "variant": "dashed"
+    },
+    {
+      "from": "creative-0-1",
+      "to": "creative-0-2",
+      "label": "读取 / 聚合"
+    },
+    {
+      "from": "creative-1-0",
+      "to": "creative-1-1",
+      "label": "SQL 聚合 / 校验",
+      "variant": "dashed"
+    },
+    {
+      "from": "creative-1-1",
+      "to": "creative-1-2",
+      "label": "读取 / 聚合"
+    },
+    {
+      "from": "creative-0-0",
+      "to": "creative-0-detail",
+      "label": "SQL 聚合 / 校验",
+      "variant": "dashed"
+    },
+    {
+      "from": "creative-0-detail",
+      "to": "creative-0-2",
+      "label": "读取 / 聚合"
+    },
+    {
+      "from": "creative-generated-record",
+      "to": "creative-1-1",
+      "label": "关联活跃人群"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "slate",
+      "title": "口径边界",
+      "items": [
+        "整体采用源表汇总行，不能相加跨功能 UV。",
+        "分子与分母使用同一活跃人群；创作页面不把链路 GMV 当支付结果。"
+      ]
+    }
+  ]
+}

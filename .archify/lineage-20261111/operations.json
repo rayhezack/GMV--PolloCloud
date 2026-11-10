@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Pollo · 投放回收与产品动作血缘",
+    "output": "client/public/lineage/operations.html",
+    "quality_profile": "showcase",
+    "locale": "zh-CN",
+    "repository": {
+      "url": "https://github.com/rayhezack/GMV--PolloCloud.git",
+      "revision": "a5e1d1afd385605830704980442f50ca231e7f7b"
+    }
+  },
+  "components": [
+    {
+      "id": "operations-0-0",
+      "type": "database",
+      "label": "注册 cohort ADS",
+      "sublabel": "ads_pollo_ad_attribution_daily_dip",
+      "tag": "MaxCompute",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        320,
+        170
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/ads-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "operations-0-1",
+      "type": "database",
+      "label": "D1 · 分析事实",
+      "sublabel": "pollo_da_ads_daily",
+      "tag": "同步校验后写入",
+      "pos": [
+        490,
+        40
+      ],
+      "size": [
+        280,
+        170
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/ads-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "operations-0-2",
+      "type": "backend",
+      "label": "付费广告 / LTV / ROAS",
+      "sublabel": "ads-overview · cohortMatrix",
+      "tag": "Worker API",
+      "pos": [
+        900,
+        40
+      ],
+      "size": [
+        280,
+        170
+      ],
+      "sources": [
+        {
+          "path": "server/modules/maxcompute/ads-sql.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "operations-1-0",
+      "type": "database",
+      "label": "飞书 Base 产品动作",
+      "sublabel": "product_actions · 产品动作明细",
+      "tag": "飞书 Base",
+      "pos": [
+        40,
+        330
+      ],
+      "size": [
+        320,
+        170
+      ],
+      "sources": [
+        {
+          "path": "worker/product-actions-store.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "operations-1-1",
+      "type": "database",
+      "label": "D1 · 产品动作快照",
+      "sublabel": "pollo_da_product_action_details",
+      "tag": "同步校验后写入",
+      "pos": [
+        490,
+        330
+      ],
+      "size": [
+        280,
+        170
+      ],
+      "sources": [
+        {
+          "path": "worker/product-actions-store.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "operations-1-2",
+      "type": "backend",
+      "label": "产品日历 / 图表动作 / 诊断证据",
+      "sublabel": "product-actions",
+      "tag": "Worker API",
+      "pos": [
+        900,
+        330
+      ],
+      "size": [
+        280,
+        170
+      ],
+      "sources": [
+        {
+          "path": "worker/product-actions-store.ts"
+        },
+        {
+          "path": "worker/index.ts"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "operations-0-0",
+      "to": "operations-0-1",
+      "label": "SQL 聚合 / 校验",
+      "variant": "dashed"
+    },
+    {
+      "from": "operations-0-1",
+      "to": "operations-0-2",
+      "label": "读取 / 聚合"
+    },
+    {
+      "from": "operations-1-0",
+      "to": "operations-1-1",
+      "label": "快照校验 / 发布",
+      "variant": "dashed"
+    },
+    {
+      "from": "operations-1-1",
+      "to": "operations-1-2",
+      "label": "读取 / 聚合"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "slate",
+      "title": "口径边界",
+      "items": [
+        "广告按注册日 cohort 计算回收；未成熟窗口可能为部分累计值，周比较只使用完整成熟 cohort。",
+        "动作是同步快照，作为诊断证据，不参与 GMV 加总，也不能直接证明因果。"
+      ]
+    }
+  ]
+}

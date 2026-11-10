@@ -3275,3 +3275,6 @@
 .platform-filter-menu { min-width: 184px; padding: 9px; }
 .platform-filter-menu .icon-control-option { cursor: pointer; }
 .platform-filter-menu .icon-control-option.is-active { color: var(--ui-ink); background: #f0f1f4; }
+
+.dashboard-lineage-viewer { display:block; width:100%; height:780px; margin-top:16px; border:1px solid var(--ui-line); border-radius:18px; background:#f4f6fa; }
+@media(max-width:700px) { .dashboard-lineage-viewer { height:720px; } }

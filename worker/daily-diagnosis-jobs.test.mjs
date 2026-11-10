@@ -100,14 +100,14 @@ test('actual cron HTTP route invokes the model without a dashboard visit; GET re
   const read=await worker.fetch(new Request('http://local/api/daily-diagnosis?platform=web&period=2026-11-08'),env,context);assert.equal((await read.json()).report.markdown,'**HTTP模型原文**');assert.equal(calls,1);
  }finally{globalThis.fetch=original;}
 });
-test('shared report schedule keeps five cron entries and preserves every Shanghai weekly slot',async()=>{
+test('shared report schedule uses two cron entries and only the Shanghai Saturday noon slots',async()=>{
  const b=await build({entryPoints:['worker/index.ts'],bundle:true,platform:'node',format:'esm',write:false,logLevel:'silent'});
  const {weeklyReportPlatformAt}=await import(`data:text/javascript;base64,${Buffer.from(b.outputFiles[0].text).toString('base64')}`);
- const config=JSON.parse(await readFile('pollocloud.json','utf8'));assert.equal(config.cron.length,5);
+ const config=JSON.parse(await readFile('pollocloud.json','utf8'));assert.equal(config.cron.length,2);
  assert.ok(config.cron.some(c=>c.path==='/api/cron/reports'&&c.schedule==='*/5 * * * *'));
  for(let hour=0;hour<24;hour++)for(let minute=0;minute<60;minute+=5){
   const saturday=new Date(Date.UTC(2026,10,14,hour-8,minute));
-  assert.equal(weeklyReportPlatformAt(saturday),minute===0?'web':minute===10?'app':null);
+  assert.equal(weeklyReportPlatformAt(saturday),hour===12?(minute===0?'web':minute===10?'app':null):null);
   const friday=new Date(Date.UTC(2026,10,13,hour-8,minute));assert.equal(weeklyReportPlatformAt(friday),null);
  }
 });
