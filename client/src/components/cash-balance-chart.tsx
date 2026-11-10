@@ -50,6 +50,8 @@ type CashBalanceChartProps = Omit<React.ComponentProps<"div">, "children"> & {
   eventTimeline?: boolean
   /** Locate an exact dated observation without highlighting the surrounding card. */
   focusTime?: number
+  /** A new navigation can locate the same date again after its preview was dismissed. */
+  focusKey?: string
   title?: string
   /** The glyph in the blue tile (14px, white). */
   icon?: React.ReactNode
@@ -369,6 +371,7 @@ function CashBalanceChart({
   plotHeight: heightProp = 200,
   eventTimeline = false,
   focusTime,
+  focusKey,
   title = "Cash Balance",
   icon = <CreditCardIcon />,
   balanceLabel = "Total Balance",
@@ -443,7 +446,10 @@ function CashBalanceChart({
   const [hovered, setHovered] = React.useState<Target | null>(null)
   const [pinnedId, setPinnedId] = React.useState<string | undefined>(undefined)
   const [focusTargetTime, setFocusTargetTime] = React.useState(focusTime)
-  React.useEffect(() => setFocusTargetTime(focusTime), [focusTime])
+  React.useEffect(() => {
+    setHovered(null)
+    setFocusTargetTime(focusTime)
+  }, [focusTime, focusKey])
   const transactionAt = (index: number, id?: string) =>
     (id !== undefined ? placed.find((entry) => entry.transaction.id === id && entry.index === index) : undefined) ?? placed.find((entry) => entry.index === index)
   const pinned = selected !== null && selected >= 0 && selected < n ? selected : null

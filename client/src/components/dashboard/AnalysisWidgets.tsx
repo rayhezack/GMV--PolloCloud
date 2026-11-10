@@ -118,7 +118,7 @@ export function RevenueCards({
   headlineStartDate?: string;
   headlineEndDate?: string;
 }) {
-  const { search } = useLocation();
+  const { search, key: navigationKey } = useLocation();
   const [expandedMetric, setExpandedMetric] = useState<RevenueMetric | null>(null);
   const [exportMetric, setExportMetric] = useState<RevenueMetric | null>(null);
   const [structureMetric, setStructureMetric] = useState<RevenueMetric | null>(null);
@@ -137,7 +137,7 @@ export function RevenueCards({
       focusHandledRef.current = null;
       return;
     }
-    const focusKey = `${selectedPlatform}:${focusMetric}:${focusPeriod}`;
+    const focusKey = `${navigationKey}:${selectedPlatform}:${focusMetric}:${focusPeriod}`;
     if (focusHandledRef.current === focusKey) return;
     const card = document.querySelector<HTMLElement>(`.revenue-card-focus-${focusMetric}`);
     if (!card) return;
@@ -147,7 +147,7 @@ export function RevenueCards({
     if (bounds.top < 12 || bounds.bottom > viewportBottom - 12) {
       card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     }
-  }, [dailyTrend.length, focusApplies, focusMetric, focusPeriod, items.length, loading, selectedPlatform, trend.length]);
+  }, [dailyTrend.length, focusApplies, focusMetric, focusPeriod, items.length, loading, navigationKey, selectedPlatform, trend.length]);
   const [actionSource, setActionSource] = useState<ProductActionSource | null>(null);
   useEffect(() => {
     let live = true;

@@ -624,16 +624,6 @@
   margin-top: 9px;
   flex-wrap: wrap;
 }
-.dashboard-content:has(.daily-rail[data-focus-metric="totalGmv"])
-  .revenue-card-focus-totalGmv,
-.dashboard-content:has(.daily-rail[data-focus-metric="activeGmv"])
-  .revenue-card-focus-activeGmv,
-.dashboard-content:has(.daily-rail[data-focus-metric="renewalGmv"])
-  .revenue-card-focus-renewalGmv {
-  outline: 1px solid rgba(83, 58, 253, 0.45);
-  outline-offset: -1px;
-}
-
 .daily-diagnosis { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
 .daily-diagnosis-conclusion { font-size: 12px; line-height: 1.65; }
 .daily-diagnosis-dialog { width: min(1200px, calc(100vw - 32px)); max-width: 1200px; max-height: 90dvh; overflow: auto; }
@@ -674,3 +664,15 @@
   outline-offset: 4px;
   border-radius: 2px;
 }
+
+/* DatePicker positions its calendar against the field group, even for a text-only entry. */
+.daily-monitor-date-picker .daily-monitor-date-anchor {
+  display: inline-flex; width: auto; min-width: 0; height: 20px; min-height: 0;
+  padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none;
+}
+.daily-bento-anomaly footer button {
+  padding: 5px 7px; margin: -5px -7px; border-radius: 6px; cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.daily-bento-anomaly footer button:hover { background: #f0f1f4; color: var(--ui-ink); }
+.daily-bento-anomaly footer button:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 3px; }

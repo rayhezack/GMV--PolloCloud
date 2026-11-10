@@ -61,3 +61,25 @@ export function dashboardHref(id: string, search: string) {
   }
   return `${id === 'report' ? '/report' : '/'}?${params.toString()}`;
 }
+
+export function anomalyDashboardHref(
+  search: string,
+  alert: { platform: string; metric: string; period: string; window: string },
+  visibleWindow: { startDate: string; endDate: string },
+) {
+  const params = new URLSearchParams(search);
+  for (const [key, value] of Object.entries({
+    tab: 'trend', platform: alert.platform, granularity: 'day',
+    focusMetric: alert.metric, focusPlatform: alert.platform,
+    focusPeriod: alert.period, focusWindow: alert.window,
+  })) params.set(key, value);
+  // The observation must be in the chart's visible range, not just its source data.
+  if (alert.period < visibleWindow.startDate || alert.period > visibleWindow.endDate) {
+    const start = new Date(`${alert.period}T00:00:00Z`);
+    start.setUTCDate(start.getUTCDate() - 29);
+    params.set('trendStartDate', start.toISOString().slice(0, 10));
+    params.set('trendEndDate', alert.period);
+  }
+  params.delete('deviceType');
+  return `/?${params.toString()}`;
+}

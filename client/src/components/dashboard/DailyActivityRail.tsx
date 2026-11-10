@@ -37,6 +37,7 @@ import "./daily-activity-rail.css";
 import DailyReportStack from "./DailyReportStack";
 import DashboardDatePicker from "./DashboardDatePicker";
 import { dailyDiagnosisScopes } from "@/lib/daily-diagnosis-scope";
+import { anomalyDashboardHref } from "./navigation";
 
 const dateOf = (date: string) => new Date(`${date}T12:00:00`);
 const dateKey = (date: Date) =>
@@ -64,9 +65,11 @@ const platformLabels = { all: "全端", web: "Web", app: "App" };
 export default function DailyActivityRail({
   platform,
   refreshToken,
+  trendWindow,
 }: {
   platform: DashboardPlatform;
   refreshToken: number;
+  trendWindow: { startDate: string; endDate: string };
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { jobs, syncJob, canManage } = useOutletContext<{
@@ -243,7 +246,7 @@ export default function DailyActivityRail({
     setActionsOpen(true);
   };
   const anomalyHref = (alert: (typeof alerts)[number]) =>
-    `/?${new URLSearchParams({ tab: "trend", platform: alert.platform, granularity: "day", focusMetric: alert.metric, focusPlatform: alert.platform, focusPeriod: alert.period, focusWindow: alert.window })}`;
+    anomalyDashboardHref(searchParams.toString(), alert, trendWindow);
   return (
     <aside
       className="daily-rail"

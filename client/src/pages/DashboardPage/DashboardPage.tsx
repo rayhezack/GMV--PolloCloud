@@ -3803,7 +3803,7 @@ const DashboardPage = () => {
           </Link>
         </div>
       </div>
-      {activeTab === 'trend' && <DailyActivityRail platform={platform} refreshToken={refreshToken} />}
+      {activeTab === 'trend' && <DailyActivityRail platform={platform} refreshToken={refreshToken} trendWindow={selectedTrendWindow} />}
       {activeTab === 'data' && (
         <>
           <SyncControlBar onSyncSettled={refresh} />

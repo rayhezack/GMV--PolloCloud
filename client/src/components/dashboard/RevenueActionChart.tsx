@@ -1,4 +1,5 @@
 import { useId, useMemo, useState, type CSSProperties } from 'react';
+import { useLocation } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { WalletCards, BadgePercent, UserRoundPlus, Workflow, RotateCw, Info, Music2, NotebookPen, Plus } from 'lucide-react';
 import { tightLineTicks } from '@/lib/chart-series';
@@ -35,6 +36,7 @@ export function RevenueActionChart({ rows, visibleRows, metric, color, title, pl
   focusPeriod?: string | null;
 }) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const { key: navigationKey } = useLocation();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [expandedAction, setExpandedAction] = useState<string | null>(null);
   const detailId = useId();
@@ -66,14 +68,19 @@ export function RevenueActionChart({ rows, visibleRows, metric, color, title, pl
   return <div className="revenue-action-chart" style={{'--revenue-line': color} as CSSProperties}>
     <CashBalanceChart chartOnly eventTimeline plotHeight={155} title={`${title} 日趋势`} data={data} range={range} ticks={ticks} summary={[]}
       focusTime={focusPeriod ? timeOf(focusPeriod) : undefined}
+      focusKey={focusPeriod ? navigationKey : undefined}
       transactions={[]} index={null} locale="en-US" currency="USD"
       tooltipHint={point => {
+        if (focusPeriod && point.time === timeOf(focusPeriod)) return '异动日';
         if (!source) return '正在读取产品动作…';
         if (!source.available) return '产品动作暂不可用';
         const count = actionsByDate.get(new Date(point.time).toISOString().slice(0, 10))?.size ?? 0;
         return count ? `产品动作 · ${count} 条，点击查看` : '当日暂无产品动作';
       }}
-      formatTime={(time, context) => context === 'axis' ? new Date(time).toISOString().slice(5, 10).replace('-', '/') : new Date(time).toISOString().slice(0, 10)}
+      formatTime={(time, context) => {
+        const date = new Date(time).toISOString().slice(0, 10);
+        return context === 'axis' ? date.slice(5).replace('-', '/') : date;
+      }}
       onIndexChange={(_, point) => {
         if (!point) return;
         setExpandedAction(null);
