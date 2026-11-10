@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { getReportHistory } from '@/api/report';
-import { getDailyDiagnosis, regenerateDailyDiagnosis } from '@/api/daily-diagnosis';
+import { getDailyDiagnosis, runDailyDiagnosis } from '@/api/daily-diagnosis';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import type { DailyDiagnosisStatus, DashboardPlatform } from '@shared/api.interface';
@@ -90,7 +90,9 @@ export default function DailyReportStack({ platform, platforms, period, refreshT
     if (!status?.period || submitting) return;
     setSubmitting(true);
     try {
-      const next = await regenerateDailyDiagnosis(currentScope, status.period);
+      setStatuses(current => ({ ...current, [currentScope]: { ...status, status: 'queued' } }));
+      setRetryToken(value => value + 1);
+      const next = await runDailyDiagnosis(currentScope, status.period);
       setStatuses(current => ({ ...current, [currentScope]: next }));
       setErrors(current => ({ ...current, [currentScope]: '' }));
       setRetryToken(value => value + 1);
@@ -98,11 +100,11 @@ export default function DailyReportStack({ platform, platforms, period, refreshT
     finally { setSubmitting(false); }
   };
   return <Sheet open={open} onOpenChange={setOpen}>
-    <div className="daily-report-stack" data-expanded={expanded} data-count={papers.length} role="group" aria-label={weekly ? '周诊断报告' : '当日异动诊断报告'}
+    <div className="daily-report-stack" data-expanded={completed.length > 0 && expanded} data-count={papers.length} role="group" aria-label={weekly ? '周诊断报告' : '当日异动诊断报告'}
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
       onFocusCapture={event => setFocused((event.target as HTMLElement).matches(':focus-visible'))} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setFocused(false); }}
       onKeyDown={event => { if (event.key === 'Escape') { setPinned(false); setHovered(false); setFocused(false); } }}>
-      <button ref={coverRef} type="button" className="daily-report-cover" aria-expanded={expanded} aria-controls="daily-report-papers" onClick={() => papers.length ? setPinned(value => !value) : setOpen(true)} aria-label={`${title}，${papers.length ? `${papers.length}份报告，展开选择` : label}`}>
+      <button ref={coverRef} type="button" className="daily-report-cover" aria-expanded={papers.length > 0 && expanded} aria-controls="daily-report-papers" onClick={() => papers.length ? setPinned(value => !value) : setOpen(true)} aria-label={`${title}，${papers.length ? `${papers.length}份报告，展开选择` : label}`}>
         <span className="daily-report-cover-heading"><strong>{title}</strong><time dateTime={weekly ? weekEnd : period}>{period ? (weekly ? weekEnd : period).slice(5).replace('-', '/') : '—'}</time></span>
         <span className="daily-report-cover-count">{papers.length ? <><b>{papers.length}</b> 份报告</> : label}</span>
       </button>
@@ -113,6 +115,7 @@ export default function DailyReportStack({ platform, platforms, period, refreshT
         </button>)}
       </div>
     </div>
+    {!weekly && canManage && status && ['waiting', 'queued', 'failed'].includes(status.status) && <div className="daily-report-manual"><Button variant="ghost" size="sm" disabled={submitting} onClick={() => void regenerate()}>{submitting ? '正在启动…' : status.status === 'failed' ? '重试诊断' : '手动诊断'}</Button></div>}
     <SheetContent className="daily-report-sheet" side="right" onCloseAutoFocus={event => { event.preventDefault(); coverRef.current?.focus(); }}>
       <SheetHeader>
         <SheetTitle>{platformLabels[currentScope]} · {title}</SheetTitle>

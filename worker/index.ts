@@ -1,3 +1,4 @@
+import { claimSourceRefresh, finishSourceRefresh } from './source-refresh-policy';
 import { encodeDashboardCache, decodeDashboardCache } from './dashboard-cache';
 import { normalizeChartActions } from '../shared/product-actions';
 import { readProductActions, syncProductActions, type ActionPage } from './product-actions-store';
@@ -218,10 +219,10 @@ async function cachedDashboardResponse(env: Env, request: Request, context: { wa
   return (await refresh()).clone();
 }
 
-async function invalidateDashboardCache(env: Env) {
+export async function invalidateDashboardCache(env: Env, diagnosisInputsChanged = false) {
   dashboardCacheGeneration++;
   dashboardMemoryCache.clear();
-  await markDailyDiagnosisDirty(env).catch(() => undefined); // Migration may not be installed yet.
+  if (diagnosisInputsChanged) await markDailyDiagnosisDirty(env).catch(() => undefined); // Migration may not be installed yet.
   if (env.DB) await env.DB.prepare('DELETE FROM dashboard_response_cache').run().catch(() => undefined);
 }
 
@@ -2412,10 +2413,14 @@ async function loadStagedRows(env: Env, runId: string, stepKey: string) {
   return chunks.results.flatMap((chunk) => JSON.parse(chunk.payload) as D1Row[]);
 }
 
-async function saveSyncJob(env: Env, job: SyncJobState) {
+async function saveSyncJob(env: Env, job: SyncJobState, respectPause = true) {
   job.heartbeatAt = new Date().toISOString();
-  await env.DB!.prepare('UPDATE sync_jobs SET status = ?, payload = ?, updated_at = ? WHERE run_id = ?')
-    .bind(job.status, JSON.stringify(job), Date.now(), job.runId).run();
+  const saved = await env.DB!.prepare(`UPDATE sync_jobs SET
+    payload=CASE WHEN ? AND status IN ('pausing','paused') AND ? IN ('queued','running') THEN json_set(?, '$.status', 'paused') ELSE ? END,
+    status=CASE WHEN ? AND status IN ('pausing','paused') AND ? IN ('queued','running') THEN 'paused' ELSE ? END,
+    updated_at=? WHERE run_id=? RETURNING status`)
+    .bind(Number(respectPause), job.status, JSON.stringify(job), JSON.stringify(job), Number(respectPause), job.status, job.status, Date.now(), job.runId).first<{status: SyncRunStatus['status']}>();
+  if (saved) job.status = saved.status;
 }
 
 async function ensureSyncRunLog(env: Env, job: SyncJobState) {
@@ -2430,6 +2435,8 @@ async function ensureSyncRunLog(env: Env, job: SyncJobState) {
 }
 
 async function runBaseSyncStep(env: Env, job: SyncJobState) {
+  const current = await env.DB!.prepare('SELECT status FROM sync_jobs WHERE run_id=?').bind(job.runId).first<{status: string}>();
+  if (current && ['paused','pausing'].includes(current.status)) { job.status = 'paused'; await saveSyncJob(env, job); return; }
   const firstWaitingStep = job.steps?.find(item => item.key !== 'finish' && item.status === 'waiting');
   if (!firstWaitingStep) {
     const dataSteps = job.steps?.filter(item => item.key !== 'finish') ?? [];
@@ -2469,7 +2476,7 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
         job.status = 'queued';
         job.stage = 'pull';
         await saveSyncJob(env, job);
-        await invalidateDashboardCache(env);
+        await invalidateDashboardCache(env, dataSteps.some(step => /-(pay_type|chain|renewal)$/.test(step.key)));
         return;
       }
       const runLogId = await ensureSyncRunLog(env, job);
@@ -2484,7 +2491,7 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
     await saveSyncJob(env, job);
     await env.DB!.prepare('DELETE FROM sync_job_staging_chunks WHERE run_id = ?').bind(job.runId).run();
     invalidateBaseCache('run_log');
-    await invalidateDashboardCache(env);
+    await invalidateDashboardCache(env, dataSteps.some(step => /-(pay_type|chain|renewal)$/.test(step.key)));
     return;
   }
 
@@ -2500,6 +2507,7 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
   }
   job.stage = 'pull';
   await saveSyncJob(env, job);
+  if (job.status === 'paused') return;
 
   const results = await Promise.allSettled(batchSteps.map(async step => {
     const platform = step.key.slice(0, step.key.indexOf('-'));
@@ -2609,7 +2617,6 @@ async function controlSyncRun(env: Env, request: Request, action: 'pause' | 'res
   if (action === 'pause') {
     if (row.status === 'paused' || row.status === 'pausing') return json(job);
     if (row.status !== 'queued' && row.status !== 'running') return errorResponse('当前任务无法暂停', 409);
-    if (job.stage === 'write') return errorResponse('数据正在统一写入 Base，该阶段不可暂停', 409);
     job.status = row.status === 'queued' ? 'paused' : 'pausing';
   } else {
     if (row.status !== 'paused') return errorResponse('只有已暂停的任务可以继续', 409);
@@ -2617,7 +2624,7 @@ async function controlSyncRun(env: Env, request: Request, action: 'pause' | 'res
     job.errorMessage = undefined;
     job.finishedAt = undefined;
   }
-  await saveSyncJob(env, job);
+  await saveSyncJob(env, job, false);
   return json(job);
 }
 
@@ -2743,13 +2750,21 @@ async function syncAdsRequest(env: Env, request: Request): Promise<Response> {
 async function scheduledAdsSync(env: Env): Promise<Response> {
   const yesterday = new Date(Date.now() + 8 * 3600000 - 86400000).toISOString().slice(0, 10);
   const dates = [...new Set([...Array.from({ length: 7 }, (_, offset) => shiftDate(yesterday, -offset)), ...[14, 30, 60, 90, 180].map(age => shiftDate(yesterday, -age))])];
-  const slot = Math.floor((Date.now() + 8 * 3600000) / 300000) % dates.length;
   const last = await queryRows(env, 'SELECT MAX(period) AS period FROM pollo_da_ads_daily');
   const next = shiftDate(asText(last[0]?.period) || shiftDate(yesterday, -1), 1);
-  const date = next <= yesterday ? next : dates[slot];
+  const candidates = [...new Set([...(next <= yesterday ? [next] : []), ...dates])];
+  let date = '', attempt: number | null = null;
+  for (const candidate of candidates) {
+    attempt = await claimSourceRefresh(env, 'ads', candidate);
+    if (attempt !== null) { date = candidate; break; }
+  }
+  if (attempt === null) return json({ ok: true, task: 'daily-ads', status: 'up_to_date' });
   try {
-    return json({ ok: true, task: 'daily-ads', date, rowsSynced: await syncAdsDate(env, date) });
+    const result = { rowsSynced: await syncAdsDate(env, date) };
+    await finishSourceRefresh(env, 'ads', date, attempt, true);
+    return json({ ok: true, task: 'daily-ads', date, ...result });
   } catch (error) {
+    await finishSourceRefresh(env, 'ads', date, attempt, false);
     if (String(error).includes('返回空结果')) return json({ ok: true, task: 'daily-ads', date, status: 'waiting_source' });
     throw error;
   }
@@ -2833,13 +2848,21 @@ async function scheduledCreationChainSync(env: Env): Promise<Response> {
   dates.add(shiftDate(yesterday, -7));
   dates.add(shiftDate(yesterday, -30));
   const eligible = [...dates].filter(date => date >= '2026-01-01').sort().reverse();
-  const slot = Math.floor((Date.now() + 8 * 3600000) / 300000) % eligible.length;
   const last = await queryRows(env, 'SELECT MAX(period) AS period FROM pollo_da_creation_overall_daily');
   const next = shiftDate(asText(last[0]?.period) || shiftDate(yesterday, -1), 1);
-  const date = next <= yesterday ? next : eligible[slot];
+  const candidates = [...new Set([...(next <= yesterday ? [next] : []), ...eligible])];
+  let date = '', attempt: number | null = null;
+  for (const candidate of candidates) {
+    attempt = await claimSourceRefresh(env, 'creation', candidate);
+    if (attempt !== null) { date = candidate; break; }
+  }
+  if (attempt === null) return json({ ok: true, task: 'daily-creation-chain', status: 'up_to_date' });
   try {
-    return json({ ok: true, task: 'daily-creation-chain', date, ...await syncCreationChainDate(env, date) });
+    const result = { ...await syncCreationChainDate(env, date) };
+    await finishSourceRefresh(env, 'creation', date, attempt, true);
+    return json({ ok: true, task: 'daily-creation-chain', date, ...result });
   } catch (error) {
+    await finishSourceRefresh(env, 'creation', date, attempt, false);
     if (String(error).includes('结果为空')) return json({ ok: true, task: 'daily-creation-chain', date, status: 'waiting_source' });
     throw error;
   }
@@ -3144,17 +3167,36 @@ export default {
     try {
       const url = new URL(request.url);
       if (url.pathname.startsWith('/api/cron/')) return cronHandler(env, request, context);
-      if (url.pathname === '/api/daily-diagnosis') {
+      if (url.pathname === '/api/daily-diagnosis' || url.pathname === '/api/daily-diagnosis/run') {
         const platform = url.searchParams.get('platform') || 'all';
         const period = url.searchParams.get('period') || undefined;
         if (!['all','web','app'].includes(platform) || (period && !/^\d{4}-\d{2}-\d{2}$/.test(period))) return errorResponse('日诊断参数无效', 400);
         const scope = platform as 'all'|'web'|'app';
-        if (request.method === 'GET') return json(await getDailyDiagnosis(env, scope, period));
+        if (request.method === 'GET' && url.pathname === '/api/daily-diagnosis') return json(await getDailyDiagnosis(env, scope, period));
         if (request.method === 'POST') {
           const denial = await authorizeDashboardMutation(request);
           if (denial) return denial;
           if (!period) return errorResponse('缺少异动日期', 400);
-          return json(await regenerateDailyDiagnosis(env, scope, period));
+          const queued = await regenerateDailyDiagnosis(env, scope, period);
+          if (url.pathname !== '/api/daily-diagnosis/run') return json(queued);
+          const encoder = new TextEncoder();
+          let disconnected = false;
+          const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+              const pulse = setInterval(() => { if (!disconnected) controller.enqueue(encoder.encode(' ')); }, 5000);
+              const task = tickDailyDiagnoses(env, { detect: async () => (await gmvAnomalies(env)).json() }, { platform: scope, period })
+                .then(async result => {
+                  const diagnosis = await getDailyDiagnosis(env, scope, period);
+                  if (!disconnected) controller.enqueue(encoder.encode(JSON.stringify({ ...diagnosis, dispatch: result.status })));
+                })
+                .catch(error => { if (!disconnected) controller.enqueue(encoder.encode(JSON.stringify({ ...queued, error: error instanceof Error ? error.message : '诊断启动失败' }))); })
+                .finally(() => { clearInterval(pulse); if (!disconnected) controller.close(); });
+              context.waitUntil(task);
+              return task;
+            },
+            cancel() { disconnected = true; },
+          });
+          return new Response(stream, { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
         }
         return errorResponse('不支持的请求方式', 405);
       }

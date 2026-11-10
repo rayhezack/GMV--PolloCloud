@@ -174,3 +174,59 @@ test('a successful anomaly weekly report suppresses the same scheduled cycle; fa
  assert.equal((await queueWeeklyReport(env,'app','2026-11-06')).status,'failed');
  assert.equal(db.prepare('SELECT count(*) n FROM report_jobs').get().n,2,'no replacement or duplicate paid jobs');
 });
+
+test('manual dispatch starts only the selected queued scope, bypasses automatic buffer and never duplicates a job', async()=>{
+ const {env,db}=setup();
+ // Prepare both actual anomaly scopes without dispatching a model yet.
+ const token=await import('node:crypto').then(m=>m.randomUUID());
+ db.prepare('UPDATE diagnosis_dispatch SET lease_id=?,lease_until=?').run(token,Date.now()+60000);
+ const d=deps({detect:async()=>({latestDay:day,alerts:[signal('all'),signal('app')]})});
+ assert.equal((await tickDailyDiagnoses(env,d)).status,'waiting_report');
+ await markDailyDiagnosisDirty(env);
+ const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
+ db.prepare('UPDATE daily_diagnosis_monitor SET checked_revision=revision,checked_day=?,checked_version=?').run(today,`${REPORT_SKILL_SHA256}:kimi-k3`);
+ db.exec('UPDATE diagnosis_dispatch SET lease_until=0');
+ await regenerateDailyDiagnosis(env,'app',day);
+ await regenerateDailyDiagnosis(env,'app',day);
+ assert.equal(db.prepare('SELECT count(*) n FROM daily_diagnosis_jobs').get().n,2);
+ let calls=0;
+ assert.equal((await tickDailyDiagnoses(env,{...d,generate:async()=>{calls++;return 'manual app';}},{platform:'app',period:day})).status,'processed');
+ assert.equal(calls,1);assert.equal((await getDailyDiagnosis(env,'app',day)).status,'success');
+ assert.equal((await getDailyDiagnosis(env,'all',day)).status,'queued');
+ assert.equal((await tickDailyDiagnoses(env,d)).status,'waiting_data','automatic work still respects buffer');
+ db.exec("INSERT INTO sync_jobs VALUES('refresh','running')");
+ assert.equal((await tickDailyDiagnoses(env,d,{platform:'all',period:day})).status,'waiting_data','manual work cannot use a partially published refresh');
+});
+
+test('cache-only invalidation never resets the diagnosis buffer or revision',async()=>{
+ const {env,db}=setup();
+ const b=await build({entryPoints:['worker/index.ts'],bundle:true,platform:'node',format:'esm',write:false,logLevel:'silent'});
+ const {invalidateDashboardCache}=await import(`data:text/javascript;base64,${Buffer.from(b.outputFiles[0].text).toString('base64')}`);
+ db.exec('CREATE TABLE dashboard_response_cache(key TEXT)');
+ const before=db.prepare('SELECT revision FROM daily_diagnosis_monitor').get().revision;
+ await invalidateDashboardCache(env,true);
+ const ready=db.prepare('SELECT not_before FROM diagnosis_dispatch').get().not_before;
+ await invalidateDashboardCache(env);await invalidateDashboardCache(env);
+ assert.equal(db.prepare('SELECT revision FROM daily_diagnosis_monitor').get().revision,before+1);
+ assert.equal(db.prepare('SELECT not_before FROM diagnosis_dispatch').get().not_before,ready);
+});
+
+test('manual run HTTP endpoint authenticates and completes exactly one existing queued diagnosis',async()=>{
+ const {env,db}=setup();
+ const stamp=new Date().toISOString(),today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
+ db.prepare('UPDATE daily_diagnosis_monitor SET checked_revision=revision,checked_day=?,checked_version=?').run(today,`${REPORT_SKILL_SHA256}:kimi-k3`);
+ db.prepare("INSERT INTO daily_diagnosis_jobs(run_id,platform,period,baseline,input_hash,evidence,status,requested_by,created_at) VALUES('manual-http','web',?,'2026-11-01','hash',?,'queued','automatic',?)").run(day,JSON.stringify(evidence()),stamp);
+ db.prepare("INSERT INTO daily_diagnosis_state(platform,period,baseline,active,status,input_hash,updated_at) VALUES('web',?,'2026-11-01',1,'queued','hash',?)").run(day,stamp);
+ const b=await build({entryPoints:['worker/index.ts'],bundle:true,platform:'node',format:'esm',write:false,logLevel:'silent'});
+ const {default:worker}=await import(`data:text/javascript;base64,${Buffer.from(b.outputFiles[0].text).toString('base64')}`);
+ const {POLLOCLOUD_APP_OWNER_ID}=await import('../shared/auth.constants.ts');
+ const original=globalThis.fetch;let calls=0;
+ globalThis.fetch=async()=>{calls++;return new Response(`data: ${JSON.stringify({choices:[{delta:{content:'manual raw report'},finish_reason:'stop'}]})}\n\ndata: [DONE]\n\n`);};
+ try{
+  const tasks=[],context={waitUntil:p=>tasks.push(p)};
+  const response=await worker.fetch(new Request(`http://local/api/daily-diagnosis/run?platform=web&period=${day}`,{method:'POST',headers:{'x-pollocloud-user-id':POLLOCLOUD_APP_OWNER_ID}}),{...env,KIMI_API_KEY:'fixture'},context);
+  const result=await response.json();await Promise.all(tasks);
+  assert.equal(result.status,'success');assert.equal(result.report.markdown,'manual raw report');assert.equal(calls,1);
+  assert.equal(db.prepare('SELECT count(*) n FROM daily_diagnosis_jobs').get().n,1);
+ }finally{globalThis.fetch=original;}
+});

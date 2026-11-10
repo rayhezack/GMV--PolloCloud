@@ -9,7 +9,7 @@ import { buildSync } from 'esbuild';
 
 const dir = mkdtempSync(join(tmpdir(), 'sync-backfill-test-'));
 const outfile = join(dir, 'worker.mjs');
-buildSync({ stdin: { contents: readFileSync(new URL('./index.ts', import.meta.url), 'utf8') + '\nexport {syncPlan, createSyncRun, newSyncJob, runBaseSyncStep, replaceFactRange, stageSyncRows};', resolveDir: fileURLToPath(new URL('.', import.meta.url)), loader: 'ts' }, bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'silent' });
+buildSync({ stdin: { contents: readFileSync(new URL('./index.ts', import.meta.url), 'utf8') + '\nexport {syncPlan, createSyncRun, newSyncJob, runBaseSyncStep, replaceFactRange, stageSyncRows, saveSyncJob, controlSyncRun};', resolveDir: fileURLToPath(new URL('.', import.meta.url)), loader: 'ts' }, bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'silent' });
 const worker = await import(pathToFileURL(outfile).href);
 process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
 function fixture() {
@@ -115,4 +115,23 @@ test('range cursor checkpoints each completed day and writes only the current da
     assert.equal(saved.rowsSynced,13); assert.equal(saved.currentDate,'2026-10-21');
     assert.deepEqual(db.prepare('SELECT period,active_uv FROM pollo_da_fact_rows ORDER BY period').all().map(r=>[r.period,r.active_uv]), [['2026-10-20',null],['2026-10-21',200]]);
   } finally { db.close(); }
+});
+
+
+test('pause is durable across queued/running writes and resume keeps the same cursor', async()=>{
+ const {db,env}=fixture();
+ const job=worker.newSyncJob('date_range','2026-10-20','2026-10-20',['web'],['creative']);
+ job.status='running';job.stage='write';job.writtenSteps=['web-creative'];job.rowsSynced=12;
+ db.prepare("INSERT INTO sync_jobs VALUES(?,'running',?,0,0)").run(job.runId,JSON.stringify(job));
+ const pause=await worker.controlSyncRun(env,request({runId:job.runId}),'pause');assert.equal((await pause.json()).status,'pausing');
+ job.status='queued';await worker.saveSyncJob(env,job);
+ assert.equal(job.status,'paused');
+ const saved=JSON.parse(db.prepare('SELECT payload FROM sync_jobs').get().payload);
+ assert.deepEqual(saved.writtenSteps,['web-creative']);assert.equal(saved.rowsSynced,12);
+ const resumed=await (await worker.controlSyncRun(env,request({runId:job.runId}),'resume')).json();
+ assert.equal(resumed.status,'queued');assert.equal(resumed.runId,job.runId);assert.deepEqual(resumed.writtenSteps,['web-creative']);
+ await worker.controlSyncRun(env,request({runId:job.runId}),'pause');
+ await worker.runBaseSyncStep(env,{...resumed,status:'running'});
+ assert.equal(db.prepare('SELECT status FROM sync_jobs').get().status,'paused');
+ db.close();
 });

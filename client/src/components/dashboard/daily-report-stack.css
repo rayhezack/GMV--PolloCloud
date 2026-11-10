@@ -108,3 +108,6 @@
 .daily-report-switch { display: flex; gap: 4px; margin-top: 12px; }
 .daily-report-switch button { padding: 6px 14px; border-radius: 9px; font-size: 12px; color: #61718a; background: transparent; cursor: pointer; }
 .daily-report-switch button[aria-pressed="true"], .daily-report-switch button:hover { background: #f0f1f4; color: #0d253d; }
+
+.daily-report-manual { display: flex; justify-content: flex-end; margin-top: 4px; }
+.daily-report-manual button { height: 28px; padding: 0 4px; color: var(--ui-muted); font-size: 11px; }

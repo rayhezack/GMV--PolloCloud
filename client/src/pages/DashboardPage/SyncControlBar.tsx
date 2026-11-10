@@ -26,6 +26,8 @@ import {
   createSyncRun,
   getLatestDaySyncPlan,
   getLatestSyncRun,
+  pauseSyncRun,
+  resumeSyncRun,
 } from '@client/src/api/sync';
 import type {
   LatestDaySyncPlan,
@@ -101,6 +103,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
   const [rangeValid, setRangeValid] = useState(true);
   const [date, setDate] = useState(yesterday);
   const [syncing, setSyncing] = useState(false);
+  const [controlling, setControlling] = useState(false);
   const [status, setStatus] = useState<SyncRunStatus | null>(null);
   const [plan, setPlan] = useState<LatestDaySyncPlan | null>(null);
   const [planLoading, setPlanLoading] = useState(true);
@@ -236,6 +239,20 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
     trackSync,
   ]);
 
+  const controlSync = async () => {
+    if (!status || controlling) return;
+    setControlling(true);
+    setErrorMsg('');
+    try {
+      const next = status.status === 'paused' ? await resumeSyncRun(status.runId) : await pauseSyncRun(status.runId);
+      setStatus(next);
+      trackSync(next);
+      setSyncing(['queued', 'running', 'pausing'].includes(next.status));
+      if (next.status === 'paused') stopPolling(); else startPolling();
+    } catch (error) { setErrorMsg(getErrorMessage(error)); }
+    finally { setControlling(false); }
+  };
+
   const running =
     syncing || ['queued', 'running', 'pausing', 'paused'].includes(status?.status ?? '') || Boolean(plan?.running);
   const isAdmin = canManagePollocloudApp(user);
@@ -310,7 +327,11 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
           />
           检查
         </Button>
-        <Dialog>
+        {isAdmin && status && ['queued', 'running', 'pausing', 'paused'].includes(status.status) ? (
+          <Button variant="outline" size="sm" className={`${SYNC_PILL_CLASS} h-8 px-4`} disabled={controlling || status.status === 'pausing'} onClick={() => void controlSync()}>
+            {status.status === 'pausing' ? '正在暂停…' : controlling ? '处理中…' : status.status === 'paused' ? '继续同步' : '暂停同步'}
+          </Button>
+        ) : <Dialog>
           <DialogTrigger asChild>
             <Button
               data-ai-section-type="button"
@@ -399,8 +420,10 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
               </DialogClose>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
+      {status?.status === 'pausing' && <p className="mt-3 text-xs text-muted-foreground" role="status">当前步骤完成后暂停，已完成的数据会保留。</p>}
+      {status?.status === 'paused' && <p className="mt-3 text-xs text-muted-foreground" role="status">同步已暂停，可从当前进度继续。</p>}
       {errorMsg && <p className="mt-3 text-xs text-destructive" role="alert">{errorMsg}</p>}
     </section>
   );

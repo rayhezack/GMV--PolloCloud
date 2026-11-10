@@ -35,7 +35,7 @@ export default function DashboardDatePicker({ date, onDateChange, onValidityChan
           }
         }}>
         {compact ? (
-          <DatePicker.Trigger className="daily-monitor-date-trigger" aria-label={`选择${label}，当前 ${date}`} >
+          <DatePicker.Trigger className="daily-monitor-date-trigger" aria-label={`选择${label}，当前 ${date}`} onPress={() => setOpen(true)}>
             {date.slice(5).replace('-', '/')}
           </DatePicker.Trigger>
         ) : (

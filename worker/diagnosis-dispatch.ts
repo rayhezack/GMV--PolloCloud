@@ -13,12 +13,12 @@ export async function diagnosesSettling(env: Env) {
 }
 
 /** Atomic, shared model lane. Weekly work yields to pending anomaly work. */
-export async function claimDiagnosisExecution(env: Env, priority: 'anomaly' | 'weekly') {
+export async function claimDiagnosisExecution(env: Env, priority: 'anomaly' | 'weekly', manual = false) {
   const token = crypto.randomUUID(), clock = Date.now();
   const weeklyGuard = priority === 'weekly' ? `AND NOT EXISTS(SELECT 1 FROM daily_diagnosis_monitor WHERE revision<>checked_revision)
     AND NOT EXISTS(SELECT 1 FROM daily_diagnosis_jobs WHERE status IN ('queued','running'))` : '';
-  const row = await env.DB!.prepare(`UPDATE diagnosis_dispatch SET lease_id=?,lease_until=? WHERE id=1 AND lease_until<? AND not_before<=? ${weeklyGuard} RETURNING lease_id`)
-    .bind(token, clock + LEASE_MS, clock, clock).first();
+  const row = await env.DB!.prepare(`UPDATE diagnosis_dispatch SET lease_id=?,lease_until=? WHERE id=1 AND lease_until<? ${manual ? '' : 'AND not_before<=?'} ${weeklyGuard} RETURNING lease_id`)
+    .bind(token, clock + LEASE_MS, clock, ...(manual ? [] : [clock])).first();
   return row ? token : null;
 }
 export async function renewDiagnosisExecution(env: Env, token: string) {

@@ -66,7 +66,7 @@ async function collect(env: Env, signals: DailySignal[]) {
 }
 
 /** Called only by the backend scheduler. A persisted lease serializes detectors and model calls. */
-export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies) {
+export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies, manual?: { platform: DashboardPlatform; period: string }) {
   const lease = crypto.randomUUID(), clock = Date.now();
   const claim = await rows<{revision:number;checked_revision:number;checked_day:string;checked_version:string;retry_pending:number}>(env,
     'UPDATE daily_diagnosis_monitor SET lease_id=?,lease_until=? WHERE id=1 AND lease_until<? RETURNING revision,checked_revision,checked_day,checked_version,retry_pending', lease,clock+15*60000,clock);
@@ -85,7 +85,7 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies) {
     await run(env, "UPDATE daily_diagnosis_jobs SET status='failed',error='生成执行中断',finished_at=? WHERE status='running'",now());
     // Publishing a multi-source refresh is not an atomic snapshot. Wait for the sync job to finish.
     const syncing = await rows(env, "SELECT run_id FROM sync_jobs WHERE status IN ('queued','running','pausing') LIMIT 1");
-    if (syncing.length || await diagnosesSettling(env)) return { status:'waiting_data' };
+    if (syncing.length || (!manual && await diagnosesSettling(env))) return { status:'waiting_data' };
     const today = new Date(clock+8*3600000).toISOString().slice(0,10);
     const version = `${REPORT_SKILL_SHA256}:${env.KIMI_MODEL || 'kimi-k3'}`;
     if (revision !== snapshot.checked_revision || snapshot.checked_day !== today || snapshot.checked_version !== version || snapshot.retry_pending) {
@@ -143,9 +143,9 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies) {
       const waiting = await rows(env,"SELECT platform FROM daily_diagnosis_state WHERE period=? AND status='waiting'",detection.latestDay);
       await run(env,'UPDATE daily_diagnosis_monitor SET checked_revision=?,checked_day=?,checked_at=?,checked_version=?,retry_pending=?,last_error=NULL WHERE id=1 AND lease_id=?',revision,today,now(),version,waiting.length?1:0,lease);
     }
-    const job = (await rows<Job>(env,"SELECT j.* FROM daily_diagnosis_jobs j JOIN daily_diagnosis_state s ON s.platform=j.platform AND s.period=j.period AND s.input_hash=j.input_hash WHERE j.status='queued' AND s.active=1 ORDER BY j.created_at,j.rowid LIMIT 1"))[0];
+    const job = (await rows<Job>(env,`SELECT j.* FROM daily_diagnosis_jobs j JOIN daily_diagnosis_state s ON s.platform=j.platform AND s.period=j.period AND s.input_hash=j.input_hash WHERE j.status='queued' AND s.active=1 ${manual ? 'AND j.platform=? AND j.period=?' : ''} ORDER BY CASE WHEN j.requested_by='manual' THEN 0 ELSE 1 END,j.created_at,j.rowid LIMIT 1`, ...(manual ? [manual.platform, manual.period] : [])))[0];
     if (!job) return {status:'idle'};
-    const execution = await claimDiagnosisExecution(env, 'anomaly');
+    const execution = await claimDiagnosisExecution(env, 'anomaly', Boolean(manual));
     if (!execution) return { status: 'waiting_report' };
     try {
       await run(env,"UPDATE daily_diagnosis_jobs SET status='running',stage='loading_evidence',progress_at=? WHERE run_id=?",now(),job.run_id);
@@ -187,8 +187,12 @@ export async function getDailyDiagnosis(env: Env, platform: DashboardPlatform, p
 export async function regenerateDailyDiagnosis(env: Env, platform: DashboardPlatform, period: string) {
   const state = (await rows<State>(env,'SELECT * FROM daily_diagnosis_state WHERE platform=? AND period=?',platform,period))[0];
   if (!state?.active) throw new Error('该日当前未触发 GMV 异动');
-  if (['running','queued'].includes(state.status)) return getDailyDiagnosis(env,platform,period);
-  if (state.status==='waiting') { await markDailyDiagnosisDirty(env); return getDailyDiagnosis(env,platform,period); }
+  if (state.status === 'running') return getDailyDiagnosis(env,platform,period);
+  if (state.status === 'queued') {
+    await run(env, "UPDATE daily_diagnosis_jobs SET requested_by='manual' WHERE platform=? AND period=? AND status='queued'", platform, period);
+    return getDailyDiagnosis(env,platform,period);
+  }
+  if (state.status==='waiting') { await markDailyDiagnosisDirty(env,0); return getDailyDiagnosis(env,platform,period); }
   const previous = (await rows<Job>(env,'SELECT * FROM daily_diagnosis_jobs WHERE platform=? AND period=? AND input_hash=? ORDER BY created_at DESC,rowid DESC LIMIT 1',platform,period,state.input_hash))[0];
   if (!previous) throw new Error('缺少完整日诊断数据，等待补刷');
   await run(env,`INSERT OR IGNORE INTO daily_diagnosis_jobs(run_id,platform,period,baseline,input_hash,evidence,status,requested_by,created_at) VALUES(?,?,?,?,?,?,'queued','manual',?)`,crypto.randomUUID(),platform,period,previous.baseline,previous.input_hash,previous.evidence,now());

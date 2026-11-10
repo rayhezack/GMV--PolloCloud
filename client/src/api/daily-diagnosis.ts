@@ -19,3 +19,7 @@ export function getDailyDiagnosis(platform: DashboardPlatform, period?: string) 
 export async function regenerateDailyDiagnosis(platform: DashboardPlatform, period: string) {
   return (await apiRequest<DailyDiagnosisStatus>(`/api/daily-diagnosis?${new URLSearchParams({ platform, period })}`, { method: 'POST' })).data;
 }
+
+export async function runDailyDiagnosis(platform: DashboardPlatform, period: string) {
+  return (await apiRequest<DailyDiagnosisStatus & { dispatch?: string }>(`/api/daily-diagnosis/run?${new URLSearchParams({ platform, period })}`, { method: 'POST' })).data;
+}
