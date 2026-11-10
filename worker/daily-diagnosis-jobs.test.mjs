@@ -66,9 +66,13 @@ test('both signals use prior-week baseline and only one queued report per scope,
  assert.equal(db.prepare('SELECT count(*) n FROM daily_diagnosis_jobs').get().n,3);assert.ok(db.prepare('SELECT baseline FROM daily_diagnosis_jobs').all().every(r=>r.baseline==='2026-11-01'));
  await tickDailyDiagnoses(env,deps());await tickDailyDiagnoses(env,deps());for(const p of ['all','web','app'])assert.equal((await getDailyDiagnosis(env,p)).status,'success');
 });
-test('expired execution is marked failed instead of silently repeating a paid call',async()=>{
- const {env,db}=setup();await tickDailyDiagnoses(env,deps());await regenerateDailyDiagnosis(env,'web',day);db.exec("UPDATE daily_diagnosis_jobs SET status='running' WHERE status='queued'; UPDATE daily_diagnosis_state SET status='running' WHERE platform='web'");
- await tickDailyDiagnoses(env,deps({generate:async()=>{throw Error('no retry');}}));assert.equal((await getDailyDiagnosis(env,'web')).status,'failed');
+test('expired executor recovers with backoff and a finite retry budget',async()=>{
+ const {env,db}=setup();await tickDailyDiagnoses(env,deps());await regenerateDailyDiagnosis(env,'web',day);
+ for(let i=0;i<3;i++){
+  db.exec("UPDATE daily_diagnosis_jobs SET status='running' WHERE status='queued'; UPDATE daily_diagnosis_state SET status='running' WHERE platform='web'");
+  await tickDailyDiagnoses(env,deps({generate:async()=>{throw Error('backoff must not dispatch');}}));
+  assert.equal((await getDailyDiagnosis(env,'web')).status,i<2?'queued':'failed');
+ }
 });
 test('fingerprint ignores read timestamps and SQL row order, detects actual amounts and Skill/model version',async()=>{
  const a={readAt:'one',rows:[{country:'US',n:1},{country:'GB',n:2}]},b={readAt:'two',rows:[{country:'GB',n:2},{country:'US',n:1}]};
@@ -269,4 +273,20 @@ test('Web success and 大盘 failure retain independent task and report states w
  assert.equal((await getDailyDiagnosis(env,'web',day)).report.markdown,'Web complete');
  assert.equal((await getDailyDiagnosis(env,'app',day)).report,undefined);
  const [a,b]=await Promise.all([regenerateDailyDiagnosis(env,'all',day),regenerateDailyDiagnosis(env,'all',day)]);assert.equal(a.task.runId,b.task.runId);
+});
+
+
+test('cron response waits for the persisted diagnosis, rather than returning early streaming headers',async()=>{
+ const {env,db}=setup();const stamp=new Date().toISOString(),today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
+ db.prepare('UPDATE daily_diagnosis_monitor SET checked_revision=revision,checked_day=?,checked_version=?').run(today,`${REPORT_SKILL_SHA256}:kimi-k3`);
+ db.prepare("INSERT INTO daily_diagnosis_jobs(run_id,platform,period,baseline,input_hash,evidence,status,requested_by,created_at) VALUES('await-cron','web',?,'2026-11-01','hash',?,'queued','automatic',?)").run(day,JSON.stringify(evidence()),stamp);
+ db.prepare("INSERT INTO daily_diagnosis_state(platform,period,baseline,active,status,input_hash,updated_at) VALUES('web',?,'2026-11-01',1,'queued','hash',?)").run(day,stamp);
+ const b=await build({entryPoints:['worker/index.ts'],bundle:true,platform:'node',format:'esm',write:false,logLevel:'silent'});const {default:worker}=await import(`data:text/javascript;base64,${Buffer.from(b.outputFiles[0].text).toString('base64')}`);
+ const original=globalThis.fetch;let release,started;
+ const gate=new Promise(r=>release=r),ready=new Promise(r=>started=r);
+ globalThis.fetch=async()=>{started();await gate;return new Response(`data: ${JSON.stringify({choices:[{delta:{content:'finished'},finish_reason:'stop'}]})}\n\n`);};
+ try{
+  let responded=false;const response=worker.fetch(new Request('http://local/api/cron/reports',{headers:{'x-pollocloud-trigger':'cron','x-pollocloud-scheduled-time':'2026-11-10T00:00:00Z'}}),{...env,KIMI_API_KEY:'fixture'},{waitUntil:()=>{}}).then(r=>{responded=true;return r;});
+  await ready;assert.equal(responded,false);release();assert.equal((await (await response).json()).status,'processed');assert.equal((await getDailyDiagnosis(env,'web',day)).status,'success');
+ }finally{globalThis.fetch=original;release();}
 });

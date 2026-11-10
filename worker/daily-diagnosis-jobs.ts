@@ -80,9 +80,15 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies, m
       error=(SELECT j.error FROM daily_diagnosis_jobs j WHERE j.platform=daily_diagnosis_state.platform AND j.period=daily_diagnosis_state.period AND j.input_hash=daily_diagnosis_state.input_hash ORDER BY j.created_at DESC,j.rowid DESC LIMIT 1)
       WHERE status='running' AND ${latestJob} IN ('success','failed')`);
     await run(env, `UPDATE daily_diagnosis_jobs SET status='superseded' WHERE status='queued' AND NOT EXISTS(SELECT 1 FROM daily_diagnosis_state s WHERE s.platform=daily_diagnosis_jobs.platform AND s.period=daily_diagnosis_jobs.period AND s.input_hash=daily_diagnosis_jobs.input_hash AND s.active=1)`);
-    // A process lost after model dispatch is not retried automatically (avoid duplicate paid calls).
-    await run(env, "UPDATE daily_diagnosis_state SET status='failed',error='上次生成中断，请手动重试',updated_at=? WHERE EXISTS(SELECT 1 FROM daily_diagnosis_jobs j WHERE j.platform=daily_diagnosis_state.platform AND j.period=daily_diagnosis_state.period AND j.status='running')",now());
-    await run(env, "UPDATE daily_diagnosis_jobs SET status='failed',error='生成执行中断',finished_at=? WHERE status='running'",now());
+    // This monitor lease can be acquired only after the previous executor has
+    // released it or expired. Recover its persisted checkpoint with bounded retries.
+    for (const interrupted of await rows<Job>(env,"SELECT * FROM daily_diagnosis_jobs WHERE status='running'")) {
+      const retry = interrupted.retry_count < 2 && interrupted.continuation_count < 6;
+      const status = retry ? 'queued' : 'failed';
+      const error = retry ? '执行中断，已安排恢复' : '生成执行中断，自动恢复次数已用完';
+      await run(env,"UPDATE daily_diagnosis_jobs SET status=?,stage=?,retry_count=retry_count+1,next_attempt_at=?,error=?,progress_at=?,finished_at=? WHERE run_id=?",status,retry ? interrupted.checkpoint ? 'continuing' : 'retry_wait' : interrupted.stage,Date.now()+60000,error,now(),retry?null:now(),interrupted.run_id);
+      await run(env,"UPDATE daily_diagnosis_state SET status=?,error=?,updated_at=? WHERE platform=? AND period=? AND input_hash=?",status,error,now(),interrupted.platform,interrupted.period,interrupted.input_hash);
+    }
     // Publishing a multi-source refresh is not an atomic snapshot. Wait for the sync job to finish.
     const syncing = await rows(env, "SELECT run_id FROM sync_jobs WHERE status IN ('queued','running','pausing') LIMIT 1");
     if (syncing.length || (!manual && await diagnosesSettling(env))) return { status:'waiting_data' };
@@ -163,14 +169,15 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies, m
           await run(env,'UPDATE daily_diagnosis_jobs SET stage=?,progress_at=? WHERE run_id=?',stage,now(),job.run_id);
         };
         await progress('calling_model');
-        const markdown = await (dependencies.generate ?? (e=>generateMarkdown(env,e,'',progress,{prefix:checkpoint,timeBudgetMs:180000})))(evidence);
+        const markdown = await (dependencies.generate ?? (e=>generateMarkdown(env,e,'',progress,{prefix:checkpoint,timeBudgetMs:manual ? 540000 : 210000})))(evidence);
         await progress('saving_report');
         const storedMarkdown = await saveContent(env,`daily-diagnoses/reports/${job.run_id}.md`,markdown);
         await run(env,"UPDATE daily_diagnosis_jobs SET status='success',stage='complete',error=NULL,markdown=?,model=?,finished_at=? WHERE run_id=?",storedMarkdown,env.KIMI_MODEL||'kimi-k3',now(),job.run_id);
         // Changes arriving during generation invalidate publication, while retaining the historical result.
         await run(env,`UPDATE daily_diagnosis_state SET current_report_id=?,status=CASE WHEN (SELECT revision FROM daily_diagnosis_monitor WHERE id=1)=? THEN 'success' ELSE 'waiting' END,updated_at=? WHERE platform=? AND period=? AND active=1 AND input_hash=?`,job.run_id,revision,now(),job.platform,job.period,job.input_hash);
       } catch(e) {
-        // A bounded attempt finishes before the platform cron deadline. Only complete
+        // Automatic attempts finish before the platform cron deadline. Manual streams
+        // can keep their request open longer; neither path publishes anything but complete
         // model output is published; transport failures retain evidence and partial prose.
         const partial = e instanceof ModelInterruptedError ? e.partial : '';
         const previous = job.checkpoint ? await readContent(env,job.checkpoint) : '';

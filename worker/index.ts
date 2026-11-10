@@ -2924,47 +2924,34 @@ async function cronHandler(
     if (platform) await queueWeeklyReport(env, platform);
   }
   if (path === '/api/cron/daily-diagnoses' || path === '/api/cron/reports') {
-    // Keep the scheduled HTTP invocation alive during the model stream, just as sync jobs do.
-    const encoder = new TextEncoder();
-    let disconnected = false;
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        const pulse = setInterval(() => { if (!disconnected) controller.enqueue(encoder.encode(' ')); }, 5000);
-        let detected: DashboardGmvAnomalyResponse | undefined;
-        const task = tickDailyDiagnoses(env, { detect: async () => {
-          detected = await (await gmvAnomalies(env)).json() as DashboardGmvAnomalyResponse;
-          return detected;
-        } })
-          .then(async result => {
-            // Daily anomalies always get the first model slot. A queued weekly
-            // job survives a busy/buffer tick and is retried on the next tick.
-            if (detected && ['processed', 'idle'].includes(result.status)) {
-              const detection = detected;
-              // Only a closed Friday can produce the same full-week report as
-              // Saturday's schedule. A daily report never substitutes for it.
-              if (detection.latestDay && new Date(`${detection.latestDay}T00:00:00Z`).getUTCDay() === 5) {
-                for (const scope of ['web', 'app'] as const) {
-                  if (detection.alerts.some(alert => alert.platform === scope && alert.metric === 'totalGmv' && alert.window === 'week')) await queueWeeklyReport(env, scope, detection.latestDay);
-                }
-              }
-            }
-            if (result.status === 'idle') {
-              const pending = await env.DB!.prepare("SELECT run_id FROM report_jobs WHERE status='queued' ORDER BY CASE WHEN json_extract(payload, '$.trigger')='anomaly' THEN 0 ELSE 1 END,created_at LIMIT 1").first<{ run_id: string }>();
-              if (pending) {
-                const response = await reportGenerations(env, new Request('https://schedule.internal/api/report-generations/run', { method: 'POST', body: JSON.stringify({ runId: pending.run_id }) }), reportDependencies(env));
-                await response.text();
-              }
-            }
-            if (!disconnected) controller.enqueue(encoder.encode(JSON.stringify({ok:true,task:'daily-diagnoses',...result})));
-          })
-          .catch(error => { if (!disconnected) controller.enqueue(encoder.encode(JSON.stringify({ok:false,error:(error instanceof Error ? error.message : '日诊断调度失败').replace(/sk-[\w-]+/g,'[已隐藏密钥]')}))); })
-          .finally(() => { clearInterval(pulse); if (!disconnected) controller.close(); });
-        context.waitUntil(task);
-        return task;
-      },
-      cancel() { disconnected = true; },
-    });
-    return new Response(stream, {headers:{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'}});
+    // Do not return streaming headers early: the platform scheduler can record
+    // a completed invocation before consuming that body. Await the bounded model
+    // attempt so the worker lifetime belongs to the scheduled request itself.
+    let detected: DashboardGmvAnomalyResponse | undefined;
+    try {
+      const result = await tickDailyDiagnoses(env, { detect: async () => {
+        detected = await (await gmvAnomalies(env)).json() as DashboardGmvAnomalyResponse;
+        return detected;
+      } });
+      if (detected && ['processed','idle'].includes(result.status)) {
+        const detection = detected;
+        if (detection.latestDay && new Date(`${detection.latestDay}T00:00:00Z`).getUTCDay() === 5) {
+          for (const scope of ['web','app'] as const) {
+            if (detection.alerts.some(alert=>alert.platform===scope && alert.metric==='totalGmv' && alert.window==='week')) await queueWeeklyReport(env,scope,detection.latestDay);
+          }
+        }
+      }
+      if (result.status === 'idle') {
+        const pending = await env.DB!.prepare("SELECT run_id FROM report_jobs WHERE status='queued' ORDER BY CASE WHEN json_extract(payload, '$.trigger')='anomaly' THEN 0 ELSE 1 END,created_at LIMIT 1").first<{run_id:string}>();
+        if (pending) {
+          const response = await reportGenerations(env,new Request('https://schedule.internal/api/report-generations/run',{method:'POST',body:JSON.stringify({runId:pending.run_id})}),reportDependencies(env));
+          await response.text();
+        }
+      }
+      return json({ok:true,task:'daily-diagnoses',...result});
+    } catch (error) {
+      return errorResponse((error instanceof Error ? error.message : '日诊断调度失败').replace(/sk-[\w-]+/g,'[已隐藏密钥]'),500);
+    }
   }
   const scheduledDataset = path === '/api/cron/daily-pay-type'
     ? 'pay_type'
