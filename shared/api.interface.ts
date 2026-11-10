@@ -557,6 +557,18 @@ export interface DailyDiagnosisStatus {
   updatedAt: string;
   error?: string;
   report?: DailyDiagnosisReport;
+  task?: {
+    runId: string;
+    status: 'queued' | 'running' | 'success' | 'failed';
+    startedAt: string;
+    updatedAt: string;
+    finishedAt?: string;
+    stage: string;
+    errorMessage?: string;
+    retryCount: number;
+    nextAttemptAt?: string;
+    steps: NonNullable<ReportGenerationStatus['steps']>;
+  };
 }
 
 export interface ReportGenerationStatus {

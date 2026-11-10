@@ -6,7 +6,7 @@ import { build } from 'esbuild';
 import { REPORT_SKILL_SHA256 } from './report-skill.generated.ts';
 const bundle=await build({entryPoints:['worker/daily-diagnosis-jobs.ts'],bundle:true,platform:'node',format:'esm',write:false,logLevel:'silent'});
 const {tickDailyDiagnoses,getDailyDiagnosis,regenerateDailyDiagnosis,markDailyDiagnosisDirty,dailyInputHash}=await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
-const sql=await readFile('db/0025_daily_diagnoses.sql','utf8') + await readFile('db/0027_diagnosis_dispatch.sql','utf8');
+const sql=await readFile('db/0025_daily_diagnoses.sql','utf8') + await readFile('db/0027_diagnosis_dispatch.sql','utf8') + await readFile('db/0029_daily_diagnosis_recovery.sql','utf8');
 const day='2026-11-08';
 function setup(){
  const db=new DatabaseSync(':memory:');db.exec(sql);db.exec('CREATE TABLE sync_jobs(run_id TEXT,status TEXT)');
@@ -229,4 +229,44 @@ test('manual run HTTP endpoint authenticates and completes exactly one existing 
   assert.equal(result.status,'success');assert.equal(result.report.markdown,'manual raw report');assert.equal(calls,1);
   assert.equal(db.prepare('SELECT count(*) n FROM daily_diagnosis_jobs').get().n,1);
  }finally{globalThis.fetch=original;}
+});
+
+test('truncated model output checkpoints and continues the same task without publishing a partial report',async()=>{
+ const {env,db}=setup();env.KIMI_API_KEY='fixture';let calls=0;
+ const original=globalThis.fetch;
+ globalThis.fetch=async(_url,options)=>{
+  const body=JSON.parse(options.body);calls++;
+  if(calls===1)return new Response(`data: ${JSON.stringify({choices:[{delta:{content:'# 诊断\n\n前半段。'}}]})}\n\n`);
+  assert.equal(body.messages[2].role,'assistant');assert.equal(body.messages[2].content,'# 诊断\n\n前半段。');
+  return new Response(`data: ${JSON.stringify({choices:[{delta:{content:'\n\n后半段。'},finish_reason:'stop'}]})}\n\n`);
+ };
+ try{
+  const d=deps({generate:undefined});await tickDailyDiagnoses(env,d);
+  let s=await getDailyDiagnosis(env,'web',day);assert.equal(s.status,'queued');assert.equal(s.report,undefined);assert.equal(s.task.stage,'continuing');assert.ok(s.task.nextAttemptAt);
+  const id=s.task.runId;db.exec('UPDATE daily_diagnosis_jobs SET next_attempt_at=0');await tickDailyDiagnoses(env,d);
+  s=await getDailyDiagnosis(env,'web',day);assert.equal(s.status,'success');assert.equal(s.task.runId,id);assert.equal(s.report.markdown,'# 诊断\n\n前半段。\n\n后半段。');
+  assert.equal(s.task.steps.filter(x=>x.status==='success').length,4);assert.equal(db.prepare('SELECT count(*) n FROM daily_diagnosis_jobs').get().n,1);
+  assert.equal((await getDailyDiagnosis(env,'web',day,true)).report,undefined,'task polling never rereads report prose');
+ }finally{globalThis.fetch=original;}
+});
+test('transient model failures retry twice with backoff, then expose the persisted error rather than looping forever',async()=>{
+ const {env,db}=setup();env.KIMI_API_KEY='fixture';const original=globalThis.fetch;let calls=0;
+ globalThis.fetch=async()=>{calls++;return new Response('',{status:520});};
+ try{
+  const d=deps({generate:undefined});await tickDailyDiagnoses(env,d);
+  assert.equal((await getDailyDiagnosis(env,'web',day)).task.stage,'retry_wait');
+  await tickDailyDiagnoses(env,d);assert.equal(calls,1,'backoff must be respected');
+  db.exec('UPDATE daily_diagnosis_jobs SET next_attempt_at=0');await tickDailyDiagnoses(env,d);
+  db.exec('UPDATE daily_diagnosis_jobs SET next_attempt_at=0');await tickDailyDiagnoses(env,d);
+  const s=await getDailyDiagnosis(env,'web',day);assert.equal(s.status,'failed');assert.match(s.error,/520/);assert.equal(calls,3);
+  await markDailyDiagnosisDirty(env,0);await tickDailyDiagnoses(env,d);assert.match((await getDailyDiagnosis(env,'web',day)).error,/520/);assert.equal(calls,3);
+ }finally{globalThis.fetch=original;}
+});
+test('Web success and 大盘 failure retain independent task and report states without adding App',async()=>{
+ const {env}=setup();const d=deps({detect:async()=>({latestDay:day,alerts:[signal('all'),signal('web')]}),generate:async()=>{throw Error('all model failed');}});
+ await tickDailyDiagnoses(env,d);await tickDailyDiagnoses(env,{...d,generate:async()=> 'Web complete'});
+ assert.equal((await getDailyDiagnosis(env,'all',day)).status,'failed');
+ assert.equal((await getDailyDiagnosis(env,'web',day)).report.markdown,'Web complete');
+ assert.equal((await getDailyDiagnosis(env,'app',day)).report,undefined);
+ const [a,b]=await Promise.all([regenerateDailyDiagnosis(env,'all',day),regenerateDailyDiagnosis(env,'all',day)]);assert.equal(a.task.runId,b.task.runId);
 });

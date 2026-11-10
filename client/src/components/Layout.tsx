@@ -20,7 +20,8 @@ import { canManagePollocloudApp } from '@/lib/pollocloud';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { executeReportGeneration, getLatestReportGeneration } from '@client/src/api/report';
 import type { Platform, ReportGenerationStatus } from '@shared/api.interface';
-import type { SyncRunStatus } from '@shared/api.interface';
+import { getDailyDiagnosis } from '@/api/daily-diagnosis';
+import type { DailyDiagnosisStatus, SyncRunStatus } from '@shared/api.interface';
 import { executeSyncRun, getLatestSyncRun } from '@/api/sync';
 import { ReportTask } from './dashboard/ReportTask';
 
@@ -48,6 +49,10 @@ const Layout = () => {
     }
   });
   const [jobs, setJobs] = useState<ReportGenerationStatus[]>([]);
+  const [dailyJobs, setDailyJobs] = useState<DailyDiagnosisStatus[]>([]);
+  const dailyJobsRef = useRef<DailyDiagnosisStatus[]>([]);
+  useEffect(() => { dailyJobsRef.current = dailyJobs; }, [dailyJobs]);
+  const trackDaily = useCallback((job: DailyDiagnosisStatus) => { setDailyJobs(current => [...current.filter(item => item.platform !== job.platform || item.period !== job.period), job]); }, []);
   const [syncJob, setSyncJob] = useState<SyncRunStatus | null>(null);
   const executingJobs = useRef(new Set<string>());
   const executingSyncJobs = useRef(new Set<string>());
@@ -154,6 +159,24 @@ const Layout = () => {
     void refresh();
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [userInfo]);
+
+  useEffect(() => {
+    if (!userInfo) return;
+    let cancelled = false;
+    let timer: number;
+    const refresh = async () => {
+      const requests = (['all', 'web', 'app'] as const).map(scope => getDailyDiagnosis(scope, undefined, true));
+      for (const item of dailyJobsRef.current) {
+        if (['queued','running','waiting'].includes(item.status) && item.period) requests.push(getDailyDiagnosis(item.platform,item.period,true));
+      }
+      const results = await Promise.allSettled(requests);
+      if (cancelled) return;
+      results.forEach(result => { if (result.status === 'fulfilled') trackDaily(result.value); });
+      timer = window.setTimeout(refresh, 5000);
+    };
+    void refresh();
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [userInfo, trackDaily]);
 
   const displayName = accessLoading ? '读取权限' : userInfo?.userName || 'Pollo Cloud';
   const avatarUrl = userInfo?.avatar;
@@ -312,11 +335,11 @@ const Layout = () => {
         </div>
         <main id="main-content">
           <Suspense fallback={<div className="px-8 py-12 text-sm text-muted-foreground" role="status">正在打开页面…</div>}>
-            <Outlet context={{ trackReport, trackSync, jobs, syncJob, canManage: isAdmin }} />
+            <Outlet context={{ trackReport, trackSync, trackDaily, jobs, syncJob, canManage: isAdmin }} />
           </Suspense>
         </main>
       </div>
-      {isAdmin && currentView.id !== 'trend' && <ReportTask jobs={jobs} syncJob={syncJob} onTrackReport={trackReport} onTrackSync={trackSync} />}
+      {isAdmin && <ReportTask jobs={jobs} syncJob={syncJob} dailyJobs={dailyJobs} onTrackDaily={trackDaily} onTrackReport={trackReport} onTrackSync={trackSync} />}
     </div>
   );
 };

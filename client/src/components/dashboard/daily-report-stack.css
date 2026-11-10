@@ -111,3 +111,11 @@
 
 .daily-report-manual { display: flex; justify-content: flex-end; margin-top: 4px; }
 .daily-report-manual button { height: 28px; padding: 0 4px; color: var(--ui-muted); font-size: 11px; }
+
+.daily-report-tasks { display: grid; gap: 8px; margin-top: 10px; color: var(--dashboard-muted, #64748b); font-size: 11px; }
+.daily-report-tasks > div { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
+.daily-report-tasks > div > div { display: flex; gap: 10px; }
+.daily-report-tasks button { cursor: pointer; padding: 3px 0; color: inherit; border-radius: 4px; }
+.daily-report-tasks button:hover { color: var(--dashboard-ink, #102a43); text-decoration: underline; text-underline-offset: 3px; }
+.daily-report-tasks button:focus-visible { outline: 2px solid #94a3b8; outline-offset: 3px; }
+.daily-report-tasks p { width: 100%; }

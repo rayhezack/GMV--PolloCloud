@@ -3172,12 +3172,17 @@ export default {
         const period = url.searchParams.get('period') || undefined;
         if (!['all','web','app'].includes(platform) || (period && !/^\d{4}-\d{2}-\d{2}$/.test(period))) return errorResponse('日诊断参数无效', 400);
         const scope = platform as 'all'|'web'|'app';
-        if (request.method === 'GET' && url.pathname === '/api/daily-diagnosis') return json(await getDailyDiagnosis(env, scope, period));
+        if (request.method === 'GET' && url.pathname === '/api/daily-diagnosis') return json(await getDailyDiagnosis(env, scope, period, url.searchParams.get('taskOnly') === '1'));
         if (request.method === 'POST') {
           const denial = await authorizeDashboardMutation(request);
           if (denial) return denial;
           if (!period) return errorResponse('缺少异动日期', 400);
-          const queued = await regenerateDailyDiagnosis(env, scope, period);
+          const runId = url.searchParams.get('runId');
+          const queued = runId && url.pathname === '/api/daily-diagnosis/run'
+            ? await getDailyDiagnosis(env, scope, period, true)
+            : await regenerateDailyDiagnosis(env, scope, period);
+          if (runId && queued.task?.runId !== runId) return errorResponse('任务已被新版本替代，请刷新任务状态',409);
+          if (runId && queued.status !== 'queued') return json(queued);
           if (url.pathname !== '/api/daily-diagnosis/run') return json(queued);
           const encoder = new TextEncoder();
           let disconnected = false;

@@ -1,3 +1,4 @@
+import { openBackgroundTask } from '@/lib/background-task';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
@@ -327,6 +328,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
           />
           检查
         </Button>
+        {isAdmin && status && <Button variant="ghost" size="sm" className="h-8 rounded-full px-4" onClick={() => { trackSync(status); openBackgroundTask(status.runId); }}>查看任务</Button>}
         {isAdmin && status && ['queued', 'running', 'pausing', 'paused'].includes(status.status) ? (
           <Button variant="outline" size="sm" className={`${SYNC_PILL_CLASS} h-8 px-4`} disabled={controlling || status.status === 'pausing'} onClick={() => void controlSync()}>
             {status.status === 'pausing' ? '正在暂停…' : controlling ? '处理中…' : status.status === 'paused' ? '继续同步' : '暂停同步'}

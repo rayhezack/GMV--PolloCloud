@@ -2,8 +2,9 @@ import { apiRequest } from '@/lib/pollocloud';
 import type { DailyDiagnosisStatus, DashboardPlatform } from '@shared/api.interface';
 
 const pending = new Map<string, Promise<DailyDiagnosisStatus>>();
-export function getDailyDiagnosis(platform: DashboardPlatform, period?: string) {
+export function getDailyDiagnosis(platform: DashboardPlatform, period?: string, taskOnly = false) {
   const params = new URLSearchParams({ platform });
+  if (taskOnly) params.set('taskOnly', '1');
   if (period) params.set('period', period);
   const url = `/api/daily-diagnosis?${params}`;
   const existing = pending.get(url);
@@ -20,6 +21,6 @@ export async function regenerateDailyDiagnosis(platform: DashboardPlatform, peri
   return (await apiRequest<DailyDiagnosisStatus>(`/api/daily-diagnosis?${new URLSearchParams({ platform, period })}`, { method: 'POST' })).data;
 }
 
-export async function runDailyDiagnosis(platform: DashboardPlatform, period: string) {
-  return (await apiRequest<DailyDiagnosisStatus & { dispatch?: string }>(`/api/daily-diagnosis/run?${new URLSearchParams({ platform, period })}`, { method: 'POST' })).data;
+export async function runDailyDiagnosis(platform: DashboardPlatform, period: string, runId?: string) {
+  return (await apiRequest<DailyDiagnosisStatus & { dispatch?: string }>(`/api/daily-diagnosis/run?${new URLSearchParams({ platform, period, ...(runId ? { runId } : {}) })}`, { method: 'POST' })).data;
 }

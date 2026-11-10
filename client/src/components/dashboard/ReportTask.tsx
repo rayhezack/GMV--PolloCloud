@@ -1,6 +1,7 @@
+import { regenerateDailyDiagnosis, runDailyDiagnosis } from '@/api/daily-diagnosis';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import type { ReportGenerationStatus, SyncRunStatus } from '@shared/api.interface';
+import type { DailyDiagnosisStatus, ReportGenerationStatus, SyncRunStatus } from '@shared/api.interface';
 import { CheckCircle2, Loader2, AlertCircle, Circle, ChevronUp, ChevronDown, X, ArrowUpRight, RotateCcw, Pause, Play, PauseCircle } from 'lucide-react';
 import { formatAnalysisWeekLabel, formatGeneratedAt, getReportPeriodKey } from '@/pages/ReportPage/report-page.utils';
 import { generateReport, pauseReportGeneration, resumeReportGeneration } from '@/api/report';
@@ -9,7 +10,7 @@ import { pauseSyncRun, resumeSyncRun, retrySyncRun } from '@/api/sync';
 type Step = { key: string; label: string; status: 'waiting' | 'running' | 'success' | 'failed'; detail?: string };
 type Task = {
   id: string;
-  kind: 'report' | 'sync';
+  kind: 'report' | 'sync' | 'daily';
   name: string;
   context: string;
   status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed';
@@ -36,11 +37,15 @@ function readDismissedTasks(): string[] {
 export function ReportTask({
   jobs,
   syncJob,
+  dailyJobs = [],
+  onTrackDaily,
   onTrackReport,
   onTrackSync,
 }: {
   jobs: ReportGenerationStatus[];
   syncJob: SyncRunStatus | null;
+  dailyJobs?: DailyDiagnosisStatus[];
+  onTrackDaily: (job: DailyDiagnosisStatus) => void;
   onTrackReport: (job: ReportGenerationStatus) => void;
   onTrackSync: (job: SyncRunStatus) => void;
 }) {
@@ -54,6 +59,12 @@ export function ReportTask({
   const previousStatuses = useRef(new Map<string, Task['status']>());
   const completionTimers = useRef(new Map<string, number>());
   const tasks: Task[] = [
+    ...dailyJobs.flatMap(item => item.task ? [{
+      id:item.task.runId, kind:'daily' as const, name:`日诊断 · ${item.platform === 'all' ? '大盘' : item.platform === 'web' ? 'Web' : 'App'}`,
+      context:`${item.period} · 对比 ${item.baseline}`,status:item.task.status,
+      startedAt:item.task.startedAt,updatedAt:item.task.updatedAt,steps:item.task.steps,errorMessage:item.task.errorMessage,
+      href:`/?tab=trend&platform=${item.platform}`,
+    }] : []),
     ...jobs.map(job => ({
       id: job.runId, kind: 'report' as const, name: `报告 · ${job.platform === 'web' ? 'Web' : 'App'}`,
       context: `${job.platform === 'web' ? 'Web' : 'App'} · ${formatAnalysisWeekLabel(job.periodStart, job.periodEnd)}`,
@@ -64,7 +75,7 @@ export function ReportTask({
     })),
     ...(syncJob ? [{
       id: syncJob.runId, kind: 'sync' as const, name: '数据同步',
-      context: `${syncJob.platforms.map(item => item === 'web' ? 'Web' : 'App').join(' + ')} · ${syncJob.startDate} ~ ${syncJob.endDate}`,
+      context: `${syncJob.platforms.map(item => item === 'all' ? '大盘' : item === 'web' ? 'Web' : 'App').join(' + ')} · ${syncJob.startDate} ~ ${syncJob.endDate}`,
       status: syncJob.status, startedAt: syncJob.startedAt, updatedAt: syncJob.heartbeatAt || syncJob.finishedAt || syncJob.startedAt,
       steps: syncJob.steps ?? [], errorMessage: syncJob.errorMessage, href: '/?tab=data',
       recoveryScopes: syncJob.datasets ?? ['pay_type', 'chain', 'creative', 'renewal'],
@@ -82,9 +93,9 @@ export function ReportTask({
     const nextStatuses = new Map(tasks.map(task => [task.id, task.status]));
     for (const task of tasks) {
       const previous = previousStatuses.current.get(task.id);
-      if (!isActiveStatus(task.status) && !dismissed.includes(task.id) && !completionTimers.current.has(task.id)) {
+      if (task.status === 'success' && expandedTaskId !== task.id && !dismissed.includes(task.id) && !completionTimers.current.has(task.id)) {
         const age = previous ? 0 : Date.now() - Date.parse(task.updatedAt);
-        const delay = previous ? (task.status === 'failed' ? 6500 : 4000) : Math.max(1000, 3500 - Math.max(0, age));
+        const delay = previous ? 4000 : Math.max(1000, 3500 - Math.max(0, age));
         const timer = window.setTimeout(() => {
           completionTimers.current.delete(task.id);
           setExpandedTaskId(current => current === task.id ? '' : current);
@@ -94,7 +105,7 @@ export function ReportTask({
       }
     }
     previousStatuses.current = nextStatuses;
-  }, [dismissed, jobs, syncJob]);
+  }, [dismissed, jobs, syncJob, dailyJobs, expandedTaskId]);
   useEffect(() => () => {
     completionTimers.current.forEach(timer => window.clearTimeout(timer));
     completionTimers.current.clear();
@@ -110,10 +121,10 @@ export function ReportTask({
     setSelected(current => {
       const currentTask = visible.find(task => task.id === current);
       const latestActive = visible.filter(active).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
-      if (latestActive && (!currentTask || !active(currentTask) || latestActive.startedAt > currentTask.startedAt)) return latestActive.id;
+      if (latestActive && !currentTask) return latestActive.id;
       return currentTask?.id ?? [...visible].sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]?.id ?? '';
     });
-  }, [jobs, syncJob, dismissed]);
+  }, [jobs, syncJob, dailyJobs, dismissed]);
   useEffect(() => {
     setExpandedTaskId('');
   }, [location.pathname, location.search]);
@@ -127,10 +138,22 @@ export function ReportTask({
     document.addEventListener('pointerdown', collapseOutside);
     return () => document.removeEventListener('pointerdown', collapseOutside);
   }, [expanded]);
+  useEffect(() => {
+    const show = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail;
+      setDismissed(current => current.filter(item => item !== id));
+      const timer = completionTimers.current.get(id);
+      if (timer) { window.clearTimeout(timer); completionTimers.current.delete(id); }
+      setSelected(id);
+      setExpandedTaskId(id);
+    };
+    window.addEventListener('pollo-open-background-task', show);
+    return () => window.removeEventListener('pollo-open-background-task', show);
+  }, []);
   if (!job) return null;
   const done = job.steps.filter(step => step.status === 'success').length;
   const progress = job.steps.length ? Math.round(done / job.steps.length * 100) : job.status === 'success' ? 100 : 0;
-  const label = job.kind === 'sync'
+  const label = job.kind === 'daily' ? job.status === 'queued' ? '日诊断等待执行' : job.status === 'running' ? '日诊断生成中' : job.status === 'success' ? '日诊断已完成' : '日诊断失败' : job.kind === 'sync'
     ? job.status === 'failed' ? '数据同步失败' : job.status === 'success' ? '数据已同步' : job.status === 'paused' ? '数据同步已暂停' : job.status === 'pausing' ? '数据同步暂停中' : '数据同步中'
     : job.status === 'failed' ? '报告生成失败' : job.status === 'success' ? '报告已生成' : job.status === 'paused' ? '报告生成已暂停' : job.status === 'pausing' ? '报告生成暂停中' : '报告生成中';
   const StatusIcon = job.status === 'failed' ? AlertCircle : job.status === 'success' ? CheckCircle2 : job.status === 'paused' ? PauseCircle : Loader2;
@@ -139,7 +162,14 @@ export function ReportTask({
     setRetrying(job.id);
     setOperationError('');
     try {
-      if (job.kind === 'report') {
+      if (job.kind === 'daily') {
+        const source = dailyJobs.find(item => item.task?.runId === job.id);
+        if (!source) throw new Error('未找到日诊断任务');
+        const next = await regenerateDailyDiagnosis(source.platform,source.period);
+        onTrackDaily(next);
+        if (next.task) { setSelected(next.task.runId); setExpandedTaskId(next.task.runId); }
+        void runDailyDiagnosis(source.platform,source.period,next.task?.runId).then(onTrackDaily).catch(() => undefined);
+      } else if (job.kind === 'report') {
         const source = jobs.find(item => item.runId === job.id);
         if (!source) throw new Error('未找到原报告任务');
         const next = await generateReport({ platform: source.platform, granularity: 'week', startDate: source.periodStart, endDate: source.periodEnd });
@@ -175,7 +205,7 @@ export function ReportTask({
   return (
     <aside ref={dockRef} className="report-task-dock" aria-label="后台任务" data-expanded={expanded}>
       {expanded && <section id="report-task-details" className="report-task-details">
-        <header><strong>{job.kind === 'sync' ? '数据同步任务' : '报告任务'}</strong><button type="button" aria-label="收起任务详情" onClick={() => setExpandedTaskId('')}><ChevronDown size={18} /></button></header>
+        <header><strong>{job.kind === 'sync' ? '数据同步任务' : job.kind === 'daily' ? '日诊断任务' : '报告任务'}</strong><button type="button" aria-label="收起任务详情" onClick={() => setExpandedTaskId('')}><ChevronDown size={18} /></button></header>
         {visible.length > 1 && <div className="report-task-platforms">{visible.map(item => <button type="button" key={item.id} aria-pressed={item.id === job.id} onClick={() => { setSelected(item.id); setExpandedTaskId(item.id); }}>{item.name}</button>)}</div>}
         <p className="report-task-period">{job.context}</p>
         <ol className="report-task-list">
@@ -191,12 +221,12 @@ export function ReportTask({
           {(operationError || job.status === 'failed') && <p role="alert">{operationError || job.errorMessage}</p>}
           <span>更新于 {formatGeneratedAt(job.updatedAt)}</span>
           <div className="report-task-actions">
-            {active(job) && <button type="button" onClick={() => void pauseOrResume()} disabled={retrying === job.id || job.status === 'pausing'}>
+            {active(job) && job.kind !== 'daily' && <button type="button" onClick={() => void pauseOrResume()} disabled={retrying === job.id || job.status === 'pausing'}>
               {job.status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
               {retrying === job.id ? '处理中' : job.status === 'paused' ? '继续运行' : job.status === 'pausing' ? '暂停中' : '暂停'}
             </button>}
             {!active(job) && <button type="button" onClick={() => void rerun()} disabled={retrying === job.id}><RotateCcw size={14} className={retrying === job.id ? 'animate-spin' : ''} />{retrying === job.id ? '启动中' : '重新运行'}</button>}
-            {job.kind !== 'sync' && (
+            {job.kind === 'report' && (
               <Link to={job.href}>{job.status === 'success' ? '查看报告' : '前往报告'}<ArrowUpRight size={14} /></Link>
             )}
           </div>
@@ -208,7 +238,7 @@ export function ReportTask({
           <span><strong>{label}</strong><small>{active(job) ? `${done} / ${job.steps.length} 步骤 · 点击查看进度` : `${job.name} · 点击查看详情`}</small></span>
           {expanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
         </button>
-        {active(job) && <button className="report-task-control" type="button" aria-label={job.status === 'paused' ? '继续运行任务' : '暂停任务'} title={job.status === 'paused' ? '继续运行' : '暂停'} disabled={retrying === job.id || job.status === 'pausing'} onClick={() => void pauseOrResume()}>
+        {active(job) && job.kind !== 'daily' && <button className="report-task-control" type="button" aria-label={job.status === 'paused' ? '继续运行任务' : '暂停任务'} title={job.status === 'paused' ? '继续运行' : '暂停'} disabled={retrying === job.id || job.status === 'pausing'} onClick={() => void pauseOrResume()}>
           {job.status === 'paused' ? <Play size={16} /> : <Pause size={16} />}
         </button>}
         <button className="report-task-dismiss" type="button" aria-label="关闭任务提醒" onClick={() => { setExpandedTaskId(''); setDismissed(current => [...new Set([...current, job.id])]); }}><X size={16} /></button>

@@ -1,7 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { getReportHistory } from '@/api/report';
-import { getDailyDiagnosis, runDailyDiagnosis } from '@/api/daily-diagnosis';
+import { useOutletContext } from 'react-router-dom';
+import { openBackgroundTask } from '@/lib/background-task';
+import { getDailyDiagnosis, regenerateDailyDiagnosis, runDailyDiagnosis } from '@/api/daily-diagnosis';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import type { DailyDiagnosisStatus, DashboardPlatform } from '@shared/api.interface';
@@ -16,6 +18,7 @@ const platformOrder: DashboardPlatform[] = ['all', 'web', 'app'];
 export default function DailyReportStack({ platform, platforms, period, refreshToken, canManage = false, mode = 'day' }: {
   platform: DashboardPlatform; platforms: DashboardPlatform[]; period: string; refreshToken: number; canManage?: boolean; mode?: 'day' | 'week';
 }) {
+  const { trackDaily } = useOutletContext<{ trackDaily: (job: DailyDiagnosisStatus) => void }>();
   const weekly = mode === 'week';
   const title = weekly ? '周诊断' : '日诊断';
   const dayOfWeek = new Date(`${period}T00:00:00Z`).getUTCDay();
@@ -61,6 +64,7 @@ export default function DailyReportStack({ platform, platforms, period, refreshT
           // A saved report from another date must not enter today's stack.
           if (result.value.period !== period) { failures[scope] = '当日报告暂不可用'; return; }
           next[scope] = result.value;
+          if (!weekly) trackDaily(result.value);
           failures[scope] = '';
           if (!weekly && ['waiting', 'queued', 'running'].includes(result.value.status)) pending.push(scope);
         });
@@ -75,28 +79,36 @@ export default function DailyReportStack({ platform, platforms, period, refreshT
     void load();
     document.addEventListener('visibilitychange', onVisible);
     return () => { active = false; window.clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
-  }, [scopeKey, period, refreshToken, retryToken, weekly, weekStart, weekEnd, title]);
+  }, [scopeKey, period, refreshToken, retryToken, weekly, weekStart, weekEnd, title, trackDaily]);
 
   const scopes = weekly ? ['web', 'app'] as DashboardPlatform[] : platformOrder.filter(scope => platforms.includes(scope));
   const completed = (weekly ? scopes.filter(scope => statuses[scope]?.status === 'success' && statuses[scope]?.report?.periodEnd === weekEnd) : completedDailyDiagnosisScopes(scopes, statuses, period)).filter(scope => !errors[scope]);
-  const currentScope = completed.includes(selected) ? selected : completed.includes(platform) ? platform : completed[0] ?? (scopes.includes(platform) ? platform : scopes[0] ?? platform);
+  const currentScope = scopes.includes(selected) ? selected : scopes.includes(platform) ? platform : scopes[0] ?? platform;
   const status = statuses[currentScope];
   const error = errors[currentScope] || '';
   const report = status?.report?.periodEnd === (weekly ? weekEnd : period) ? status.report : undefined;
   const outdated = Boolean(report && status?.status !== 'success');
   const label = error || (weekly ? report ? '查看周诊断' : '本周暂无已完成报告' : status ? labels[status.status] : scopes.length ? '读取日诊断…' : '当日未触发诊断');
   const papers = [...completed].sort((a, b) => Number(a === platform) - Number(b === platform));
-  const regenerate = async () => {
-    if (!status?.period || submitting) return;
+  const regenerate = async (scope = currentScope) => {
+    const source = statuses[scope];
+    if (!source?.period || submitting) return;
     setSubmitting(true);
     try {
-      setStatuses(current => ({ ...current, [currentScope]: { ...status, status: 'queued' } }));
+      const queued = await regenerateDailyDiagnosis(scope, source.period);
+      setStatuses(current => ({ ...current, [scope]: queued }));
+      trackDaily(queued);
+      if (queued.task) openBackgroundTask(queued.task.runId);
+      setErrors(current => ({ ...current, [scope]: '' }));
       setRetryToken(value => value + 1);
-      const next = await runDailyDiagnosis(currentScope, status.period);
-      setStatuses(current => ({ ...current, [currentScope]: next }));
-      setErrors(current => ({ ...current, [currentScope]: '' }));
-      setRetryToken(value => value + 1);
-    } catch (cause) { setErrors(current => ({ ...current, [currentScope]: cause instanceof Error ? cause.message : '提交失败' })); }
+      // Submission ends here. The existing task monitor polls persisted progress;
+      // keeping the dispatch response open is never the button's loading state.
+      void runDailyDiagnosis(scope, source.period, queued.task?.runId).then(next => {
+        setStatuses(current => ({ ...current, [scope]: next }));
+        trackDaily(next);
+        setRetryToken(value => value + 1);
+      }).catch(() => { setRetryToken(value => value + 1); });
+    } catch (cause) { setErrors(current => ({ ...current, [scope]: cause instanceof Error ? cause.message : '提交失败' })); }
     finally { setSubmitting(false); }
   };
   return <Sheet open={open} onOpenChange={setOpen}>
@@ -115,15 +127,28 @@ export default function DailyReportStack({ platform, platforms, period, refreshT
         </button>)}
       </div>
     </div>
-    {!weekly && canManage && status && ['waiting', 'queued', 'failed'].includes(status.status) && <div className="daily-report-manual"><Button variant="ghost" size="sm" disabled={submitting} onClick={() => void regenerate()}>{submitting ? '正在启动…' : status.status === 'failed' ? '重试诊断' : '手动诊断'}</Button></div>}
+    {!weekly && canManage && <div className="daily-report-tasks">
+      {scopes.map(scope => {
+        const item = statuses[scope];
+        if (!item || item.status === 'success') return null;
+        return <div key={scope}>
+          <span>{platformLabels[scope]} · {labels[item.status]}</span>
+          <div>
+            {item.task && <button type="button" onClick={() => { trackDaily(item); openBackgroundTask(item.task!.runId); }}>查看进度</button>}
+            {['failed','waiting'].includes(item.status) && <button type="button" disabled={submitting} onClick={() => void regenerate(scope)}>{submitting ? '提交中' : item.status === 'failed' ? '重试' : '手动诊断'}</button>}
+          </div>
+          {errors[scope] && <p role="alert">{errors[scope]}</p>}
+        </div>;
+      })}
+    </div>}
     <SheetContent className="daily-report-sheet" side="right" onCloseAutoFocus={event => { event.preventDefault(); coverRef.current?.focus(); }}>
       <SheetHeader>
         <SheetTitle>{platformLabels[currentScope]} · {title}</SheetTitle>
         <SheetDescription>{(weekly ? weekEnd : period) || '最新完整日'}{report ? ` · 对比 ${report.periodStart}` : ''}{outdated ? ' · 历史版本' : ''}</SheetDescription>
-        {completed.length > 1 && <div className="daily-report-switch" role="group" aria-label="切换诊断报告">{completed.map(scope => <button type="button" key={scope} aria-pressed={scope === currentScope} onClick={() => setSelected(scope)}>{platformLabels[scope]}</button>)}</div>}
+        {scopes.length > 1 && <div className="daily-report-switch" role="group" aria-label="切换诊断报告">{scopes.map(scope => <button type="button" key={scope} aria-pressed={scope === currentScope} onClick={() => setSelected(scope)}>{platformLabels[scope]}</button>)}</div>}
       </SheetHeader>
       <div className="daily-report-sheet-body">
-        {(error || !report || outdated) && <div className="daily-report-state" role="status"><strong>{label}</strong>{status?.error && <p>{status.error}</p>}{error && <Button variant="ghost" size="sm" onClick={() => setRetryToken(value => value + 1)}>重新读取</Button>}</div>}
+        {(error || !report || outdated) && <div className="daily-report-state" role="status"><strong>{label}</strong>{status?.task && !weekly && <Button variant="ghost" size="sm" onClick={() => { setOpen(false); trackDaily(status); openBackgroundTask(status.task!.runId); }}>查看任务进度</Button>}{status?.error && <p>{status.error}</p>}{error && <Button variant="ghost" size="sm" onClick={() => setRetryToken(value => value + 1)}>重新读取</Button>}</div>}
         {report && open && <Suspense fallback={<p role="status" className="daily-muted">正在打开报告…</p>}><Reader report={report} mode={mode} /></Suspense>}
       </div>
       {!weekly && canManage && status && ['failed', 'success'].includes(status.status) && <div className="daily-report-sheet-footer"><Button variant="ghost" size="sm" disabled={submitting} onClick={() => void regenerate()}><RefreshCw size={14} />{submitting ? '提交中…' : status.status === 'failed' ? '重试诊断' : '重新生成'}</Button></div>}

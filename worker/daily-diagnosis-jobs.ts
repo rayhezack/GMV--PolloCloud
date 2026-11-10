@@ -3,7 +3,7 @@ import type { Env } from './index';
 import { collectDailyDiagnosis, dailyComparison, type DailySignal } from './daily-diagnosis';
 import { normalizeProductAction } from './report-evidence';
 import { readProductActions } from './product-actions-store';
-import { generateMarkdown } from './report-jobs';
+import { generateMarkdown, ModelInterruptedError } from './report-jobs';
 import { prepareReportData } from './report-data';
 import { REPORT_SKILL_SHA256 } from './report-skill.generated';
 import type { DailyDiagnosisStatus, DashboardPlatform } from '../shared/api.interface';
@@ -15,7 +15,7 @@ type Dependencies = {
   generate?: (evidence: Evidence) => Promise<string>;
 };
 type State = { platform: DashboardPlatform; period: string; baseline: string; active: number; status: DailyDiagnosisStatus['status']; input_hash: string; signals: string; current_report_id: string | null; error: string | null; updated_at: string };
-type Job = { run_id: string; platform: DashboardPlatform; period: string; baseline: string; input_hash: string; evidence: string; status: string; markdown: string | null; model: string; finished_at: string | null };
+type Job = { run_id: string; platform: DashboardPlatform; period: string; baseline: string; input_hash: string; evidence: string; status: string; markdown: string | null; model: string; finished_at: string | null; created_at: string; error: string | null; stage: string | null; progress_at: string | null; checkpoint: string | null; retry_count: number; continuation_count: number; next_attempt_at: number };
 const now = () => new Date().toISOString();
 const message = (e: unknown) => (e instanceof Error ? e.message : '日诊断失败').replace(/sk-[\w-]+/g, '[已隐藏密钥]').slice(0, 500);
 function database(env: Env) { if (!env.DB) throw new Error('D1 未配置'); return env.DB; }
@@ -123,7 +123,7 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies, m
           if (existing?.input_hash === hash) {
             const last = (await rows<Job>(env,'SELECT * FROM daily_diagnosis_jobs WHERE platform=? AND period=? AND input_hash=? ORDER BY created_at DESC,rowid DESC LIMIT 1',platform,comparison.date,hash))[0];
             if (last && ['queued','running','success','failed'].includes(last.status)) {
-              await run(env,'UPDATE daily_diagnosis_state SET active=1,status=?,signals=?,error=NULL,updated_at=? WHERE platform=? AND period=?',last.status,JSON.stringify(selected),now(),platform,comparison.date);
+              await run(env,'UPDATE daily_diagnosis_state SET active=1,status=?,signals=?,error=?,updated_at=? WHERE platform=? AND period=?',last.status,JSON.stringify(selected),last.error,now(),platform,comparison.date);
               continue;
             }
           }
@@ -143,7 +143,7 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies, m
       const waiting = await rows(env,"SELECT platform FROM daily_diagnosis_state WHERE period=? AND status='waiting'",detection.latestDay);
       await run(env,'UPDATE daily_diagnosis_monitor SET checked_revision=?,checked_day=?,checked_at=?,checked_version=?,retry_pending=?,last_error=NULL WHERE id=1 AND lease_id=?',revision,today,now(),version,waiting.length?1:0,lease);
     }
-    const job = (await rows<Job>(env,`SELECT j.* FROM daily_diagnosis_jobs j JOIN daily_diagnosis_state s ON s.platform=j.platform AND s.period=j.period AND s.input_hash=j.input_hash WHERE j.status='queued' AND s.active=1 ${manual ? 'AND j.platform=? AND j.period=?' : ''} ORDER BY CASE WHEN j.requested_by='manual' THEN 0 ELSE 1 END,j.created_at,j.rowid LIMIT 1`, ...(manual ? [manual.platform, manual.period] : [])))[0];
+    const job = (await rows<Job>(env,`SELECT j.* FROM daily_diagnosis_jobs j JOIN daily_diagnosis_state s ON s.platform=j.platform AND s.period=j.period AND s.input_hash=j.input_hash WHERE j.status='queued' AND j.next_attempt_at<=${clock} AND s.active=1 ${manual ? 'AND j.platform=? AND j.period=?' : ''} ORDER BY CASE WHEN j.requested_by='manual' THEN 0 ELSE 1 END,j.created_at,j.rowid LIMIT 1`, ...(manual ? [manual.platform, manual.period] : [])))[0];
     if (!job) return {status:'idle'};
     const execution = await claimDiagnosisExecution(env, 'anomaly', Boolean(manual));
     if (!execution) return { status: 'waiting_report' };
@@ -153,17 +153,35 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies, m
       try {
         if (!env.KIMI_API_KEY && !dependencies.generate) throw new Error('日诊断模型未配置');
         const evidence = prepareReportData(JSON.parse(await readContent(env,job.evidence)));
-        const progress = (stage:string)=>run(env,'UPDATE daily_diagnosis_jobs SET stage=?,progress_at=? WHERE run_id=?',stage,now(),job.run_id);
+        let checkpoint = job.checkpoint ? await readContent(env, job.checkpoint) : '';
+        const progress = async (stage: string, partial?: string) => {
+          if (partial && partial !== checkpoint) {
+            checkpoint = partial;
+            const stored = await saveContent(env,`daily-diagnoses/checkpoints/${job.run_id}.md`,partial);
+            await run(env,'UPDATE daily_diagnosis_jobs SET checkpoint=? WHERE run_id=?',stored,job.run_id);
+          }
+          await run(env,'UPDATE daily_diagnosis_jobs SET stage=?,progress_at=? WHERE run_id=?',stage,now(),job.run_id);
+        };
         await progress('calling_model');
-        const markdown = await (dependencies.generate ?? (e=>generateMarkdown(env,e,'',progress)))(evidence);
+        const markdown = await (dependencies.generate ?? (e=>generateMarkdown(env,e,'',progress,{prefix:checkpoint,timeBudgetMs:180000})))(evidence);
         await progress('saving_report');
         const storedMarkdown = await saveContent(env,`daily-diagnoses/reports/${job.run_id}.md`,markdown);
         await run(env,"UPDATE daily_diagnosis_jobs SET status='success',stage='complete',error=NULL,markdown=?,model=?,finished_at=? WHERE run_id=?",storedMarkdown,env.KIMI_MODEL||'kimi-k3',now(),job.run_id);
         // Changes arriving during generation invalidate publication, while retaining the historical result.
         await run(env,`UPDATE daily_diagnosis_state SET current_report_id=?,status=CASE WHEN (SELECT revision FROM daily_diagnosis_monitor WHERE id=1)=? THEN 'success' ELSE 'waiting' END,updated_at=? WHERE platform=? AND period=? AND active=1 AND input_hash=?`,job.run_id,revision,now(),job.platform,job.period,job.input_hash);
       } catch(e) {
-        await run(env,"UPDATE daily_diagnosis_jobs SET status='failed',error=?,finished_at=? WHERE run_id=?",message(e),now(),job.run_id);
-        await run(env,"UPDATE daily_diagnosis_state SET status='failed',error=?,updated_at=? WHERE platform=? AND period=? AND input_hash=?",message(e),now(),job.platform,job.period,job.input_hash);
+        // A bounded attempt finishes before the platform cron deadline. Only complete
+        // model output is published; transport failures retain evidence and partial prose.
+        const partial = e instanceof ModelInterruptedError ? e.partial : '';
+        const previous = job.checkpoint ? await readContent(env,job.checkpoint) : '';
+        const advanced = partial.length > previous.length;
+        const recoverable = e instanceof ModelInterruptedError && e.retryable && (advanced ? job.continuation_count < 6 : job.retry_count < 2);
+        const stored = partial ? await saveContent(env,`daily-diagnoses/checkpoints/${job.run_id}.md`,partial) : job.checkpoint;
+        const nextStatus = recoverable ? 'queued' : 'failed';
+        const stage = recoverable ? advanced ? 'continuing' : 'retry_wait' : null;
+        await run(env,"UPDATE daily_diagnosis_jobs SET status=?,stage=COALESCE(?,stage),checkpoint=?,retry_count=retry_count+?,continuation_count=continuation_count+?,next_attempt_at=?,error=?,progress_at=?,finished_at=? WHERE run_id=?",
+          nextStatus,stage,stored,advanced?0:1,advanced?1:0,recoverable?Date.now()+60000:0,message(e),now(),recoverable?null:now(),job.run_id);
+        await run(env,"UPDATE daily_diagnosis_state SET status=?,error=?,updated_at=? WHERE platform=? AND period=? AND input_hash=?",nextStatus,message(e),now(),job.platform,job.period,job.input_hash);
       }
     } finally { await releaseDiagnosisExecution(env, execution); }
     return {status:'processed',runId:job.run_id};
@@ -175,13 +193,31 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies, m
   }
 }
 
-export async function getDailyDiagnosis(env: Env, platform: DashboardPlatform, period?: string): Promise<DailyDiagnosisStatus> {
+
+function dailyTask(job: Job): NonNullable<DailyDiagnosisStatus['task']> {
+  const stage = job.stage || 'queued';
+  const keys = ['loading_evidence','calling_model','model_accepted','saving_report'];
+  const index = stage === 'complete' ? 4 : stage === 'model_streaming' || stage === 'continuing' ? 2 : stage === 'retry_wait' ? 1 : Math.max(0,keys.indexOf(stage));
+  return {
+    runId:job.run_id,status:job.status as 'queued'|'running'|'success'|'failed',startedAt:job.created_at,
+    updatedAt:job.progress_at||job.finished_at||job.created_at,finishedAt:job.finished_at||undefined,
+    stage,errorMessage:job.error||undefined,retryCount:job.retry_count||0,
+    nextAttemptAt:job.next_attempt_at ? new Date(job.next_attempt_at).toISOString() : undefined,
+    steps:['读取诊断证据','请求诊断模型','生成诊断正文','保存报告'].map((label,i)=>({key:keys[i],label,
+      status:job.status==='success'||i<index?'success':i===index?job.status==='failed'?'failed':job.status==='running'?'running':'waiting':'waiting',
+      detail:i===index ? stage==='continuing'?'已保存正文，等待继续生成':stage==='retry_wait'?`模型连接异常，等待自动重试（${job.retry_count}/2）`:job.status==='queued'?'等待数据稳定或其他诊断任务完成':undefined : undefined})),
+  };
+}
+
+export async function getDailyDiagnosis(env: Env, platform: DashboardPlatform, period?: string, taskOnly = false): Promise<DailyDiagnosisStatus> {
   const state = (await rows<State>(env,`SELECT * FROM daily_diagnosis_state WHERE platform=? ${period?'AND period=?':''} ORDER BY period DESC LIMIT 1`,platform,...(period?[period]:[])))[0];
   const monitor = (await rows<{revision:number;checked_revision:number;last_error:string|null}>(env,'SELECT revision,checked_revision,last_error FROM daily_diagnosis_monitor WHERE id=1'))[0];
   if (!state) return {platform,period:period||'',baseline:'',status:'waiting',error:monitor?.last_error||undefined,updatedAt:''};
-  const report = state.current_report_id ? (await rows<Job>(env,'SELECT * FROM daily_diagnosis_jobs WHERE run_id=?',state.current_report_id))[0] : undefined;
+  const latest = (await rows<Job>(env,'SELECT * FROM daily_diagnosis_jobs WHERE platform=? AND period=? AND input_hash=? ORDER BY created_at DESC,rowid DESC LIMIT 1',platform,state.period,state.input_hash))[0];
+  const report = !taskOnly && state.current_report_id ? (await rows<Job>(env,'SELECT * FROM daily_diagnosis_jobs WHERE run_id=?',state.current_report_id))[0] : undefined;
   return {platform,period:state.period,baseline:state.baseline, status:monitor.revision!==monitor.checked_revision && state.status==='success'?'waiting':state.status,
-    error:state.error||monitor.last_error||undefined,updatedAt:state.updated_at,
+    error:state.error||latest?.error||monitor.last_error||undefined,updatedAt:state.updated_at,
+    task: latest ? dailyTask(latest) : undefined,
     report:report?.markdown?{runId:report.run_id,platform,periodStart:report.baseline,periodEnd:report.period,markdown:await readContent(env,report.markdown),modelUsed:report.model,degraded:false,generatedAt:report.finished_at!}:undefined};
 }
 export async function regenerateDailyDiagnosis(env: Env, platform: DashboardPlatform, period: string) {
@@ -189,7 +225,7 @@ export async function regenerateDailyDiagnosis(env: Env, platform: DashboardPlat
   if (!state?.active) throw new Error('该日当前未触发 GMV 异动');
   if (state.status === 'running') return getDailyDiagnosis(env,platform,period);
   if (state.status === 'queued') {
-    await run(env, "UPDATE daily_diagnosis_jobs SET requested_by='manual' WHERE platform=? AND period=? AND status='queued'", platform, period);
+    await run(env, "UPDATE daily_diagnosis_jobs SET requested_by='manual',next_attempt_at=0 WHERE platform=? AND period=? AND status='queued'", platform, period);
     return getDailyDiagnosis(env,platform,period);
   }
   if (state.status==='waiting') { await markDailyDiagnosisDirty(env,0); return getDailyDiagnosis(env,platform,period); }
