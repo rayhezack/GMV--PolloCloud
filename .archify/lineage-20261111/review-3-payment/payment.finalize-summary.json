@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/Users/ray/.codex/visualizations/2026/11/09/01a1be99-070c-7c31-93d9-89c5b9e3702f/gmv-daily-rail/.archify/lineage-20261111/payment.json",
+    "sha256": "5d287a81c94e40f1f1aab90d01c480c5be2b590cc2309cc27de11ba2853ebc1b",
+    "bytes": 5867
+  },
+  "artifact": {
+    "path": "/Users/ray/.codex/visualizations/2026/11/09/01a1be99-070c-7c31-93d9-89c5b9e3702f/gmv-daily-rail/client/public/lineage/payment.html",
+    "sha256": "b6268b81e4a07d92f4bb4cc9b367e7bb1a78778576938f19ef2a43abefa96a97",
+    "bytes": 827732
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/ray/.codex/visualizations/2026/11/09/01a1be99-070c-7c31-93d9-89c5b9e3702f/gmv-daily-rail/.archify/lineage-20261111/review-3-payment/payment.finalize.json",
+    "summaryReceipt": "/Users/ray/.codex/visualizations/2026/11/09/01a1be99-070c-7c31-93d9-89c5b9e3702f/gmv-daily-rail/.archify/lineage-20261111/review-3-payment/payment.finalize-summary.json",
+    "browserCheckReceipt": "/Users/ray/.codex/visualizations/2026/11/09/01a1be99-070c-7c31-93d9-89c5b9e3702f/gmv-daily-rail/.archify/lineage-20261111/review-3-payment/payment.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-11-10T17:33:41.146Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 2592,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}

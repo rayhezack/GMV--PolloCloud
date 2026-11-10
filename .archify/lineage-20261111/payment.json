@@ -257,6 +257,11 @@
       "from": "payment-reg-3",
       "to": "payment-1-1",
       "label": "关联"
+    },
+    {
+      "from": "payment-0-1",
+      "to": "payment-1-2",
+      "label": "支付结果对账"
     }
   ],
   "cards": [

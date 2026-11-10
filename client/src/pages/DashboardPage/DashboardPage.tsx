@@ -898,7 +898,7 @@ function GmvCoverageExplanation({
             <div><dt>支付链路与自动续订</dt><dd>付费墙用户日表 → pollo_da_chain_funnel / pollo_da_chain_breakdown → 漏斗、驱动及触点下钻。续订 cohort 表 → pollo_da_fact_rows（renewal）→ 到期用户、续订率、续订客单价；到期 cohort GMV 与支付日续费 GMV 不能直接相减。</dd></div>
             <div><dt>创作积极性与分层</dt><dd>创作功能链路日表 → pollo_da_creation_overall_daily / pollo_da_creation_function_daily → 指标卡、创作趋势、功能表现。行为日志和创作记录 → pollo_da_fact_rows（creative）→ 活跃 UV、渗透率及 30 日创作分层。创作 Tab 不展示链路表的 GMV，该字段不是本页支付结果。</dd></div>
             <div><dt>广告投放</dt><dd>广告归因日表 → pollo_da_ads_daily → 点击、成本、注册、ROAS 卡片，国家与渠道周对比，以及注册 Cohort 的 LTV/CAC。国家表按当前选择的分析周指标降序；Cohort 收入按注册日归组，不等同于支付日 GMV。</dd></div>
-            <div><dt>异动与动作标注</dt><dd>异动检测读取支付结果与链路的 D1 日表；产品动作由飞书 Base 同步到 pollo_da_product_actions / pollo_da_product_action_details，仅作日期标注，不参与收入计算。</dd></div>
+            <div><dt>异动与动作标注</dt><dd>异动检测读取支付结果与链路的 D1 日表；产品动作由飞书 Base 校验后发布到 pollo_da_product_action_details 快照，供产品日历、图表标注与诊断证据读取，不参与收入计算。</dd></div>
           </dl>
         </section>
         <section id="method-window" className="dashboard-methodology-section">
@@ -942,7 +942,7 @@ function GmvCoverageExplanation({
           <h3>GMV 异动诊断</h3>
           <p>异动诊断按 Web、App 和大盘分别计算最新完整日的 GMV，指标包括大盘 GMV、主动付费和续订 GMV。每个指标同时检查最新一日对前一日的日环比，以及最新一日对上周同一天的周同比。</p>
           <p>历史基准沿用业务周口径：业务周采用周六至周五，至少需要最近 12 个完整业务周的日均数据。日环比和周同比各自使用对应历史样本计算 P95/P05 阈值，并设置 ±10% 的最低触发线；任一口径超过阈值，就纳入最新 GMV 异动判断。</p>
-          <p>同一平台、同一指标、同一日期只生成一个 Toast；如果日环比和周同比同时触发，会在同一个 Toast 中并列展示两种变化，作为共同证据。数据缺失、对比基准为 0 或完整业务周不足 12 个时不发出提醒。</p>
+          <p>同一平台、同一指标、同一日期在每日动态中合并展示；如果日环比和周同比同时触发，会在监测详情中并列展示两种变化，作为共同证据。数据缺失、对比基准为 0 或完整业务周不足 12 个时不发出提醒。</p>
           <p>续订 GMV 只使用已有有效金额的完整业务周；选择 P95/P05 而不是 P99/P01，是因为当前历史周数有限，P99/P01 更接近极值，容易漏掉明显变化且阈值不稳定。</p>
         </section>
         <section id="method-payment" className="dashboard-methodology-section">

@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "receiptId": "c7f21f7d-0d68-41b0-a02f-419d126f8814",
+  "receiptId": "7134b9d8-e971-45bd-90e6-407e82111b12",
   "status": "current",
   "command": "deliver",
   "type": "architecture",
   "input": "/Users/ray/.codex/visualizations/2026/11/09/01a1be99-070c-7c31-93d9-89c5b9e3702f/gmv-daily-rail/.archify/lineage-20261111/payment.json",
   "output": "/Users/ray/.codex/visualizations/2026/11/09/01a1be99-070c-7c31-93d9-89c5b9e3702f/gmv-daily-rail/client/public/lineage/payment.html",
   "specification": {
-    "sha256": "5776f8976ce8b7517e0e1d19d6c4b001afd54c8113bb1717b933956a13d66e67",
-    "bytes": 5762
+    "sha256": "5d287a81c94e40f1f1aab90d01c480c5be2b590cc2309cc27de11ba2853ebc1b",
+    "bytes": 5867
   },
   "artifact": {
-    "sha256": "4e875dca39027f9500151cfe6a70dfdae679768d71d6710d7231524ce0fd1ea3",
-    "bytes": 826547
+    "sha256": "b6268b81e4a07d92f4bb4cc9b367e7bb1a78778576938f19ef2a43abefa96a97",
+    "bytes": 827732
   }
 }

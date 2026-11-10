@@ -105,7 +105,7 @@ Set `VITE_DATA_MODE=demo` only for a local visual preview. Production uses the s
 
 日诊断每次自动模型调用预算 210 秒，手动预算 540 秒；可恢复中断保留正文断点，至少等 1 分钟后、在下次五分钟调度恢复，最多两次无进展重试或六次有进展续写。共享模型执行锁为 15 分钟；周任务等待日异动队列清空。周报告同端同区间已成功则不重复，失败需显式重试。每周最后一个统计日（周五）有周同比异动时也可提前排入对应周诊断；成功后周六定时不重复。
 
-浏览器只轮询任务进度与读取已落库结果（日诊断任务状态每 15 秒刷新），不在加载页面时直接查询 MaxCompute；顶部刷新读取数据库/缓存，与管理员同步数据源是不同操作。
+浏览器只轮询任务进度与读取已落库结果：同步执行中每 2 秒、日诊断任务每 15 秒、周报告页每 3 秒读取状态。这些是状态请求，不会按此频率查询 MaxCompute；顶部刷新读取数据库/缓存，与管理员同步数据源是不同操作。看板响应缓存有效 10 分钟，过期后最多复用 1 小时旧响应并后台从 D1 刷新；数据发布会主动清理响应缓存。
 
 线上核对：`pollocloud cron list --name pollo-ai --json` 应只显示 `daily-data` 每天 09:20 和 `reports` 每五分钟两项。定时接口校验平台 `x-pollocloud-trigger: cron`，不接受普通用户伪造请求。
 
@@ -121,9 +121,9 @@ Set `VITE_DATA_MODE=demo` only for a local visual preview. Production uses the s
 
 The business-week selector controls both report viewing and generation. A request contains the selected Saturday–Friday analysis week and the immediately preceding baseline week. The Worker rejects future windows and missing baseline daily facts before invoking the model; an in-progress analysis week can use the observed days and calculates daily averages from that actual coverage. Historical selections never fall back to a different report.
 
-Jobs and individual step states are stored in D1 (`report_jobs`). The application polls status every three seconds on the report page. A streamed execution request stays open in the shared layout while the Worker reads D1 facts, calculates attribution, calls Kimi, and writes the report to D1 history and latest-report tables. Navigation inside the dashboard keeps that request alive. Closing the browser can interrupt execution; jobs with no heartbeat for three minutes become failed and can be generated again. This is not a durable queue that guarantees execution after every client disconnect.
+周报告的任务与步骤保存在 D1 `report_jobs`，报告页每 3 秒读取状态。手动启动使用流式执行请求，后台五分钟回调也会接管排队的周任务；日诊断则由独立的持久化任务与断点机制执行。页面导航保留共享布局中的请求；周任务运行中超过 3 分钟无心跳会标记失败，需要显式重试，不能把它与支持断点恢复的日诊断混为一谈。
 
-The task monitor is a compact floating control shared across dashboard routes, collapsed by default. Expanding it reveals real step states; navigation collapses it. Completed or failed notifications can be dismissed, are cleared on navigation, and are not restored on a fresh visit. Backend job records remain available for diagnosis. Each new run starts with new step state. Generated reports are written to both Base (`report_history` / `latest_report`) and D1; report reads prefer Base and fall back to D1 if Base is unavailable. Product actions are maintained and read from Base, with D1 as an availability fallback. Task status is written to Base `report_generation_jobs` and D1.
+The task monitor is a compact floating control shared across dashboard routes, collapsed by default. Expanding it reveals real step states; navigation collapses it. Completed or failed notifications can be dismissed, are cleared on navigation, and are not restored on a fresh visit. Backend job records remain available for diagnosis. Each new run starts with new step state. 周报告同时写入 Base (`report_history` / `latest_report`) 和 D1；最新报告优先读取 D1，历史列表和历史详情优先 Base、不可用时回退 D1。日诊断与每日动态读取 D1。产品动作从 Base 同步、校验后发布 D1 快照，交互页面读取该快照。周任务状态写入 Base `report_generation_jobs` 和 D1。
 
 The default model is `kimi-k3` at `https://api.moonshot.ai/v1`; optional `KIMI_MODEL` and `KIMI_BASE_URL` override those settings. Secrets are managed with `pollocloud secret set`, never committed. Progress percentages count completed steps; model inference uses an indeterminate bar instead of invented percentage estimates.
 
