@@ -1,0 +1,33 @@
+{
+  "checkedOn": "2026-11-10",
+  "automatedTests": {
+    "dailyDiagnosisRelated": 51,
+    "modelContractRegression": 4,
+    "typecheck": "passed",
+    "productionBuild": "passed"
+  },
+  "browser": {
+    "zeroReportsNoExpansion": true,
+    "singleReportExpansion": true,
+    "twoReportsAndThreeReportsTitlesVisible": true,
+    "clickExposedTitleSelectsCorrectReport": true,
+    "keyboardTabEnterOpensOverall": true,
+    "readerCloseRestoresCoverFocus": true,
+    "followingCardMovesWithHeight": true,
+    "viewport": {
+      "actualWidth": 433,
+      "scrollWidth": 433
+    },
+    "consoleErrors": 0
+  },
+  "installer": {
+    "idempotent": true,
+    "conflictingFilesRefusedBeforeAnyWrite": true
+  },
+  "humanReviewPending": [
+    "subjective video motion matching",
+    "physical touch devices",
+    "OS reduced motion setting"
+  ],
+  "scope": "demo uses fixed sample documents; no business data or production API"
+}

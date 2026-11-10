@@ -148,3 +148,16 @@ test('companion collection reads separate all rows exactly once and refuses miss
  assert.equal(queries.filter(q=>q.sql.includes("platform='all'")).length,1);
  await assert.rejects(()=>collectDailyDiagnosis([signal()],{...io,query:async(sql,...binds)=>sql.includes("platform='all'")?[]:io.query(sql,...binds)},true),/真实总/);
 });
+
+test('overall companion model prompt fixes report scope to overall, while keeping complete client evidence',async()=>{
+ const e=buildDailyDiagnosis([signal()],{web:fixture(),app:fixture()},{baseline:1100,current:1080,source:'actual overall'});
+ const bundle=await build({entryPoints:['worker/report-jobs.ts'],bundle:true,platform:'node',format:'esm',write:false});
+ const {generateMarkdown}=await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
+ const original=globalThis.fetch;globalThis.fetch=async(url,options)=>{
+  const body=JSON.parse(options.body);assert.match(body.messages[0].content,/报告对象固定为大盘/);
+  assert.match(body.messages[0].content,/不得把触发端变化率当作大盘变化率/);
+  assert.deepEqual(JSON.parse(body.messages[1].content.split('\n')[1]),JSON.parse(JSON.stringify(e)));
+  return new Response(`data: ${JSON.stringify({choices:[{delta:{content:'# 大盘日诊断'},finish_reason:'stop'}]})}\n\ndata: [DONE]\n\n`);
+ };
+ try{assert.equal(await generateMarkdown({KIMI_API_KEY:'fixture'},e),'# 大盘日诊断');}finally{globalThis.fetch=original;}
+});
