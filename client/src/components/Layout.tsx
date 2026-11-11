@@ -70,11 +70,11 @@ const Layout = () => {
     }
   }, [jobs, trackReport, userInfo]);
   useEffect(() => {
-    if (!canManagePollocloudApp(userInfo) || syncJob?.status !== 'queued' || executingSyncJobs.current.has(syncJob.runId)) return;
+    if (!canManagePollocloudApp(userInfo) || syncJob?.trigger !== 'manual' || syncJob.status !== 'queued' || executingSyncJobs.current.has(syncJob.runId)) return;
     executingSyncJobs.current.add(syncJob.runId);
     const executeStages = async () => {
       let current: SyncRunStatus | null = syncJob;
-      while (current?.status === 'queued') {
+      while (current?.runId === syncJob.runId && current.trigger === 'manual' && current.status === 'queued') {
         await executeSyncRun(current.runId);
         current = await getLatestSyncRun();
         setSyncJob(current);

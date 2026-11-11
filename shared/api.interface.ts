@@ -246,7 +246,7 @@ export interface CreativeOverviewResponse {
 /* ===== 同步链路 ===== */
 
 export type SyncMode = 'latest_day' | 'latest_week' | 'full_refresh' | 'date_range';
-export type SyncDataset = 'pay_type' | 'chain' | 'creative' | 'renewal';
+export type SyncDataset = 'pay_type' | 'chain' | 'creative' | 'renewal' | 'creation_chain' | 'ads';
 
 export interface SyncRunRequest {
   mode?: SyncMode;
@@ -257,6 +257,7 @@ export interface SyncRunRequest {
 }
 
 export interface SyncRunResponse {
+  trigger?: 'manual' | 'scheduled';
   runId: string;
   mode?: SyncMode;
   startDate: string;
@@ -271,6 +272,8 @@ export interface SyncRunResponse {
 }
 
 export interface SyncRunStatus {
+  trigger?: 'manual' | 'scheduled';
+  scheduledKey?: string;
   runId: string;
   currentDate?: string;
   mode?: SyncMode;
@@ -322,6 +325,7 @@ export interface LatestDaySyncPlan {
   missingItems: SyncPlanMissingItem[];
   datasets?: SyncDataset[];
   fullRefreshRequired?: boolean;
+  datasetDates?: Array<{ dataset: SyncDataset; latestDate: string | null }>;
 }
 
 /* ===== 看板 ===== */

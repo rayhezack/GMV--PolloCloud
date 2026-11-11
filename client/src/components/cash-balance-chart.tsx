@@ -484,8 +484,9 @@ function CashBalanceChart({
   const labelTimes = React.useMemo(() => {
     if (!(span > 0)) return []
     if (eventTimeline) {
-      const count = Math.max(1, Math.floor(trackWidth / LABEL_SPACING));
-      return Array.from({length: count - 1}, (_, i) => data[Math.round((i + 1) * (n - 1) / count)]?.time).filter((time): time is number => time !== undefined);
+      const count = Math.max(1, Math.min(n - 1, Math.floor(trackWidth / LABEL_SPACING)));
+      return [...new Set(Array.from({length: count - 1}, (_, i) => data[Math.round((i + 1) * (n - 1) / count)]?.time))]
+        .filter((time): time is number => time !== undefined && time > start && time < end);
     }
     const { ticks: times } = timeTicks(start, end, Math.max(2, Math.floor(trackWidth / LABEL_SPACING)))
     return times.filter((time) => {

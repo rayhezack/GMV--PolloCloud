@@ -89,6 +89,8 @@ test('missing historical monitor scope is not marked clear',async()=>{
 test('actual cron HTTP route invokes the model without a dashboard visit; GET remains read-only',async()=>{
  const {env,db}=setup();const b=await build({entryPoints:['worker/index.ts'],bundle:true,platform:'node',format:'esm',write:false,logLevel:'silent'});const {default:worker}=await import(`data:text/javascript;base64,${Buffer.from(b.outputFiles[0].text).toString('base64')}`);
  const stamp=new Date().toISOString(),today=new Date(Date.now()+8*3600000).toISOString().slice(0,10),input=JSON.stringify(evidence());
+ db.exec('CREATE TABLE daily_refresh_batches(day TEXT PRIMARY KEY,payload TEXT NOT NULL,updated_at INTEGER NOT NULL,lease_until INTEGER NOT NULL DEFAULT 0)');
+ db.prepare('INSERT INTO daily_refresh_batches(day,payload,updated_at) VALUES(?,?,?)').run(today,JSON.stringify({day:today,tasks:['actions','facts:pay_type','facts:chain','facts:renewal','facts:creative'],cursor:4,status:'failed',error:'creative timeout'}),Date.now());
  db.prepare('UPDATE daily_diagnosis_monitor SET checked_revision=revision,checked_day=?,checked_version=?').run(today,`${REPORT_SKILL_SHA256}:kimi-k3:overall-companion-v1:weekly-coverage-v1`);
  db.prepare("INSERT INTO daily_diagnosis_jobs(run_id,platform,period,baseline,input_hash,evidence,status,requested_by,created_at) VALUES('http','web',?,'2026-11-01','hash',?,'queued','automatic',?)").run(day,input,stamp);
  db.prepare("INSERT INTO daily_diagnosis_state(platform,period,baseline,active,status,input_hash,updated_at) VALUES('web',?,'2026-11-01',1,'queued','hash',?)").run(day,stamp);
@@ -226,13 +228,14 @@ test('manual run HTTP endpoint authenticates and completes exactly one existing 
  const {default:worker}=await import(`data:text/javascript;base64,${Buffer.from(b.outputFiles[0].text).toString('base64')}`);
  const {POLLOCLOUD_APP_OWNER_ID}=await import('../shared/auth.constants.ts');
  const original=globalThis.fetch;let calls=0;
- globalThis.fetch=async()=>{calls++;return new Response(`data: ${JSON.stringify({choices:[{delta:{content:'manual raw report'},finish_reason:'stop'}]})}\n\ndata: [DONE]\n\n`);};
+ globalThis.fetch=async url=>{assert.match(String(url),/moonshot|kimi/,'manual diagnosis may call the model, never a source warehouse');calls++;return new Response(`data: ${JSON.stringify({choices:[{delta:{content:'manual raw report'},finish_reason:'stop'}]})}\n\ndata: [DONE]\n\n`);};
  try{
   const tasks=[],context={waitUntil:p=>tasks.push(p)};
   const response=await worker.fetch(new Request(`http://local/api/daily-diagnosis/run?platform=web&period=${day}`,{method:'POST',headers:{'x-pollocloud-user-id':POLLOCLOUD_APP_OWNER_ID}}),{...env,KIMI_API_KEY:'fixture'},context);
   const result=await response.json();await Promise.all(tasks);
   assert.equal(result.status,'success');assert.equal(result.report.markdown,'manual raw report');assert.equal(calls,1);
   assert.equal(db.prepare('SELECT count(*) n FROM daily_diagnosis_jobs').get().n,1);
+  assert.equal(db.prepare('SELECT count(*) n FROM sync_jobs').get().n,0,'manual diagnosis never creates source sync work');
  }finally{globalThis.fetch=original;}
 });
 

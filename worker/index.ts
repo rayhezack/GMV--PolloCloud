@@ -2277,7 +2277,11 @@ async function syncPlan(env: Env, mode: SyncMode, requestedDatasets?: SyncDatase
       })
       .map((sheet) => ({ sheet, platform, datasetKind: 'daily', expectedPeriod: startDate, recordCount: 0 })));
     const alreadySynced = startDate === yesterday && missingItems.length === 0;
-    return json({ mode, startDate, endDate: startDate, latestStoredDate, platforms, alreadySynced, canSync: !alreadySynced, running: false, missingItems, datasets: datasetsToCheck });
+    const extraDates = await Promise.all(['pollo_da_creation_overall_daily', 'pollo_da_ads_daily'].map(table =>
+      env.DB!.prepare(`SELECT MAX(period) AS latest FROM ${table}`).first<{latest:string|null}>()));
+    const datasetDates = datasetsToCheck.map((dataset, index) => ({dataset, latestDate: latestDates[index] || null}));
+    datasetDates.push({dataset:'creation_chain',latestDate:extraDates[0]?.latest ?? null}, {dataset:'ads',latestDate:extraDates[1]?.latest ?? null});
+    return json({ mode, startDate, endDate: startDate, latestStoredDate, platforms, alreadySynced, canSync: !alreadySynced, running: false, missingItems, datasets: datasetsToCheck, datasetDates });
   }
   const date = new Date(`${yesterday}T00:00:00Z`);
   const day = date.getUTCDay();
@@ -2360,8 +2364,9 @@ async function pullDailyFacts(env: Env, platform: string, dataset: DatasetKind, 
 type DailySheet = 'pay_type_daily' | 'chain_daily' | 'creative_daily' | 'renewal_daily';
 
 type SyncJobState = SyncRunStatus & { runLogId?: string; writtenSteps?: string[]; completedRows?: number };
-const SYNC_DATASETS = ['pay_type', 'chain', 'creative', 'renewal'] as const;
-const SYNC_DATASET_LABELS = { pay_type: '付费类型', chain: '支付链路', creative: '创作积极性', renewal: '自动续订' };
+const SYNC_DATASETS: SyncDataset[] = ['pay_type', 'chain', 'creative', 'renewal'];
+const ALL_SYNC_DATASETS: SyncDataset[] = [...SYNC_DATASETS, 'creation_chain', 'ads'];
+const SYNC_DATASET_LABELS = { pay_type: '付费类型', chain: '支付链路', creative: '创作积极性', renewal: '自动续订', creation_chain: '创作链路', ads: '付费广告' };
 
 function newSyncJob(
   mode: SyncMode,
@@ -2373,6 +2378,7 @@ function newSyncJob(
   const runId = crypto.randomUUID();
   return {
     runId,
+    trigger: 'manual',
     mode,
     status: 'queued',
     stage: 'pull',
@@ -2385,12 +2391,12 @@ function newSyncJob(
     startedAt: new Date().toISOString(),
     steps: [
       ...platforms.flatMap((platform, index) => datasets.filter(dataset =>
-        (dataset !== 'pay_type' || index === 0) &&
+        (!['pay_type', 'creation_chain', 'ads'].includes(dataset) || index === 0) &&
         // The all-scope funnel query already returns distinct Web/App rows.
         (dataset !== 'chain' || !platforms.includes('all') || platform === 'all')
       ).map(dataset => ({
-        key: `${dataset === 'pay_type' ? 'all' : platform}-${dataset}`,
-        label: `${dataset === 'pay_type' || platform === 'all' ? '全端' : platform === 'web' ? 'Web' : 'App'} · ${SYNC_DATASET_LABELS[dataset]}`,
+        key: `${['pay_type', 'creation_chain', 'ads'].includes(dataset) ? 'all' : platform}-${dataset}`,
+        label: `${['pay_type', 'creation_chain', 'ads'].includes(dataset) || platform === 'all' ? '全端' : platform === 'web' ? 'Web' : 'App'} · ${SYNC_DATASET_LABELS[dataset]}`,
         status: 'waiting' as const,
       }))),
       { key: 'finish', label: '完成同步', status: 'waiting' as const },
@@ -2438,6 +2444,34 @@ async function ensureSyncRunLog(env: Env, job: SyncJobState) {
 async function runBaseSyncStep(env: Env, job: SyncJobState) {
   const current = await env.DB!.prepare('SELECT status FROM sync_jobs WHERE run_id=?').bind(job.runId).first<{status: string}>();
   if (current && ['paused','pausing'].includes(current.status)) { job.status = 'paused'; await saveSyncJob(env, job); return; }
+  // These ADS sources already contain every platform. Publish the selected
+  // date once through the same durable task and pause controls as core facts.
+  const extra = job.datasets?.find(dataset => dataset === 'creation_chain' || dataset === 'ads');
+  if (extra) {
+    const step = job.steps?.find(item => item.key === `all-${extra}`);
+    if (!step) throw new Error('同步步骤缺失');
+    if (step.status !== 'success') {
+      step.status = 'running';
+      step.detail = `${job.startDate} · 正在查询业务数据库`;
+      await saveSyncJob(env, job);
+      if (job.status === 'paused') return;
+      const result = extra === 'ads' ? await syncAdsDate(env, job.startDate) : await syncCreationChainDate(env, job.startDate);
+      job.rowsSynced = typeof result === 'number' ? result : result.overall + result.function;
+      step.status = 'success';
+      step.detail = `已写入 ${job.rowsSynced.toLocaleString('en-US')} 条聚合记录`;
+      job.status = 'queued';
+      job.stage = 'write';
+      await saveSyncJob(env, job);
+      await invalidateDashboardCache(env);
+      return;
+    }
+    const finish = job.steps?.find(item => item.key === 'finish');
+    if (finish) { finish.status = 'success'; finish.detail = `${job.startDate} · 已完成所选数据集更新`; }
+    job.status = 'success';
+    job.finishedAt = new Date().toISOString();
+    await saveSyncJob(env, job);
+    return;
+  }
   const firstWaitingStep = job.steps?.find(item => item.key !== 'finish' && item.status === 'waiting');
   if (!firstWaitingStep) {
     const dataSteps = job.steps?.filter(item => item.key !== 'finish') ?? [];
@@ -2537,17 +2571,29 @@ async function runBaseSyncStep(env: Env, job: SyncJobState) {
   await saveSyncJob(env, job);
 }
 
-async function createSyncRun(env: Env, request: Request) {
+async function createSyncRun(env: Env, request: Request, scheduledKey?: string) {
   if (!env.DB) return errorResponse('同步任务数据库未配置', 503);
   await latestSync(env);
+  // A batch continuation must recover its original job, including a terminal
+  // result, before consulting the global active slot or creating any new work.
+  if (scheduledKey) {
+    const saved = await env.DB.prepare("SELECT payload FROM sync_jobs WHERE json_extract(payload,'$.scheduledKey')=? ORDER BY created_at DESC LIMIT 1")
+      .bind(scheduledKey).first<{payload:string}>();
+    if (saved) return json(JSON.parse(saved.payload));
+  }
   const activeJob = () => env.DB!.prepare("SELECT payload FROM sync_jobs WHERE status IN ('queued', 'running', 'pausing', 'paused') ORDER BY created_at DESC LIMIT 1").first<{ payload: string }>();
   // Resume the durable job even if its data writes have already satisfied the
   // plan: it still needs to complete its run log and release the active slot.
-  const active = await activeJob();
-  if (active) return json(JSON.parse(active.payload));
   const body = await request.json().catch(() => ({})) as { mode?: SyncMode; platforms?: string[]; datasets?: string[]; startDate?: string; endDate?: string };
   const mode: SyncMode = body.mode === 'date_range' ? 'date_range' : body.mode === 'full_refresh' ? 'full_refresh' : body.mode === 'latest_week' ? 'latest_week' : 'latest_day';
-  const requestedDatasets = body.datasets?.filter((dataset): dataset is SyncDataset => SYNC_DATASETS.includes(dataset as SyncDataset)) ?? [];
+  if (body.datasets !== undefined && (!Array.isArray(body.datasets) || !body.datasets.length || body.datasets.some(dataset => !ALL_SYNC_DATASETS.includes(dataset as SyncDataset)))) {
+    return errorResponse('请选择有效的同步数据集', 400);
+  }
+  const requestedDatasets = [...new Set(body.datasets ?? [])] as SyncDataset[];
+  if (requestedDatasets.some(dataset => dataset === 'creation_chain' || dataset === 'ads') &&
+    (mode !== 'date_range' || body.startDate !== body.endDate || requestedDatasets.length !== 1)) {
+    return errorResponse('创作链路和付费广告请分别选择单个日期回刷', 400);
+  }
   const yesterday = new Date(Date.now() + 8 * 3600000 - 86400000).toISOString().slice(0, 10);
   if (mode === 'date_range') {
     const validDate = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -2555,6 +2601,11 @@ async function createSyncRun(env: Env, request: Request) {
     if (!validDate(body.startDate) || !validDate(body.endDate) || body.startDate > body.endDate || body.endDate > yesterday) {
       return errorResponse('请选择已结束日期的有效区间，单日回刷请选择相同的起止日期', 400);
     }
+  }
+  const active = await activeJob();
+  if (active) {
+    if (scheduledKey) return json(JSON.parse(active.payload));
+    return errorResponse('已有同步任务，请先完成或暂停处理该任务后再提交', 409);
   }
   const planResponse = mode === 'date_range'
     ? json({ startDate: body.startDate, endDate: body.endDate, platforms: ['all','web','app'], alreadySynced: false })
@@ -2577,6 +2628,7 @@ async function createSyncRun(env: Env, request: Request) {
   if (plan.alreadySynced) return json({ runId: `base-${Date.now()}`, mode, ...plan, status: 'success', rowsSynced: 0, skipped: true, skipReason: 'Base 已包含目标日期数据' });
   const effectiveMode = plan.fullRefreshRequired ? 'full_refresh' : mode;
   const job = newSyncJob(effectiveMode, plan.startDate, plan.endDate, platforms as SyncRunStatus['platforms'], datasets);
+  if (scheduledKey) { job.trigger = 'scheduled'; job.scheduledKey = scheduledKey; }
   const { runId } = job;
   const persisted = await reserveSyncJob(
     () => env.DB!.prepare("INSERT OR IGNORE INTO sync_jobs (run_id, status, payload, created_at, updated_at) VALUES (?, 'queued', ?, ?, ?) RETURNING payload")
@@ -2622,6 +2674,7 @@ async function controlSyncRun(env: Env, request: Request, action: 'pause' | 'res
   } else {
     if (row.status !== 'paused') return errorResponse('只有已暂停的任务可以继续', 409);
     job.status = 'queued';
+    job.trigger = 'manual';
     job.errorMessage = undefined;
     job.finishedAt = undefined;
   }
@@ -2629,12 +2682,12 @@ async function controlSyncRun(env: Env, request: Request, action: 'pause' | 'res
   return json(job);
 }
 
-async function executeSyncRun(env: Env, request: Request) {
+async function executeSyncRun(env: Env, request: Request, scheduled = false) {
   if (!env.DB) return errorResponse('同步任务数据库未配置', 503);
   const { runId } = await request.json() as { runId: string };
-  const claimed = await env.DB.prepare("UPDATE sync_jobs SET status = 'running', updated_at = ? WHERE run_id = ? AND status = 'queued' RETURNING payload")
-    .bind(Date.now(), runId).first<{ payload: string }>();
-  if (!claimed) return json({ message: '任务已由后台接管或已结束' });
+  const claimed = await env.DB.prepare("UPDATE sync_jobs SET status = 'running', updated_at = ? WHERE run_id = ? AND status = 'queued' AND (?=1 OR json_extract(payload,'$.trigger')='manual') RETURNING payload")
+    .bind(Date.now(), runId, scheduled ? 1 : 0).first<{ payload: string }>();
+  if (!claimed) return scheduled ? json({ message: '任务已由后台接管或已结束' }) : errorResponse('任务由后台调度或已结束，请刷新任务状态', 409);
   const job = JSON.parse(claimed.payload) as SyncJobState;
   job.status = 'running';
   job.heartbeatAt = new Date().toISOString();
@@ -2688,18 +2741,31 @@ function reportDependencies(env: Env) {
   };
 }
 
-async function runScheduledSync(env: Env, datasets: SyncDataset[], date?: string) {
+async function runScheduledSync(env: Env, datasets: SyncDataset[], date?: string, batchDay?: string) {
+  const scheduledKey = `${batchDay || new Date(Date.now()+8*3600000).toISOString().slice(0,10)}:${datasets.join(',')}:${date || 'latest'}`;
+  // Recover already-published work from batches started before job ownership
+  // was persisted. Presence of old data alone never qualifies as a refresh.
+  if (batchDay && date) {
+    const published = await env.DB!.prepare(`SELECT payload FROM sync_jobs WHERE status='success' AND created_at>=?
+      AND json_extract(payload,'$.startDate')=? AND json_extract(payload,'$.endDate')=?
+      AND json_extract(payload,'$.datasets')=? AND json_array_length(payload,'$.platforms')=3
+      AND EXISTS(SELECT 1 FROM json_each(payload,'$.platforms') WHERE value='all')
+      AND EXISTS(SELECT 1 FROM json_each(payload,'$.platforms') WHERE value='web')
+      AND EXISTS(SELECT 1 FROM json_each(payload,'$.platforms') WHERE value='app') ORDER BY created_at DESC LIMIT 1`)
+      .bind(Date.parse(`${batchDay}T01:20:00.000Z`),date,date,JSON.stringify(datasets)).first<{payload:string}>();
+    if (published) return JSON.parse(published.payload) as SyncRunResponse;
+  }
   const response = await createSyncRun(env, new Request('https://schedule.internal/api/sync-runs', {
     method: 'POST', body: JSON.stringify({ mode: date ? 'date_range' : 'latest_day', startDate: date, endDate: date, platforms: ['all', 'web', 'app'], datasets }),
     headers: { 'content-type': 'application/json' },
-  }));
+  }), scheduledKey);
   const job = await response.json() as SyncRunResponse;
   if (!response.ok || job.status === 'failed') throw new Error(job.errorMessage || '定时同步任务创建失败');
   if (job.skipped || job.status === 'success' || job.status === 'paused') return job;
   const ownsRequestedDatasets=datasets.every(dataset=>job.datasets?.includes(dataset)) && (!date || (job.startDate===date && job.endDate===date));
   const executionResponse = await executeSyncRun(env, new Request('https://schedule.internal/api/sync-runs/run', {
     method: 'POST', body: JSON.stringify({ runId: job.runId }), headers: { 'content-type': 'application/json' },
-  }));
+  }), true);
   await executionResponse.text();
   const current = await env.DB!.prepare('SELECT payload FROM sync_jobs WHERE run_id = ?').bind(job.runId).first<{ payload: string }>();
   if (!current) throw new Error('定时同步任务状态丢失');
@@ -2951,8 +3017,8 @@ export async function dailyDataRefresh(env: Env, start = false, force = false) {
     if (task.startsWith('facts:')) {
       const dataset=task.slice(6) as SyncDataset;
       const deadline=Date.now()+90000;
-      let result=await runScheduledSync(env,[dataset],shiftDate(batch.day,-1));
-      while(result.status==='queued' && !result.skipped && Date.now()<deadline)result=await runScheduledSync(env,[dataset],shiftDate(batch.day,-1));
+      let result=await runScheduledSync(env,[dataset],shiftDate(batch.day,-1),batch.day);
+      while(result.status==='queued' && !result.skipped && Date.now()<deadline)result=await runScheduledSync(env,[dataset],shiftDate(batch.day,-1),batch.day);
       if(result.status==='paused') throw new Error('同步已暂停，请在任务后台恢复后手动继续每日批次');
       if(result.status==='failed') throw new Error(result.errorMessage || '源数据未就绪，保留原数据；请手动重试');
       return result.status==='success';
@@ -2968,7 +3034,7 @@ export async function dailyDataRefresh(env: Env, start = false, force = false) {
     try {
       if(source==='ads')await syncAdsDate(env,date);else await syncCreationChainDate(env,date);
       await finishSourceRefresh(env,source==='ads'?'ads':'creation',date,attempt,true);
-      await markDailyDiagnosisDirty(env); return true;
+      await invalidateDashboardCache(env); return true;
     } catch(error) {await finishSourceRefresh(env,source==='ads'?'ads':'creation',date,attempt,false);throw error;}
   },save); } finally {await env.DB.prepare('UPDATE daily_refresh_batches SET lease_until=0 WHERE day=? AND lease_until=?').bind(batch.day,lease).run();}
 }
@@ -2996,8 +3062,9 @@ async function cronHandler(
     const scheduled = request.headers.get('x-pollocloud-scheduled-time');
     const platform = weeklyReportPlatformAt(scheduled ? new Date(scheduled) : new Date());
     if (platform) await queueWeeklyReport(env, platform);
-    if(batch?.status==='running')return json({ok:true,task:'daily-data-continuation',batch});
-    if(batch?.status==='failed')return json({ok:false,task:'daily-data-failed',batch});
+    // Optional creative/advertising refreshes must not hold complete revenue,
+    // funnel and renewal evidence hostage. Diagnosis validates D1 evidence itself.
+    if(batch?.status==='running' && batch.cursor<4)return json({ok:true,task:'daily-data-continuation',batch});
   }
   if (path === '/api/cron/daily-diagnoses' || path === '/api/cron/reports') {
     // Do not return streaming headers early: the platform scheduler can record

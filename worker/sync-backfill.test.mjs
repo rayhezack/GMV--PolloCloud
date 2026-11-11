@@ -9,7 +9,7 @@ import { buildSync } from 'esbuild';
 
 const dir = mkdtempSync(join(tmpdir(), 'sync-backfill-test-'));
 const outfile = join(dir, 'worker.mjs');
-buildSync({ stdin: { contents: readFileSync(new URL('./index.ts', import.meta.url), 'utf8') + '\nexport {syncPlan, createSyncRun, newSyncJob, runBaseSyncStep, replaceFactRange, stageSyncRows, saveSyncJob, controlSyncRun};', resolveDir: fileURLToPath(new URL('.', import.meta.url)), loader: 'ts' }, bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'silent' });
+buildSync({ stdin: { contents: readFileSync(new URL('./index.ts', import.meta.url), 'utf8') + '\nexport {syncPlan, createSyncRun, newSyncJob, runBaseSyncStep, replaceFactRange, stageSyncRows, saveSyncJob, controlSyncRun, runScheduledSync, executeSyncRun};', resolveDir: fileURLToPath(new URL('.', import.meta.url)), loader: 'ts' }, bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'silent' });
 const worker = await import(pathToFileURL(outfile).href);
 process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
 function fixture() {
@@ -36,6 +36,39 @@ function fixture() {
   return { db, env: { DB: adapter }, queries };
 }
 const request = body => new Request('https://test/api/sync-runs', { method: 'POST', body: JSON.stringify(body) });
+test('scheduled continuation reuses the same job after success or failure instead of creating another pull', async () => {
+  const { db, env } = fixture();
+  const key='2026-11-11:creative:2026-11-10', body={mode:'date_range',startDate:'2026-11-10',endDate:'2026-11-10',datasets:['creative']};
+  const first=await (await worker.createSyncRun(env,request(body),key)).json();
+  assert.equal(first.trigger,'scheduled');
+  for (const status of ['queued','success','failed']) {
+    db.prepare('UPDATE sync_jobs SET status=?,payload=?').run(status,JSON.stringify({...first,status}));
+    const again=await (await worker.createSyncRun(env,request(body),key)).json();
+    assert.equal(again.runId,first.runId);assert.equal(again.status,status);
+  }
+  assert.equal(db.prepare('SELECT count(*) n FROM sync_jobs').get().n,1);
+  db.close();
+});
+test('batch recovers a previously successful creative publication without any source request', async () => {
+  const { db, env } = fixture();let calls=0;const original=globalThis.fetch;
+  globalThis.fetch=async()=>{calls++;throw Error('must not pull');};
+  try {
+    const job=worker.newSyncJob('date_range','2026-11-10','2026-11-10',['all','web','app'],['creative']);job.status='success';
+    db.prepare("INSERT INTO sync_jobs VALUES(?,'success',?,?,?)").run(job.runId,JSON.stringify(job),Date.parse('2026-11-11T02:00:00Z'),Date.now());
+    for(let i=0;i<3;i++)assert.equal((await worker.runScheduledSync(env,['creative'],'2026-11-10','2026-11-11')).runId,job.runId);
+    assert.equal(calls,0);assert.equal(db.prepare('SELECT count(*) n FROM sync_jobs').get().n,1);
+  } finally {globalThis.fetch=original;db.close();}
+});
+test('browser polling cannot execute a scheduled or legacy job; explicit resume transfers ownership', async () => {
+  const { db, env } = fixture();
+  const job=worker.newSyncJob('date_range','2026-11-10','2026-11-10',['all','web','app'],['creative']);job.trigger='scheduled';
+  db.prepare("INSERT INTO sync_jobs VALUES(?,'queued',?,?,?)").run(job.runId,JSON.stringify(job),Date.now(),Date.now());
+  await (await worker.executeSyncRun(env,request({runId:job.runId}))).text();
+  assert.equal(db.prepare('SELECT status FROM sync_jobs').get().status,'queued');
+  await worker.controlSyncRun(env,request({runId:job.runId}),'pause');
+  const resumed=await (await worker.controlSyncRun(env,request({runId:job.runId}),'resume')).json();assert.equal(resumed.trigger,'manual');
+  db.close();
+});
 function seed(db, dataset, period, platform, device = null) {
   db.prepare("INSERT INTO pollo_da_fact_rows(dataset,source_record_id,period,platform,device_type,attribution_type,pay_category,pay_type,fields_json,updated_at) VALUES(?,?,?,?,?,'NONE','ACTIVE_PAYMENT','首订','{}',0)")
     .run(dataset, `${period}:${platform}:${device}`, period, platform, device);
@@ -134,4 +167,45 @@ test('pause is durable across queued/running writes and resume keeps the same cu
  await worker.runBaseSyncStep(env,{...resumed,status:'running'});
  assert.equal(db.prepare('SELECT status FROM sync_jobs').get().status,'paused');
  db.close();
+});
+
+
+test('selected dataset/date creates only its own steps and refuses invalid scopes', async () => {
+  const {db,env}=fixture();
+  try {
+    for(const dataset of ['creative','creation_chain','ads','pay_type','chain','renewal']) {
+      const response=await worker.createSyncRun(env,request({mode:'date_range',startDate:'2026-11-10',endDate:'2026-11-10',datasets:[dataset]}));
+      assert.equal(response.status,200);
+      const job=await response.json();
+      assert.deepEqual(job.datasets,[dataset]);
+      assert.equal(job.startDate,'2026-11-10');assert.equal(job.endDate,'2026-11-10');
+      assert.ok(job.steps.filter(step=>step.key!=='finish').every(step=>step.key.endsWith(`-${dataset}`)));
+      if(['creation_chain','ads','pay_type','chain'].includes(dataset))assert.equal(job.steps.length,2);
+      // Selecting another source cannot silently return this unrelated job.
+      assert.equal((await worker.createSyncRun(env,request({mode:'date_range',startDate:'2026-11-10',endDate:'2026-11-10',datasets:['renewal']}))).status,409);
+      db.prepare("UPDATE sync_jobs SET status='success',payload=json_set(payload,'$.status','success') WHERE run_id=?").run(job.runId);
+    }
+    const count=db.prepare('SELECT count(*) n FROM sync_jobs').get().n;
+    for(const body of [
+      {datasets:['typo']},{datasets:[]},{datasets:['creation_chain','creative']},
+      {datasets:['ads'],startDate:'2026-11-09'},
+    ]) {
+      const response=await worker.createSyncRun(env,request({mode:'date_range',startDate:'2026-11-10',endDate:'2026-11-10',...body}));
+      assert.equal(response.status,400);
+    }
+    assert.equal(db.prepare('SELECT count(*) n FROM sync_jobs').get().n,count);
+  } finally {db.close();}
+});
+
+test('creation chain resumes from an already published step without pulling again', async () => {
+  const {db,env}=fixture();let calls=0;const original=globalThis.fetch;
+  globalThis.fetch=async()=>{calls++;throw Error('must not pull');};
+  try {
+    const job=worker.newSyncJob('date_range','2026-11-10','2026-11-10',['all','web','app'],['creation_chain']);
+    job.steps[0].status='success';job.rowsSynced=17;
+    db.prepare("INSERT INTO sync_jobs VALUES(?,'running',?,?,?)").run(job.runId,JSON.stringify(job),Date.now(),Date.now());
+    await worker.runBaseSyncStep(env,job);
+    assert.equal(job.status,'success');assert.equal(job.rowsSynced,17);assert.equal(calls,0);
+    assert.equal(db.prepare('SELECT status FROM sync_jobs').get().status,'success');
+  } finally {globalThis.fetch=original;db.close();}
 });

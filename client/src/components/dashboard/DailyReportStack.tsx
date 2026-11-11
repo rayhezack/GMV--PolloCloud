@@ -12,7 +12,7 @@ import { DocumentStack } from '@/components/bencho/DocumentStack';
 import './daily-report-stack.css';
 
 const Reader = lazy(() => import('./DailyReportReader'));
-const labels = { weekly: '由本周周诊断覆盖', waiting: '等待完整数据', queued: '已加入诊断队列', running: '正在生成诊断', success: '查看日诊断', failed: '诊断失败', clear: '异动已解除', normal: '当日未触发异动' };
+const labels = { weekly: '由本周周诊断覆盖', waiting: '待诊断', queued: '已加入诊断队列', running: '正在生成诊断', success: '查看日诊断', failed: '诊断失败', clear: '异动已解除', normal: '当日未触发异动' };
 const platformLabels = { all: '大盘', web: 'Web', app: 'App' };
 const platformOrder: DashboardPlatform[] = ['all', 'web', 'app'];
 
@@ -126,7 +126,7 @@ export default function DailyReportStack({ platform, platforms, period, refreshT
             {item.task && <button type="button" onClick={() => { trackDaily(item); openBackgroundTask(item.task!.runId); }}>查看进度</button>}
             {['failed','waiting','weekly'].includes(item.status) && <button type="button" disabled={submitting} onClick={() => void regenerate(scope)}>{submitting ? '提交中' : item.status === 'failed' ? '重试' : '手动诊断'}</button>}
           </div>
-          {errors[scope] && <p role="alert">{errors[scope]}</p>}
+          {(errors[scope] || item.error) && <p role="alert">{errors[scope] || item.error}</p>}
         </div>;
       })}
     </div>}

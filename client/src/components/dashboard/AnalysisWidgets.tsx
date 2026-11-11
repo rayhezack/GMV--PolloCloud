@@ -19,16 +19,7 @@ import { ExpensesChart, type ExpensesCategory, type ExpensesPeriod } from '@/com
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import type { AttributionItem, Granularity, OverviewTrendPoint } from '@shared/api.interface';
-import { getBusinessWeekStart } from '@shared/business-week';
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { aggregateRevenueTrend, type RevenueGrain } from '@shared/revenue-trend';
 
 export async function copyAnalysis(text: string) {
   try {
@@ -68,31 +59,6 @@ export function downloadCsv(
 
 type RevenueMetric = 'totalGmv' | 'activeGmv' | 'renewalGmv';
 
-function formatTrendDate(period: string) {
-  return period.length >= 10 ? period.slice(5).replace('-', '/') : period;
-}
-
-function resolveTrendDialogYAxisDomain(
-  rows: Array<Partial<Record<RevenueMetric, number | null>>>,
-  metric: RevenueMetric | null,
-): [number, number] {
-  const key = metric ?? 'totalGmv';
-  const values = rows
-    .filter((row) => row[key] != null)
-    .map((row) => Number(row[key]))
-    .filter((value) => Number.isFinite(value));
-  if (values.length === 0) return [0, 1];
-
-  const minValue = Math.min(...values);
-  const maxValue = Math.max(...values);
-  const span = Math.max(maxValue - minValue, Math.abs(maxValue) * 0.04, 1);
-  const padding = span * 0.2;
-  const lower = minValue >= 0 ? Math.max(0, minValue - padding) : minValue - padding;
-  const upper = maxValue + padding;
-
-  return lower === upper ? [lower - 1, upper + 1] : [lower, upper];
-}
-
 export function RevenueCards({
   items,
   structureItems = {},
@@ -100,7 +66,6 @@ export function RevenueCards({
   period,
   trend = [],
   dailyTrend = [],
-  zoomTrend = [],
   granularity = 'day',
   headlineStartDate,
   headlineEndDate,
@@ -286,7 +251,9 @@ export function RevenueCards({
       </Sheet>
       <TrendDialog
         metric={expandedMetric}
-        rows={(zoomTrend.length ? zoomTrend : sourceRows).map((row) => ({ ...row, activeGmv: valueOf(row, 'activeGmv') }))}
+        rows={headlineRows}
+        platform={selectedPlatform}
+        source={actionSource}
         startDate={headlineStartDate}
         endDate={headlineEndDate}
         definitions={definitions}
@@ -305,130 +272,39 @@ export function RevenueCards({
   );
 }
 
-type DialogTrendGrain = 'day' | 'week' | 'month';
-
-function aggregateDialogTrend(rows: OverviewTrendPoint[], metric: RevenueMetric, grain: DialogTrendGrain) {
-  const grouped = new Map<string, OverviewTrendPoint[]>();
-  for (const row of rows) {
-    const period = grain === 'week' ? getBusinessWeekStart(row.period)
-      : grain === 'month' ? row.period.slice(0, 7) : row.period;
-    const bucket = grouped.get(period) ?? [];
-    bucket.push(row);
-    grouped.set(period, bucket);
-  }
-  return [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([period, bucket]) => {
-    const dates = [...new Set(bucket.map((row) => row.period))].sort();
-    return {
-      ...bucket[0],
-      period,
-      coverage: dates.length === 1 ? dates[0] : `${dates[0]} 至 ${dates.at(-1)}`,
-      days: dates.length,
-      [metric]: bucket.reduce((sum, row) => sum + Number(row[metric] ?? 0), 0) / dates.length,
-    };
-  });
-}
-
-function TrendDialog({
-  metric,
-  rows,
-  startDate,
-  endDate,
-  definitions,
-  onClose,
-}: {
+function TrendDialog({ metric, rows, startDate, endDate, definitions, platform, source, onClose }: {
   metric: RevenueMetric | null;
   rows: OverviewTrendPoint[];
   startDate?: string;
   endDate?: string;
   definitions: Array<{ key: string; metric: RevenueMetric; color: string }>;
+  platform: string;
+  source: ProductActionSource | null;
   onClose: () => void;
 }) {
-  const definition = definitions.find((item) => item.metric === metric);
-  const title = definition?.key ?? '趋势';
-  const money = (value: number) => '$' + Math.round(value).toLocaleString('en-US');
-  const [grain, setGrain] = useState<DialogTrendGrain>('day');
-  const [rangeDays, setRangeDays] = useState<30 | 90>(30);
-  const rangeEnd = endDate ?? rows.at(-1)?.period;
-  const rangeStart = rangeEnd ? new Date(Date.parse(`${rangeEnd}T00:00:00Z`) - (rangeDays - 1) * 86400000).toISOString().slice(0, 10) : undefined;
-  const chartRows = useMemo(() => {
-    const selected = rows.filter(row => (!rangeStart || row.period >= rangeStart) && (!rangeEnd || row.period <= rangeEnd));
-    const aggregated = aggregateDialogTrend(selected, metric ?? 'totalGmv', grain);
-    if (!rangeStart || !rangeEnd) return aggregated;
-    const byPeriod = new Map(aggregated.map(row => [row.period, row]));
-    const periods = new Set<string>();
-    for (let time = Date.parse(`${rangeStart}T00:00:00Z`); time <= Date.parse(`${rangeEnd}T00:00:00Z`); time += 86400000) {
-      const date = new Date(time).toISOString().slice(0, 10);
-      periods.add(grain === 'week' ? getBusinessWeekStart(date) : grain === 'month' ? date.slice(0, 7) : date);
-    }
-    return [...periods].map(period => byPeriod.get(period) ?? {period, coverage: period, days: 0, totalGmv: null, activeGmv: null, renewalGmv: null});
-  }, [grain, metric, rangeEnd, rangeStart, rows]);
-  const yAxisDomain = resolveTrendDialogYAxisDomain(chartRows, metric);
-  return (
-    <Dialog open={metric !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-4xl border-[#e7e7ef] bg-white p-6">
-        <DialogHeader className="pr-8">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <DialogTitle>{title}趋势</DialogTitle>
-            <div className="revenue-dialog-controls">
-              <div className="payment-trend-mode revenue-dialog-range" role="group" aria-label="放大趋势范围">
-                {([30, 90] as const).map((value) => (
-                  <button key={value} type="button" aria-pressed={rangeDays === value} onClick={() => setRangeDays(value)}>
-                    {value === 30 ? '近一个月' : '近一个季度'}
-                  </button>
-                ))}
-              </div>
-              <div className="payment-trend-mode revenue-dialog-grain" role="group" aria-label="趋势粒度">
-                {(['day', 'week', 'month'] as const).map((value) => (
-                  <button key={value} type="button" aria-pressed={grain === value} onClick={() => setGrain(value)}>
-                    {{ day: '日', week: '周', month: '月' }[value]}
-                  </button>
-                ))}
-              </div>
-            </div>
+  const definition = definitions.find(item => item.metric === metric);
+  const title = definition?.key ?? 'GMV';
+  const [grain, setGrain] = useState<RevenueGrain>('day');
+  useEffect(() => { if (metric) setGrain('day'); }, [metric]);
+  const chartRows = useMemo(() => aggregateRevenueTrend(rows, metric ?? 'totalGmv', grain), [rows, metric, grain]);
+  const last = chartRows.at(-1);
+  return <Dialog open={metric !== null} onOpenChange={open => { if (!open) onClose(); }}>
+    <DialogContent className="revenue-trend-dialog">
+      <DialogHeader className="pr-8">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <DialogTitle>{title}</DialogTitle>
+          <div className="payment-trend-mode" role="group" aria-label="趋势粒度">
+            {(['day', 'week', 'month'] as const).map(value => <button key={value} type="button" aria-pressed={grain === value} onClick={() => setGrain(value)}>
+              {{day: '日', week: '周', month: '月'}[value]}
+            </button>)}
           </div>
-          <DialogDescription>
-            按{{ day: '日', week: '业务周', month: '自然月' }[grain]}展示日均 GMV{rangeStart && rangeEnd ? `：${rangeStart} 至 ${rangeEnd}` : '。'}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="h-[360px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartRows} margin={{ top: 12, right: 20, left: 4, bottom: 4 }}>
-              <CartesianGrid vertical={false} stroke="#ececf3" />
-              <XAxis dataKey="period" tickLine={false} axisLine={false} tickFormatter={formatTrendDate} />
-              <YAxis domain={yAxisDomain} tickLine={false} axisLine={false} tickFormatter={(value) => money(Number(value))} width={78} />
-              <Tooltip
-                cursor={{ stroke: '#e7e7ef', strokeDasharray: '4 4' }}
-                content={({ active, payload }) => {
-                  if (!active || !payload?.length || !payload[0].payload.days) return null;
-                  const point = payload[0].payload as typeof chartRows[number];
-                  return (
-                    <div className="trend-tooltip revenue-dialog-tooltip">
-                      <div className="trend-tooltip-date">{point.coverage}</div>
-                      <div className="revenue-dialog-tooltip-row">
-                        <i style={{ background: definition?.color ?? '#5B3FF2' }} />
-                        <span>{title}日均 GMV</span>
-                        <strong>{money(Number(point[metric ?? 'totalGmv']))}</strong>
-                      </div>
-                      {grain !== 'day' && <small>按 {point.days} 天计算日均</small>}
-                    </div>
-                  );
-                }}
-              />
-              <Area
-                type="monotone"
-                connectNulls={false}
-                dataKey={metric ?? 'totalGmv'}
-                stroke={definition?.color ?? '#5B3FF2'}
-                fill={definition?.color ?? '#5B3FF2'}
-                fillOpacity={0.16}
-                strokeWidth={2.5}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
         </div>
-      </DialogContent>
-    </Dialog>
-  );
+        <DialogDescription>{startDate ?? rows[0]?.period} – {endDate ?? rows.at(-1)?.period} · {{day: '日趋势', week: '业务周日均', month: '月份日均'}[grain]}</DialogDescription>
+      </DialogHeader>
+      <div className="revenue-trend-value tabular-nums">{last ? '$' + Math.round(Number(last[metric ?? 'totalGmv'])).toLocaleString('en-US') : '—'}</div>
+      {metric && <RevenueActionChart key={`${metric}:${grain}`} rows={rows} visibleRows={chartRows} metric={metric} color={definition?.color ?? '#5B3FF2'} title={title} platform={platform} source={source} plotHeight={360} grain={grain} buckets={chartRows} />}
+    </DialogContent>
+  </Dialog>;
 }
 
 function RevenueStructureDialog({

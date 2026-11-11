@@ -136,7 +136,10 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies, m
           const evidence = prepareReportData(await (dependencies.collect ?? ((s,context)=>collect(env,s,context)))(selected,companion));
           if (companion && !['web','app'].every(scope=>evidence.platformEvidence.some(item=>item.platform===scope))) throw new Error('大盘诊断需要 Web 与 App 的完整证据，等待补刷');
           for (const item of evidence.platformEvidence) {
-            if (!['pay','funnel','renewal'].every(k=>item.evidence.sources[k as 'pay'|'funnel'|'renewal'].complete)) throw new Error('收入、支付或续订日数据尚未完整，等待补刷');
+            for (const key of ['pay','funnel','renewal'] as const) {
+              const source = item.evidence.sources[key];
+              if (!source.complete) throw new Error(`${item.platform || platform} · ${source.source || key} 缺少可比数据：${source.missing?.join('、') || source.error || '读取失败'}；请在数据与口径页处理，诊断不会自动同步数据`);
+            }
           }
           const hash = await dailyInputHash(evidence,env.KIMI_MODEL);
           if (existing?.input_hash !== hash) {

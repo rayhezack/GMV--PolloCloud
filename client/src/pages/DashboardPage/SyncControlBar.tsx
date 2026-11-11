@@ -32,10 +32,13 @@ import {
 } from '@client/src/api/sync';
 import type {
   LatestDaySyncPlan,
+  SyncDataset,
   SyncRunResponse,
   SyncRunStatus,
   WorkbookSheet,
 } from '@shared/api.interface';
+
+const DATASET_LABELS: Record<SyncDataset | 'core', string> = { core: '全部基础数据', pay_type: '付费类型', chain: '支付链路', creative: '创作积极性', renewal: '自动续订', creation_chain: '创作链路', ads: '付费广告' };
 
 const POLL_INTERVAL_MS = 2000;
 const SYNC_SURFACE_CLASS =
@@ -61,6 +64,8 @@ const SHEET_LABELS: Record<WorkbookSheet, string> = {
 function statusFromResponse(response: SyncRunResponse): SyncRunStatus {
   return {
     runId: response.runId,
+    trigger: response.trigger,
+    datasets: response.datasets,
     status: response.status,
     stage: ['running', 'queued', 'pausing', 'paused'].includes(response.status) ? 'pull' : 'write',
     startDate: response.startDate,
@@ -103,6 +108,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
   const yesterday = new Date(Date.now() + 8 * 3600000 - 86400000).toISOString().slice(0, 10);
   const [rangeValid, setRangeValid] = useState(true);
   const [date, setDate] = useState(yesterday);
+  const [dataset, setDataset] = useState<SyncDataset | 'core'>('core');
   const [syncing, setSyncing] = useState(false);
   const [controlling, setControlling] = useState(false);
   const [status, setStatus] = useState<SyncRunStatus | null>(null);
@@ -191,7 +197,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
     try {
       const response = await createSyncRun({
         mode,
-        ...(mode === 'date_range' ? { startDate: date, endDate: date } : {}),
+        ...(mode === 'date_range' ? { startDate: date, endDate: date, datasets: dataset === 'core' ? ['pay_type', 'chain', 'creative', 'renewal'] : [dataset] } : {}),
         platforms: plan?.platforms ?? ['all', 'web', 'app'],
       });
       if (['running', 'queued', 'pausing'].includes(response.status)) {
@@ -232,6 +238,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
     plan,
     mode,
     date,
+    dataset,
     rangeValid,
     refreshPlan,
     startPolling,
@@ -261,7 +268,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
   const planStatusLabel = mode === 'date_range' ? '覆盖已有 · 补齐缺失' : planLoading
     ? '检查中'
     : plan?.alreadySynced
-      ? '最新日期已更新'
+      ? '基础数据已更新'
       : plan
         ? `待补 ${plan.missingItems.length} 项`
         : '检查失败';
@@ -293,6 +300,13 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
             </div>
           )}
         </div>
+        {mode === 'date_range' && <div className="flex flex-col gap-1.5">
+          <span className="text-xs text-muted-foreground">回刷数据集</span>
+          <Select value={dataset} onValueChange={value => setDataset(value as SyncDataset | 'core')} disabled={running}>
+            <SelectTrigger size="sm" aria-label="回刷数据集" className={`${SYNC_PILL_CLASS} min-w-[150px]`}><SelectValue /></SelectTrigger>
+            <SelectContent>{Object.entries(DATASET_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>}
         <div className="flex flex-1 flex-col gap-1.5">
           <span className="text-xs text-muted-foreground">更新预检</span>
           <div className="flex h-8 items-center gap-2 text-sm text-foreground">
@@ -387,7 +401,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
               <div className="sync-confirm-updates">
                 <div className="sync-confirm-updates-label">本次待更新</div>
                 <div className="sync-confirm-tags">
-                  {mode === 'date_range' ? <Badge variant="outline" className="sync-confirm-tag">付费类型 · 支付链路 · 创作积极性 · 自动续订</Badge> : plan?.missingItems.slice(0, 8).map((item) => (
+                  {mode === 'date_range' ? <Badge variant="outline" className="sync-confirm-tag">{dataset === 'core' ? '付费类型 · 支付链路 · 创作积极性 · 自动续订' : DATASET_LABELS[dataset]}</Badge> : plan?.missingItems.slice(0, 8).map((item) => (
                     <Badge
                       key={`${item.platform}-${item.sheet}`}
                       variant="outline"
@@ -424,6 +438,12 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
           </DialogContent>
         </Dialog>}
       </div>
+      {plan?.datasetDates && <details className="mt-3 text-xs text-muted-foreground">
+        <summary className="w-fit cursor-pointer rounded-md py-1 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">各数据集更新日期</summary>
+        <dl className="mt-2 grid gap-x-8 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">{plan.datasetDates.map(item => <div key={item.dataset} className="flex items-center justify-between gap-3 border-b border-border/50 py-1.5">
+          <dt>{DATASET_LABELS[item.dataset]}</dt><dd className="tabular-nums">{item.latestDate ?? '暂无数据'}{(!item.latestDate || item.latestDate < yesterday) && <span className="ml-2 text-foreground">待更新</span>}</dd>
+        </div>)}</dl>
+      </details>}
       {status?.status === 'pausing' && <p className="mt-3 text-xs text-muted-foreground" role="status">当前步骤完成后暂停，已完成的数据会保留。</p>}
       {status?.status === 'paused' && <p className="mt-3 text-xs text-muted-foreground" role="status">同步已暂停，可从当前进度继续。</p>}
       {errorMsg && <p className="mt-3 text-xs text-destructive" role="alert">{errorMsg}</p>}
