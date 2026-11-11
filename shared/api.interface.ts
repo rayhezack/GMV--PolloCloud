@@ -553,7 +553,7 @@ export interface DailyDiagnosisStatus {
   platform: DashboardPlatform;
   period: string;
   baseline: string;
-  status: 'waiting' | 'queued' | 'running' | 'success' | 'failed' | 'clear' | 'normal';
+  status: 'waiting' | 'queued' | 'running' | 'success' | 'failed' | 'clear' | 'normal' | 'weekly';
   updatedAt: string;
   error?: string;
   report?: DailyDiagnosisReport;

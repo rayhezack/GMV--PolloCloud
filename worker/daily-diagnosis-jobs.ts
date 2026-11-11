@@ -22,6 +22,9 @@ function database(env: Env) { if (!env.DB) throw new Error('D1 未配置'); retu
 async function rows<T>(env: Env, sql: string, ...binds: unknown[]) { return (await database(env).prepare(sql).bind(...binds).all<T>()).results; }
 async function run(env: Env, sql: string, ...binds: unknown[]) { await database(env).prepare(sql).bind(...binds).run(); }
 
+// A complete Saturday–Friday report covers Friday's automatic daily diagnosis.
+export const coveredByWeeklyDiagnosis = (period: string) => /^\d{4}-\d{2}-\d{2}$/.test(period) && new Date(period+'T00:00:00Z').getUTCDay() === 5;
+
 const storagePrefix = 'daily-storage:';
 async function saveContent(env: Env, key: string, content: string) {
   if (env.STORAGE) {
@@ -92,8 +95,14 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies, m
     // Publishing a multi-source refresh is not an atomic snapshot. Wait for the sync job to finish.
     const syncing = await rows(env, "SELECT run_id FROM sync_jobs WHERE status IN ('queued','running','pausing') LIMIT 1");
     if (syncing.length || (!manual && await diagnosesSettling(env))) return { status:'waiting_data' };
+    // Retire only unstarted automatic Friday work, including checkpoint retries.
+    // Keep successful histories, manual requests and active executors intact.
+    await run(env, "UPDATE daily_diagnosis_jobs SET status='superseded' WHERE status='queued' AND requested_by='automatic' AND strftime('%w',period)='5'");
+    await run(env, `UPDATE daily_diagnosis_state SET status='weekly',error=NULL,updated_at=?
+      WHERE strftime('%w',period)='5' AND current_report_id IS NULL AND status IN ('queued','waiting','failed')
+      AND NOT EXISTS(SELECT 1 FROM daily_diagnosis_jobs j WHERE j.platform=daily_diagnosis_state.platform AND j.period=daily_diagnosis_state.period AND (j.status IN ('queued','running') OR j.requested_by='manual'))`,now());
     const today = new Date(clock+8*3600000).toISOString().slice(0,10);
-    const version = `${REPORT_SKILL_SHA256}:${env.KIMI_MODEL || 'kimi-k3'}:overall-companion-v1`;
+    const version = `${REPORT_SKILL_SHA256}:${env.KIMI_MODEL || 'kimi-k3'}:overall-companion-v1:weekly-coverage-v1`;
     if (revision !== snapshot.checked_revision || snapshot.checked_day !== today || snapshot.checked_version !== version || snapshot.retry_pending) {
       const detection = await dependencies.detect();
       if (!detection.latestDay) throw new Error('尚无完整日监测数据');
@@ -117,6 +126,12 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies, m
         }
         const comparison = dailyComparison(selected);
         const existing = (await rows<State>(env,'SELECT * FROM daily_diagnosis_state WHERE platform=? AND period=?',platform,comparison.date))[0];
+        if (coveredByWeeklyDiagnosis(comparison.date) && !(manual?.platform === platform && manual.period === comparison.date)) {
+          const explicit = await rows(env,"SELECT run_id FROM daily_diagnosis_jobs WHERE platform=? AND period=? AND requested_by='manual' LIMIT 1",platform,comparison.date);
+          if (explicit.length) continue;
+          if (!existing?.current_report_id) await run(env,`INSERT INTO daily_diagnosis_state(platform,period,baseline,active,status,signals,updated_at) VALUES(?,?,?,1,'weekly',?,?) ON CONFLICT(platform,period) DO UPDATE SET baseline=excluded.baseline,active=1,status='weekly',signals=excluded.signals,error=NULL,updated_at=excluded.updated_at`,platform,comparison.date,comparison.baselineDate,JSON.stringify(selected),now());
+          continue;
+        }
         try {
           const evidence = prepareReportData(await (dependencies.collect ?? ((s,context)=>collect(env,s,context)))(selected,companion));
           if (companion && !['web','app'].every(scope=>evidence.platformEvidence.some(item=>item.platform===scope))) throw new Error('大盘诊断需要 Web 与 App 的完整证据，等待补刷');
@@ -142,7 +157,7 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies, m
           await run(env,"UPDATE daily_diagnosis_jobs SET status='superseded' WHERE platform=? AND period=? AND status='queued'",platform,comparison.date);
           const id=crypto.randomUUID();
           const storedEvidence = await saveContent(env,`daily-diagnoses/evidence/${hash}.json`,JSON.stringify(evidence));
-          await run(env,`INSERT INTO daily_diagnosis_jobs(run_id,platform,period,baseline,input_hash,evidence,status,requested_by,created_at) VALUES(?,?,?,?,?,?,'queued','automatic',?)`,id,platform,comparison.date,comparison.baselineDate,hash,storedEvidence,now());
+          await run(env,`INSERT INTO daily_diagnosis_jobs(run_id,platform,period,baseline,input_hash,evidence,status,requested_by,created_at) VALUES(?,?,?,?,?,?,'queued',?,?)`,id,platform,comparison.date,comparison.baselineDate,hash,storedEvidence,manual?.platform===platform && manual.period===comparison.date?'manual':'automatic',now());
           await run(env,`INSERT INTO daily_diagnosis_state(platform,period,baseline,active,status,input_hash,signals,updated_at) VALUES(?,?,?,1,'queued',?,?,?) ON CONFLICT(platform,period) DO UPDATE SET baseline=excluded.baseline,active=1,status='queued',input_hash=excluded.input_hash,signals=excluded.signals,error=NULL,updated_at=excluded.updated_at`,platform,comparison.date,comparison.baselineDate,hash,JSON.stringify(selected),now());
         } catch(e) {
           await run(env,"UPDATE daily_diagnosis_jobs SET status='superseded' WHERE platform=? AND period=? AND status='queued'",platform,comparison.date);
@@ -229,8 +244,8 @@ export async function getDailyDiagnosis(env: Env, platform: DashboardPlatform, p
   const latest = (await rows<Job>(env,'SELECT * FROM daily_diagnosis_jobs WHERE platform=? AND period=? AND input_hash=? ORDER BY created_at DESC,rowid DESC LIMIT 1',platform,state.period,state.input_hash))[0];
   const report = !taskOnly && state.current_report_id ? (await rows<Job>(env,'SELECT * FROM daily_diagnosis_jobs WHERE run_id=?',state.current_report_id))[0] : undefined;
   return {platform,period:state.period,baseline:state.baseline, status:monitor.revision!==monitor.checked_revision && state.status==='success'?'waiting':state.status,
-    error:state.error||latest?.error||monitor.last_error||undefined,updatedAt:state.updated_at,
-    task: latest ? dailyTask(latest) : undefined,
+    error:state.error||(latest?.status!=='superseded'?latest?.error:null)||monitor.last_error||undefined,updatedAt:state.updated_at,
+    task: latest && latest.status !== 'superseded' ? dailyTask(latest) : undefined,
     report:report?.markdown?{runId:report.run_id,platform,periodStart:report.baseline,periodEnd:report.period,markdown:await readContent(env,report.markdown),modelUsed:report.model,degraded:false,generatedAt:report.finished_at!}:undefined};
 }
 export async function regenerateDailyDiagnosis(env: Env, platform: DashboardPlatform, period: string) {
@@ -241,6 +256,7 @@ export async function regenerateDailyDiagnosis(env: Env, platform: DashboardPlat
     await run(env, "UPDATE daily_diagnosis_jobs SET requested_by='manual',next_attempt_at=0 WHERE platform=? AND period=? AND status='queued'", platform, period);
     return getDailyDiagnosis(env,platform,period);
   }
+  if (state.status==='weekly') { await markDailyDiagnosisDirty(env,0); return getDailyDiagnosis(env,platform,period); }
   if (state.status==='waiting') { await markDailyDiagnosisDirty(env,0); return getDailyDiagnosis(env,platform,period); }
   const previous = (await rows<Job>(env,'SELECT * FROM daily_diagnosis_jobs WHERE platform=? AND period=? AND input_hash=? ORDER BY created_at DESC,rowid DESC LIMIT 1',platform,period,state.input_hash))[0];
   if (!previous) throw new Error('缺少完整日诊断数据，等待补刷');

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Streamdown } from '@/components/ui/streamdown';
 import { ReportInsightArticle } from '@/pages/ReportPage/ReportInsightRenderer';
-const labels = {waiting:'等待完整数据',queued:'诊断排队中',running:'正在诊断',success:'诊断已更新',failed:'诊断失败',clear:'异动已解除',normal:'未触发 GMV 异动'};
+const labels = { weekly: '由本周周诊断覆盖',waiting:'等待完整数据',queued:'诊断排队中',running:'正在诊断',success:'诊断已更新',failed:'诊断失败',clear:'异动已解除',normal:'未触发 GMV 异动'};
 // Exact first paragraph written by the model; never synthesize or truncate a business conclusion.
 export function dailyConclusion(markdown: string) {
   return markdown.trim().replace(/^#\s+[^\n]+\n/, '').trim().split(/\n\s*\n/)[0];
@@ -31,7 +31,7 @@ export default function DailyDiagnosisStatus({platform,period,refreshToken,canMa
     {status?.error && <p className="daily-muted">{status.error}</p>}
     <div className="daily-guide-actions">
       {status?.report && <Button size="sm" variant="ghost" onClick={()=>setOpen(true)}>{status.status==='success'?'查看诊断':'查看历史诊断'}</Button>}
-      {canManage && status && ['failed','success'].includes(status.status) && <Button size="sm" variant="ghost" disabled={submitting} onClick={()=>void retry()}>{status.status==='failed'?'重试诊断':'重新生成'}</Button>}
+      {canManage && status && ['failed','success','weekly'].includes(status.status) && <Button size="sm" variant="ghost" disabled={submitting} onClick={()=>void retry()}>{status.status==='failed'?'重试诊断':status.status==='weekly'?'手动诊断':'重新生成'}</Button>}
     </div>
     {status?.report && <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="daily-diagnosis-dialog">
