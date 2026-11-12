@@ -111,9 +111,9 @@ export async function getGmvCoverage(): Promise<DashboardGmvCoverageResponse> {
   return response.data as DashboardGmvCoverageResponse;
 }
 
-export async function getGmvAnomalies(revision?: string, asOfDate?: string): Promise<DashboardGmvAnomalyResponse> {
+export async function getGmvAnomalies(revision?: string, asOfDate?: string, platform?: DashboardPlatform): Promise<DashboardGmvAnomalyResponse> {
   if (STATIC_DEMO_MODE) return { latestWeek: '', latestDay: '', method: 'daily_and_weekly_rolling_p95_p05_min_10pct', alerts: [] };
-  const response = await readDashboard(`/api/dashboard/gmv-anomalies${buildQueryString({ cacheBust: revision, asOfDate })}`);
+  const response = await readDashboard(`/api/dashboard/gmv-anomalies${buildQueryString({ cacheBust: revision, asOfDate, platform })}`);
   return response.data as DashboardGmvAnomalyResponse;
 }
 

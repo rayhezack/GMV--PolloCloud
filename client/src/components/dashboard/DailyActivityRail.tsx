@@ -149,7 +149,7 @@ export default function DailyActivityRail({
     setLoading(true);
     setAnomalies(null);
     setErrors(current => current.filter(label => label !== '异动监测'));
-    void getGmvAnomalies(syncRevision || undefined, monitorDate || undefined)
+    void getGmvAnomalies(syncRevision || undefined, monitorDate || undefined, platform)
       .then(value => {
         if (!live) return;
         setAnomalies(value);

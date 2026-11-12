@@ -1156,7 +1156,7 @@ function percentile(values: number[], quantile: number) {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
 }
 
-export async function gmvAnomalies(env: Env, asOfDate?: string) {
+export async function gmvAnomalies(env: Env, asOfDate?: string, scope: DashboardPlatform = 'all') {
   const empty = () => json({ latestWeek: '', latestDay: '', anomalyDates: [], method: 'daily_and_weekly_rolling_p95_p05_min_10pct', alerts: [] });
   if (!env.DB) return empty();
   const latestPeriods = await Promise.all([
@@ -1177,7 +1177,7 @@ export async function gmvAnomalies(env: Env, asOfDate?: string) {
   try {
     const rows = await queryRows(env, `SELECT DISTINCT period FROM daily_diagnosis_state
       WHERE platform=? AND active=1 AND period BETWEEN ? AND ? ORDER BY period`,
-      'all', startDate, latestPeriod);
+      scope, startDate, latestPeriod);
     anomalyDates = rows.map(row => asText(row.period)).filter(Boolean);
   } catch {
     // Older installations may not have diagnosis state yet; anomaly detection
@@ -3350,8 +3350,10 @@ export default {
       if (url.pathname === '/api/dashboard/gmv-coverage' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => gmvCoverage(env));
       if (url.pathname === '/api/dashboard/gmv-anomalies' && request.method === 'GET') {
         const asOfDate = url.searchParams.get('asOfDate') || undefined;
+        const scope = (url.searchParams.get('platform') || 'all') as DashboardPlatform;
+        if (!['all', 'web', 'app'].includes(scope)) return errorResponse('异动端范围无效', 400);
         if (asOfDate && (!/^\d{4}-\d{2}-\d{2}$/.test(asOfDate) || Number.isNaN(Date.parse(asOfDate)) || new Date(asOfDate).toISOString().slice(0, 10) !== asOfDate)) return errorResponse('异动日期无效', 400);
-        return await cachedDashboardResponse(env, request, context, () => gmvAnomalies(env, asOfDate));
+        return await cachedDashboardResponse(env, request, context, () => gmvAnomalies(env, asOfDate, scope));
       }
       if (url.pathname === '/api/dashboard/attributions' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => attributions(env, request));
       if (url.pathname === '/api/dashboard/chain-funnel' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => chainFunnel(env, request));
