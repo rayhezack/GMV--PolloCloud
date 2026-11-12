@@ -1,4 +1,5 @@
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
+beforeEach(t => t.mock.method(Date, 'now', () => Date.parse('2026-11-09T02:00:00Z')));
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
@@ -39,11 +40,13 @@ test('missing storage defers oversized evidence without a partial D1 row or mode
  assert.equal(calls,0);assert.equal(db.prepare('SELECT count(*) n FROM daily_diagnosis_jobs').get().n,0);
  assert.equal((await getDailyDiagnosis(env,'web')).status,'waiting');assert.match((await getDailyDiagnosis(env,'web')).error,/文件存储/);
 });
-test('changed input generates one new history version, failed generation permits manual retry',async()=>{
+test('successful automatic report survives evidence corrections; manual rerun remains available',async()=>{
  const {env,db}=setup();let n=80,calls=0,fail=false;const d=deps({collect:async()=>evidence(n),generate:async()=>{calls++;if(fail)throw Error('model offline');return `report ${n}`;}});
- await tickDailyDiagnoses(env,d);n=79;fail=true;await markDailyDiagnosisDirty(env,0);await tickDailyDiagnoses(env,d);assert.equal((await getDailyDiagnosis(env,'web')).status,'failed');
- await markDailyDiagnosisDirty(env,0);await tickDailyDiagnoses(env,d);assert.equal(calls,2,'unchanged failure does not auto retry paid call');
- fail=false;await regenerateDailyDiagnosis(env,'web',day);await Promise.all([regenerateDailyDiagnosis(env,'web',day),regenerateDailyDiagnosis(env,'web',day)]);await tickDailyDiagnoses(env,d);assert.equal(calls,3);assert.equal((await getDailyDiagnosis(env,'web')).report.markdown,'report 79');assert.equal(db.prepare('SELECT count(*) n FROM daily_diagnosis_jobs').get().n,3);
+ await tickDailyDiagnoses(env,d);n=79;fail=true;await markDailyDiagnosisDirty(env,0);await tickDailyDiagnoses(env,d);
+ assert.equal(calls,1);assert.equal((await getDailyDiagnosis(env,'web')).status,'success');
+ await regenerateDailyDiagnosis(env,'web',day);await tickDailyDiagnoses(env,d,{platform:'web',period:day});
+ assert.equal(calls,2);assert.equal((await getDailyDiagnosis(env,'web')).status,'failed');
+ fail=false;await regenerateDailyDiagnosis(env,'web',day);await tickDailyDiagnoses(env,d,{platform:'web',period:day});assert.equal(calls,3);assert.equal((await getDailyDiagnosis(env,'web')).report.markdown,'report 79');
 });
 test('concurrent cron calls are serialized, refresh during generation never publishes stale report as current',async()=>{
  const {env}=setup();let release;const gate=new Promise(r=>release=r);let started;const ready=new Promise(r=>started=r);let calls=0;
@@ -116,7 +119,7 @@ test('shared report schedule uses two cron entries and only the Shanghai Saturda
 test('data returning to a previously diagnosed input reuses that historical version',async()=>{
  const {env,db}=setup();let n=80,calls=0;const d=deps({collect:async()=>evidence(n),generate:async()=>{calls++;return `version ${n}`;}});
  await tickDailyDiagnoses(env,d);n=79;await markDailyDiagnosisDirty(env,0);await tickDailyDiagnoses(env,d);n=80;await markDailyDiagnosisDirty(env,0);await tickDailyDiagnoses(env,d);
- assert.equal(calls,2);assert.equal((await getDailyDiagnosis(env,'web')).report.markdown,'version 80');assert.equal(db.prepare('SELECT count(*) n FROM daily_diagnosis_jobs').get().n,2);
+ assert.equal(calls,1);assert.equal((await getDailyDiagnosis(env,'web')).report.markdown,'version 80');assert.equal(db.prepare('SELECT count(*) n FROM daily_diagnosis_jobs').get().n,1);
 });
 test('actual manual HTTP mutation checks identity and only queues; it never invokes the model',async()=>{
  const {env}=setup();await tickDailyDiagnoses(env,deps());
@@ -316,7 +319,8 @@ test('missing overall sources keep the companion visible as waiting without bloc
  assert.match((await getDailyDiagnosis(env,'all',day)).error,/Web.*App/);
 });
 
-test('Friday anomalies remain visible but automatic daily model calls yield to the weekly report',async()=>{
+test('Friday anomalies remain visible but automatic daily model calls yield to the weekly report',async(t)=>{
+ t.mock.method(Date,'now',()=>Date.parse('2026-11-07T04:00:00Z'));
  const {env,db}=setup();let calls=0;
  const friday='2026-11-06';
  const d=deps({detect:async()=>({latestDay:friday,alerts:['all','web','app'].map(p=>({...signal(p),period:friday,baselinePeriod:'2026-11-05'}))}),generate:async()=>{calls++;return 'explicit report';}});
@@ -332,7 +336,8 @@ test('Friday anomalies remain visible but automatic daily model calls yield to t
  assert.equal((await getDailyDiagnosis(env,'all',friday)).status,'weekly');
 });
 
-test('old automatic Friday retries are retired without deleting successful history or blocking the weekly lane',async()=>{
+test('old automatic Friday retries are retired without deleting successful history or blocking the weekly lane',async(t)=>{
+ t.mock.method(Date,'now',()=>Date.parse('2026-11-07T04:00:00Z'));
  const {env,db}=setup();const stamp=new Date().toISOString();
  db.prepare("INSERT INTO daily_diagnosis_jobs(run_id,platform,period,baseline,input_hash,evidence,status,requested_by,created_at) VALUES('friday','web','2026-11-06','2026-11-05','hash','{}','queued','automatic',?)").run(stamp);
  db.prepare("INSERT INTO daily_diagnosis_state(platform,period,baseline,active,status,input_hash,updated_at) VALUES('web','2026-11-06','2026-11-05',1,'queued','hash',?)").run(stamp);
@@ -342,4 +347,38 @@ test('old automatic Friday retries are retired without deleting successful histo
  assert.equal((await getDailyDiagnosis(env,'web','2026-11-06')).status,'weekly');
  const {claimDiagnosisExecution}=await import('./diagnosis-dispatch.ts');
  assert.ok(await claimDiagnosisExecution(env,'weekly'));
+});
+
+test('Shanghai midnight retires old automatic retries and waits for yesterday instead of diagnosing older data',async(t)=>{
+ const {env,db}=setup();await tickDailyDiagnoses(env,deps());
+ await regenerateDailyDiagnosis(env,'web',day);
+ db.exec("UPDATE daily_diagnosis_jobs SET requested_by='automatic' WHERE status='queued'");
+ t.mock.method(Date,'now',()=>Date.parse('2026-11-09T16:00:01Z'));
+ let collects=0,calls=0;
+ const result=await tickDailyDiagnoses(env,deps({detect:async target=>{assert.equal(target,'2026-11-09');return {latestDay:day,alerts:[signal()]};},collect:async()=>{collects++;return evidence();},generate:async()=>{calls++;return 'bad';}}));
+ assert.equal(result.status,'waiting_data');assert.equal(calls,0);assert.equal(collects,0);
+ assert.equal(db.prepare("SELECT count(*) n FROM daily_diagnosis_jobs WHERE status='queued'").get().n,0);
+ assert.ok((await getDailyDiagnosis(env,'web',day)).report);
+ assert.match((await getDailyDiagnosis(env,'web','2026-11-09')).error,/2026-11-09.*未就绪/);
+ await markDailyDiagnosisDirty(env,0);await tickDailyDiagnoses(env,deps());assert.equal(calls,0);
+});
+test('a new day checks its own anomaly while retaining yesterday successful history',async(t)=>{
+ const {env,db}=setup();await tickDailyDiagnoses(env,deps());
+ t.mock.method(Date,'now',()=>Date.parse('2026-11-12T02:00:00Z'));
+ let calls=0;const d=deps({detect:async target=>{assert.equal(target,'2026-11-11');return {latestDay:target,alerts:[{...signal('web','week'),period:target,baselinePeriod:'2026-11-04'}]};},generate:async()=>{calls++;return 'new day';}});
+ await tickDailyDiagnoses(env,d);await markDailyDiagnosisDirty(env,0);await tickDailyDiagnoses(env,d);
+ assert.equal(calls,1);assert.equal((await getDailyDiagnosis(env,'web','2026-11-11')).report.markdown,'new day');
+ assert.equal(db.prepare("SELECT count(*) n FROM daily_diagnosis_jobs WHERE platform='web'").get().n,2);
+});
+test('explicit historical rerun preserves yesterday automatic queue and does not mark yesterday checked',async(t)=>{
+ const {env,db}=setup();await tickDailyDiagnoses(env,deps());await regenerateDailyDiagnosis(env,'web',day);
+ t.mock.method(Date,'now',()=>Date.parse('2026-11-12T02:00:00Z'));
+ db.prepare("INSERT INTO daily_diagnosis_jobs(run_id,platform,period,baseline,input_hash,evidence,status,requested_by,created_at) VALUES('yesterday','web','2026-11-11','2026-11-04','new-hash',?,'queued','automatic',?)").run(JSON.stringify(evidence()),new Date().toISOString());
+ db.prepare("INSERT INTO daily_diagnosis_state(platform,period,baseline,active,status,input_hash,updated_at) VALUES('web','2026-11-11','2026-11-04',1,'queued','new-hash',?)").run(new Date().toISOString());
+ let calls=0;
+ await tickDailyDiagnoses(env,deps({generate:async()=>{calls++;return 'explicit historical rerun';}}),{platform:'web',period:day});
+ assert.equal(calls,1);assert.equal((await getDailyDiagnosis(env,'web',day)).report.markdown,'explicit historical rerun');
+ assert.equal(db.prepare("SELECT status FROM daily_diagnosis_jobs WHERE run_id='yesterday'").get().status,'queued');
+ assert.notEqual(db.prepare('SELECT checked_day FROM daily_diagnosis_monitor').get().checked_day,'2026-11-12');
+ assert.equal(db.prepare("SELECT count(*) n FROM daily_diagnosis_jobs WHERE period=? AND requested_by='automatic'").get(day).n,1);
 });

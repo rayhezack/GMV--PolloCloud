@@ -3071,8 +3071,8 @@ async function cronHandler(
     // a completed invocation before consuming that body. Await the bounded model
     // attempt so the worker lifetime belongs to the scheduled request itself.
     try {
-      const result = await tickDailyDiagnoses(env, { detect: async () => {
-        return (await gmvAnomalies(env)).json() as Promise<DashboardGmvAnomalyResponse>;
+      const result = await tickDailyDiagnoses(env, { detect: async (period) => {
+        return (await gmvAnomalies(env, period)).json() as Promise<DashboardGmvAnomalyResponse>;
       } });
       if (result.status === 'idle') {
         const pending = await env.DB!.prepare("SELECT run_id FROM report_jobs WHERE status='queued' ORDER BY CASE WHEN json_extract(payload, '$.trigger')='anomaly' THEN 0 ELSE 1 END,created_at LIMIT 1").first<{run_id:string}>();
@@ -3309,7 +3309,7 @@ export default {
           const stream = new ReadableStream<Uint8Array>({
             start(controller) {
               const pulse = setInterval(() => { if (!disconnected) controller.enqueue(encoder.encode(' ')); }, 5000);
-              const task = tickDailyDiagnoses(env, { detect: async () => (await gmvAnomalies(env)).json() }, { platform: scope, period })
+              const task = tickDailyDiagnoses(env, { detect: async (target) => (await gmvAnomalies(env, target)).json() }, { platform: scope, period })
                 .then(async result => {
                   const diagnosis = await getDailyDiagnosis(env, scope, period);
                   if (!disconnected) controller.enqueue(encoder.encode(JSON.stringify({ ...diagnosis, dispatch: result.status })));

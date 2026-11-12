@@ -10,7 +10,7 @@ import type { DailyDiagnosisStatus, DashboardPlatform } from '../shared/api.inte
 
 type Evidence = Awaited<ReturnType<typeof collectDailyDiagnosis>>;
 type Dependencies = {
-  detect: () => Promise<{ latestDay: string; alerts: DailySignal[]; monitoredPlatforms?: string[] }>;
+  detect: (period?: string) => Promise<{ latestDay: string; alerts: DailySignal[]; monitoredPlatforms?: string[] }>;
   collect?: (signals: DailySignal[], overallContext?: boolean) => Promise<Evidence>;
   generate?: (evidence: Evidence) => Promise<string>;
 };
@@ -71,11 +71,19 @@ async function collect(env: Env, signals: DailySignal[], overallContext = false)
 /** Called only by the backend scheduler. A persisted lease serializes detectors and model calls. */
 export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies, manual?: { platform: DashboardPlatform; period: string }) {
   const lease = crypto.randomUUID(), clock = Date.now();
+  const today = new Date(clock+8*3600000).toISOString().slice(0,10);
+  const automaticPeriod = new Date(clock+8*3600000-86400000).toISOString().slice(0,10);
+  const targetPeriod = manual?.period ?? automaticPeriod;
   const claim = await rows<{revision:number;checked_revision:number;checked_day:string;checked_version:string;retry_pending:number}>(env,
     'UPDATE daily_diagnosis_monitor SET lease_id=?,lease_until=? WHERE id=1 AND lease_until<? RETURNING revision,checked_revision,checked_day,checked_version,retry_pending', lease,clock+15*60000,clock);
   if (!claim.length) return { status:'busy' };
   const snapshot = claim[0], revision = snapshot.revision;
   try {
+    // Expired automatic work must not consume a new day's model lane. Manual
+    // historical reruns remain explicit; never remove completed report history.
+    await run(env,"UPDATE daily_diagnosis_jobs SET status='superseded',finished_at=? WHERE requested_by='automatic' AND period<>? AND status IN ('queued','running')",now(),automaticPeriod);
+    await run(env,`UPDATE daily_diagnosis_state SET status=CASE WHEN current_report_id IS NOT NULL THEN 'success' ELSE 'waiting' END,error=NULL,updated_at=?
+      WHERE period<>? AND status IN ('queued','running') AND NOT EXISTS(SELECT 1 FROM daily_diagnosis_jobs j WHERE j.platform=daily_diagnosis_state.platform AND j.period=daily_diagnosis_state.period AND j.status IN ('queued','running'))`,now(),automaticPeriod);
     // Recover writes interrupted between job persistence and state publication.
     const latestJob = `(SELECT j.status FROM daily_diagnosis_jobs j WHERE j.platform=daily_diagnosis_state.platform AND j.period=daily_diagnosis_state.period AND j.input_hash=daily_diagnosis_state.input_hash ORDER BY j.created_at DESC,j.rowid DESC LIMIT 1)`;
     await run(env, `UPDATE daily_diagnosis_state SET status=${latestJob},
@@ -101,13 +109,16 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies, m
     await run(env, `UPDATE daily_diagnosis_state SET status='weekly',error=NULL,updated_at=?
       WHERE strftime('%w',period)='5' AND current_report_id IS NULL AND status IN ('queued','waiting','failed')
       AND NOT EXISTS(SELECT 1 FROM daily_diagnosis_jobs j WHERE j.platform=daily_diagnosis_state.platform AND j.period=daily_diagnosis_state.period AND (j.status IN ('queued','running') OR j.requested_by='manual'))`,now());
-    const today = new Date(clock+8*3600000).toISOString().slice(0,10);
     const version = `${REPORT_SKILL_SHA256}:${env.KIMI_MODEL || 'kimi-k3'}:overall-companion-v1:weekly-coverage-v1`;
     if (revision !== snapshot.checked_revision || snapshot.checked_day !== today || snapshot.checked_version !== version || snapshot.retry_pending) {
-      const detection = await dependencies.detect();
-      if (!detection.latestDay) throw new Error('尚无完整日监测数据');
+      const detection = await dependencies.detect(targetPeriod);
+      if (detection.latestDay !== targetPeriod) {
+        for (const platform of ['all','web','app']) await run(env,`INSERT INTO daily_diagnosis_state(platform,period,active,status,error,updated_at) VALUES(?,?,0,'waiting',?,?) ON CONFLICT(platform,period) DO UPDATE SET status=CASE WHEN current_report_id IS NOT NULL THEN 'success' ELSE 'waiting' END,error=excluded.error,updated_at=excluded.updated_at`,platform,targetPeriod,`${targetPeriod} 监测数据未就绪；不会回退到历史日期自动诊断`,now());
+        return {status:'waiting_data'};
+      }
       const signals = detection.alerts.filter(s=>s.metric==='totalGmv');
       for (const platform of ['all','web','app'] as const) {
+        if (manual && targetPeriod !== automaticPeriod && platform !== manual.platform) continue;
         const ownSignals = signals.filter(s=>s.platform===platform && s.period===detection.latestDay);
         const clientSignals = signals.filter(s=>s.platform!=='all' && s.period===detection.latestDay);
         const companion = platform==='all' && !ownSignals.length && clientSignals.length>0;
@@ -126,6 +137,15 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies, m
         }
         const comparison = dailyComparison(selected);
         const existing = (await rows<State>(env,'SELECT * FROM daily_diagnosis_state WHERE platform=? AND period=?',platform,comparison.date))[0];
+        // Automatic diagnosis is once per platform/day, even if later source
+        // corrections or model/skill revisions change the evidence fingerprint.
+        if (!manual && existing?.current_report_id) {
+          const latest = (await rows<{requested_by:string}>(env,'SELECT requested_by FROM daily_diagnosis_jobs WHERE platform=? AND period=? ORDER BY created_at DESC,rowid DESC LIMIT 1',platform,comparison.date))[0];
+          if (latest?.requested_by === 'manual') continue;
+          await run(env,"UPDATE daily_diagnosis_jobs SET status='superseded' WHERE platform=? AND period=? AND requested_by='automatic' AND status='queued'",platform,comparison.date);
+          await run(env,"UPDATE daily_diagnosis_state SET status='success',error=NULL WHERE platform=? AND period=?",platform,comparison.date);
+          continue;
+        }
         if (coveredByWeeklyDiagnosis(comparison.date) && !(manual?.platform === platform && manual.period === comparison.date)) {
           const explicit = await rows(env,"SELECT run_id FROM daily_diagnosis_jobs WHERE platform=? AND period=? AND requested_by='manual' LIMIT 1",platform,comparison.date);
           if (explicit.length) continue;
@@ -171,9 +191,9 @@ export async function tickDailyDiagnoses(env: Env, dependencies: Dependencies, m
       const changed = (await rows<{revision:number}>(env,'SELECT revision FROM daily_diagnosis_monitor WHERE id=1'))[0].revision !== revision;
       if (changed) return {status:'data_changed'};
       const waiting = await rows(env,"SELECT platform FROM daily_diagnosis_state WHERE period=? AND status='waiting'",detection.latestDay);
-      await run(env,'UPDATE daily_diagnosis_monitor SET checked_revision=?,checked_day=?,checked_at=?,checked_version=?,retry_pending=?,last_error=NULL WHERE id=1 AND lease_id=?',revision,today,now(),version,waiting.length?1:0,lease);
+      if (targetPeriod === automaticPeriod) await run(env,'UPDATE daily_diagnosis_monitor SET checked_revision=?,checked_day=?,checked_at=?,checked_version=?,retry_pending=?,last_error=NULL WHERE id=1 AND lease_id=?',revision,today,now(),version,waiting.length?1:0,lease);
     }
-    const job = (await rows<Job>(env,`SELECT j.* FROM daily_diagnosis_jobs j JOIN daily_diagnosis_state s ON s.platform=j.platform AND s.period=j.period AND s.input_hash=j.input_hash WHERE j.status='queued' AND j.next_attempt_at<=${clock} AND s.active=1 ${manual ? 'AND j.platform=? AND j.period=?' : ''} ORDER BY CASE WHEN j.requested_by='manual' THEN 0 ELSE 1 END,j.created_at,j.rowid LIMIT 1`, ...(manual ? [manual.platform, manual.period] : [])))[0];
+    const job = (await rows<Job>(env,`SELECT j.* FROM daily_diagnosis_jobs j JOIN daily_diagnosis_state s ON s.platform=j.platform AND s.period=j.period AND s.input_hash=j.input_hash WHERE j.status='queued' AND j.next_attempt_at<=${clock} AND s.active=1 ${manual ? 'AND j.platform=? AND j.period=?' : "AND (j.period=? OR j.requested_by='manual')"} ORDER BY CASE WHEN j.requested_by='manual' THEN 0 ELSE 1 END,j.created_at,j.rowid LIMIT 1`, ...(manual ? [manual.platform, manual.period] : [targetPeriod])))[0];
     if (!job) return {status:'idle'};
     const execution = await claimDiagnosisExecution(env, 'anomaly', Boolean(manual));
     if (!execution) return { status: 'waiting_report' };
@@ -246,7 +266,7 @@ export async function getDailyDiagnosis(env: Env, platform: DashboardPlatform, p
   if (!state) return {platform,period:period||'',baseline:'',status:'waiting',error:monitor?.last_error||undefined,updatedAt:''};
   const latest = (await rows<Job>(env,'SELECT * FROM daily_diagnosis_jobs WHERE platform=? AND period=? AND input_hash=? ORDER BY created_at DESC,rowid DESC LIMIT 1',platform,state.period,state.input_hash))[0];
   const report = !taskOnly && state.current_report_id ? (await rows<Job>(env,'SELECT * FROM daily_diagnosis_jobs WHERE run_id=?',state.current_report_id))[0] : undefined;
-  return {platform,period:state.period,baseline:state.baseline, status:monitor.revision!==monitor.checked_revision && state.status==='success'?'waiting':state.status,
+  return {platform,period:state.period,baseline:state.baseline, status:state.status,
     error:state.error||(latest?.status!=='superseded'?latest?.error:null)||monitor.last_error||undefined,updatedAt:state.updated_at,
     task: latest && latest.status !== 'superseded' ? dailyTask(latest) : undefined,
     report:report?.markdown?{runId:report.run_id,platform,periodStart:report.baseline,periodEnd:report.period,markdown:await readContent(env,report.markdown),modelUsed:report.model,degraded:false,generatedAt:report.finished_at!}:undefined};
