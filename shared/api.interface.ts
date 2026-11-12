@@ -386,6 +386,8 @@ export interface DashboardGmvAnomalyResponse {
   monitoredPlatforms?: DashboardPlatform[];
   latestWeek: string;
   latestDay: string;
+  /** Dates with an active anomaly in the selected dashboard scope. */
+  anomalyDates?: string[];
   method: 'daily_and_weekly_rolling_p95_p05_min_10pct';
   alerts: GmvAnomalyAlert[];
 }

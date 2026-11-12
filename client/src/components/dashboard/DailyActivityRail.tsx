@@ -192,6 +192,10 @@ export default function DailyActivityRail({
     () => new Set(filteredActions.map((action) => action.date)),
     [filteredActions],
   );
+  const anomalyDates = useMemo(
+    () => new Set(anomalies?.anomalyDates ?? []),
+    [anomalies?.anomalyDates],
+  );
   const selectedActions = filteredActions.filter(
     (action) => action.date === (selectedDate ? dateKey(selectedDate) : ""),
   );
@@ -507,14 +511,24 @@ export default function DailyActivityRail({
           onMonthChange={setMonth}
           selected={selectedDate}
           onSelect={showDate}
-          modifiers={{ action: (date) => actionDates.has(dateKey(date)) }}
-          modifiersClassNames={{ action: "daily-has-action" }}
+          modifiers={{
+            action: (date) => actionDates.has(dateKey(date)),
+            anomaly: (date) => anomalyDates.has(dateKey(date)),
+          }}
+          modifiersClassNames={{
+            action: "daily-has-action",
+            anomaly: "daily-has-anomaly",
+          }}
           className="daily-calendar"
         />
         <div className="daily-calendar-footer">
           <span className="daily-calendar-legend">
             <i />
             产品动作
+          </span>
+          <span className="daily-calendar-legend daily-calendar-legend-anomaly">
+            <i />
+            异动
           </span>
           {actionsLoading ? (
             <span>读取中</span>

@@ -388,6 +388,22 @@
 .daily-calendar .daily-has-action button[data-selected-single="true"]::after {
   background: white;
 }
+.daily-calendar .daily-has-anomaly button::before {
+  content: "";
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  top: 3px;
+  right: 4px;
+  background: var(--ui-coral, #d65278);
+  border: 1px solid var(--ui-surface, #fff);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.daily-calendar .daily-has-anomaly button[data-selected-single="true"]::before {
+  background: white;
+  border-color: var(--ui-primary, #533afd);
+}
 .daily-calendar-footer {
   display: flex;
   justify-content: space-between;
@@ -408,6 +424,12 @@
   height: 4px;
   border-radius: 50%;
   background: var(--ui-purple);
+}
+.daily-calendar-footer {
+  flex-wrap: wrap;
+}
+.daily-calendar-legend-anomaly i {
+  background: var(--ui-coral, #d65278);
 }
 .daily-latest-action {
   width: 100%;
