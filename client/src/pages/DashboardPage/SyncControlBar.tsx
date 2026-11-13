@@ -38,7 +38,7 @@ import type {
   WorkbookSheet,
 } from '@shared/api.interface';
 
-const DATASET_LABELS: Record<SyncDataset | 'core', string> = { core: '全部基础数据', pay_type: '付费类型', chain: '支付链路', creative: '创作积极性', renewal: '自动续订', creation_chain: '创作链路', ads: '付费广告' };
+const DATASET_LABELS: Record<SyncDataset | 'core' | 'light', string> = { core: '全部基础数据', light: '轻量数据（续订 / 创作链路 / 广告）', pay_type: '付费类型', chain: '支付链路', creative: '创作积极性', renewal: '自动续订', creation_chain: '创作链路', ads: '付费广告' };
 
 const POLL_INTERVAL_MS = 2000;
 const SYNC_SURFACE_CLASS =
@@ -108,7 +108,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
   const yesterday = new Date(Date.now() + 8 * 3600000 - 86400000).toISOString().slice(0, 10);
   const [rangeValid, setRangeValid] = useState(true);
   const [date, setDate] = useState(yesterday);
-  const [dataset, setDataset] = useState<SyncDataset | 'core'>('core');
+  const [dataset, setDataset] = useState<SyncDataset | 'core' | 'light'>('core');
   const [syncing, setSyncing] = useState(false);
   const [controlling, setControlling] = useState(false);
   const [status, setStatus] = useState<SyncRunStatus | null>(null);
@@ -197,7 +197,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
     try {
       const response = await createSyncRun({
         mode,
-        ...(mode === 'date_range' ? { startDate: date, endDate: date, datasets: dataset === 'core' ? ['pay_type', 'chain', 'creative', 'renewal'] : [dataset] } : {}),
+        ...(mode === 'date_range' ? { startDate: date, endDate: date, datasets: dataset === 'core' ? ['pay_type', 'chain', 'creative', 'renewal'] : dataset === 'light' ? ['renewal', 'ads', 'creation_chain'] : [dataset] } : {}),
         platforms: plan?.platforms ?? ['all', 'web', 'app'],
       });
       if (['running', 'queued', 'pausing'].includes(response.status)) {
@@ -302,7 +302,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
         </div>
         {mode === 'date_range' && <div className="flex flex-col gap-1.5">
           <span className="text-xs text-muted-foreground">回刷数据集</span>
-          <Select value={dataset} onValueChange={value => setDataset(value as SyncDataset | 'core')} disabled={running}>
+          <Select value={dataset} onValueChange={value => setDataset(value as SyncDataset | 'core' | 'light')} disabled={running}>
             <SelectTrigger size="sm" aria-label="回刷数据集" className={`${SYNC_PILL_CLASS} min-w-[150px]`}><SelectValue /></SelectTrigger>
             <SelectContent>{Object.entries(DATASET_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
           </Select>

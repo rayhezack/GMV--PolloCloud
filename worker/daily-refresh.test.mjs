@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {advanceDailyRefresh} from './daily-refresh.ts';
+import {advanceDailyRefresh, RefreshPausedError} from './daily-refresh.ts';
 import {readFile} from 'node:fs/promises';
 test('only one daily start at 09:20; five minute callback belongs to reports',async()=>{
  const config=JSON.parse(await readFile('pollocloud.json','utf8'));
@@ -13,10 +13,21 @@ test('bounded continuation resumes the cursor without repeating a completed sour
  await advanceDailyRefresh(b,exec,save);assert.equal(b.status,'success');assert.deepEqual(calls,['facts','facts','ads','creation']);
  await advanceDailyRefresh(b,exec,save);assert.equal(calls.length,4);
 });
-test('failure is durable and does not silently retry or advance to other sources',async()=>{
- const b={day:'2026-11-11',tasks:['facts','ads'],cursor:0,status:'running'};let calls=0;let saved;
- const exec=async()=>{calls++;throw Error('empty source')};await advanceDailyRefresh(b,exec,async b=>{saved={...b}});
- assert.equal(saved.status,'failed');assert.equal(saved.cursor,0);await advanceDailyRefresh(b,exec,async()=>{});assert.equal(calls,1);
+test('one failed source does not block siblings, is durable, and explicit retry skips successes',async()=>{
+ const b={day:'2026-11-11',tasks:['facts','ads','creation'],cursor:0,status:'running'};const calls=[];
+ const exec=async t=>{calls.push(t);if(t==='facts')throw Error('empty source');return true};
+ await advanceDailyRefresh(b,exec,async()=>{});
+ assert.equal(b.status,'failed');assert.equal(b.cursor,3);assert.deepEqual(calls,['facts','ads','creation']);
+ assert.deepEqual(b.completed,['ads','creation']);assert.equal(b.errors.facts,'empty source');
+ await advanceDailyRefresh(b,exec,async()=>{});assert.equal(calls.length,3);
+ b.status='running';b.cursor=0;
+ await advanceDailyRefresh(b,async t=>{calls.push(t);return true},async()=>{});
+ assert.equal(b.status,'success');assert.deepEqual(calls,['facts','ads','creation','facts']);assert.equal(b.error,undefined);
+});
+test('explicit pause stops the whole batch without starting siblings',async()=>{
+ const b={day:'2026-11-11',tasks:['facts','ads'],cursor:0,status:'running'};const calls=[];
+ await advanceDailyRefresh(b,async t=>{calls.push(t);throw new RefreshPausedError('paused')},async()=>{});
+ assert.equal(b.status,'failed');assert.equal(b.cursor,0);assert.deepEqual(calls,['facts']);
 });
 
 // Exercise the real Worker orchestration against SQLite, including the same JSON
@@ -50,7 +61,7 @@ test('a locked previous-day batch cannot swallow the next daily start or let rep
  const b={day:prior,tasks:['facts:pay_type'],cursor:0,status:'running'};insert(db,b,Date.now()+900000);
  const returned=await dailyDataRefresh(env,true);assert.equal(returned.status,'running');
  const newBatch=JSON.parse(db.prepare('SELECT payload FROM daily_refresh_batches WHERE day=?').get(today()).payload);
- assert.equal(newBatch.day,today());assert.equal(newBatch.cursor,0);assert.equal(newBatch.tasks.length,23);
- assert.deepEqual(newBatch.tasks.slice(0,5),['actions','facts:pay_type','facts:chain','facts:renewal','facts:creative']);
+ assert.equal(newBatch.day,today());assert.equal(newBatch.cursor,0);assert.equal(newBatch.tasks.length,21);
+ assert.deepEqual(newBatch.tasks.slice(0,5),['facts:renewal,ads,creation_chain','actions','facts:pay_type','facts:chain','facts:creative']);
  assert.equal(db.prepare('SELECT count(*) n FROM daily_refresh_batches').get().n,2);
 });

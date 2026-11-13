@@ -9,7 +9,7 @@ import { buildSync } from 'esbuild';
 
 const dir = mkdtempSync(join(tmpdir(), 'sync-backfill-test-'));
 const outfile = join(dir, 'worker.mjs');
-buildSync({ stdin: { contents: readFileSync(new URL('./index.ts', import.meta.url), 'utf8') + '\nexport {syncPlan, createSyncRun, newSyncJob, runBaseSyncStep, replaceFactRange, stageSyncRows, saveSyncJob, controlSyncRun, runScheduledSync, executeSyncRun};', resolveDir: fileURLToPath(new URL('.', import.meta.url)), loader: 'ts' }, bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'silent' });
+buildSync({ stdin: { contents: readFileSync(new URL('./index.ts', import.meta.url), 'utf8') + '\nexport {syncPlan, createSyncRun, newSyncJob, runBaseSyncStep, replaceFactRange, stageSyncRows, saveSyncJob, controlSyncRun, runScheduledSync, executeSyncRun, retrySyncRun};', resolveDir: fileURLToPath(new URL('.', import.meta.url)), loader: 'ts' }, bundle: true, platform: 'node', format: 'esm', outfile, logLevel: 'silent' });
 const worker = await import(pathToFileURL(outfile).href);
 process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
 function fixture() {
@@ -208,4 +208,23 @@ test('creation chain resumes from an already published step without pulling agai
     assert.equal(job.status,'success');assert.equal(job.rowsSynced,17);assert.equal(calls,0);
     assert.equal(db.prepare('SELECT status FROM sync_jobs').get().status,'success');
   } finally {globalThis.fetch=original;db.close();}
+});
+
+
+test('light datasets create one task; retry preserves committed steps and ownership', async () => {
+  const {db,env}=fixture();
+  try {
+    const response=await worker.createSyncRun(env,request({mode:'date_range',startDate:'2026-11-10',endDate:'2026-11-10',datasets:['renewal','ads','creation_chain']}),'2026-11-11:renewal,ads,creation_chain:2026-11-10');
+    assert.equal(response.status,200);const job=await response.json();
+    assert.equal(job.steps.length,6);
+    assert.deepEqual(job.steps.map(s=>s.key),['all-renewal','all-ads','all-creation_chain','web-renewal','app-renewal','finish']);
+    job.status='failed';job.rowsSynced=500;
+    job.steps.find(s=>s.key==='all-ads').status='success';
+    db.prepare("UPDATE sync_jobs SET status='failed',payload=? WHERE run_id=?").run(JSON.stringify(job),job.runId);
+    const retry=await (await worker.retrySyncRun(env,request({runId:job.runId}))).json();
+    assert.equal(retry.rowsSynced,500);assert.equal(retry.scheduledKey,job.scheduledKey);
+    assert.equal(retry.steps.find(s=>s.key==='all-ads').status,'success');
+    assert.equal(retry.steps.find(s=>s.key==='all-renewal').status,'waiting');
+    assert.equal((await (await worker.createSyncRun(env,request({}),job.scheduledKey)).json()).runId,retry.runId);
+  } finally {db.close();}
 });

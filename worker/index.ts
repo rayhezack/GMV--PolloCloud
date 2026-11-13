@@ -1,4 +1,5 @@
-import { advanceDailyRefresh, type RefreshBatch } from './daily-refresh';
+import { advanceDailyRefresh, RefreshPausedError, type RefreshBatch } from './daily-refresh';
+import { isLightSyncGroup, LIGHT_SYNC_DATASETS, runLightSyncGroup } from './light-sync';
 import { claimSourceRefresh, finishSourceRefresh } from './source-refresh-policy';
 import { encodeDashboardCache, decodeDashboardCache } from './dashboard-cache';
 import { normalizeChartActions } from '../shared/product-actions';
@@ -2454,6 +2455,25 @@ async function ensureSyncRunLog(env: Env, job: SyncJobState) {
 async function runBaseSyncStep(env: Env, job: SyncJobState) {
   const current = await env.DB!.prepare('SELECT status FROM sync_jobs WHERE run_id=?').bind(job.runId).first<{status: string}>();
   if (current && ['paused','pausing'].includes(current.status)) { job.status = 'paused'; await saveSyncJob(env, job); return; }
+  if (isLightSyncGroup(job)) {
+    await runLightSyncGroup(job, async key => {
+      const separator = key.indexOf('-');
+      const platform = key.slice(0, separator);
+      const dataset = key.slice(separator + 1);
+      let count: number;
+      if (dataset === 'ads') count = await syncAdsDate(env, job.startDate);
+      else if (dataset === 'creation_chain') {
+        const result = await syncCreationChainDate(env, job.startDate);
+        count = result.overall + result.function;
+      } else {
+        const rows = await pullDailyFacts(env, platform, 'renewal', job.startDate, job.endDate);
+        count = await replaceFactRange(env, 'renewal', platform, job.startDate, job.endDate, rows);
+      }
+      await invalidateDashboardCache(env, dataset === 'renewal');
+      return count;
+    }, () => saveSyncJob(env, job));
+    return;
+  }
   // These ADS sources already contain every platform. Publish the selected
   // date once through the same durable task and pause controls as core facts.
   const extra = job.datasets?.find(dataset => dataset === 'creation_chain' || dataset === 'ads');
@@ -2587,7 +2607,7 @@ async function createSyncRun(env: Env, request: Request, scheduledKey?: string) 
   // A batch continuation must recover its original job, including a terminal
   // result, before consulting the global active slot or creating any new work.
   if (scheduledKey) {
-    const saved = await env.DB.prepare("SELECT payload FROM sync_jobs WHERE json_extract(payload,'$.scheduledKey')=? ORDER BY created_at DESC LIMIT 1")
+    const saved = await env.DB.prepare("SELECT payload FROM sync_jobs WHERE json_extract(payload,'$.scheduledKey')=? ORDER BY created_at DESC,rowid DESC LIMIT 1")
       .bind(scheduledKey).first<{payload:string}>();
     if (saved) return json(JSON.parse(saved.payload));
   }
@@ -2601,8 +2621,8 @@ async function createSyncRun(env: Env, request: Request, scheduledKey?: string) 
   }
   const requestedDatasets = [...new Set(body.datasets ?? [])] as SyncDataset[];
   if (requestedDatasets.some(dataset => dataset === 'creation_chain' || dataset === 'ads') &&
-    (mode !== 'date_range' || body.startDate !== body.endDate || requestedDatasets.length !== 1)) {
-    return errorResponse('创作链路和付费广告请分别选择单个日期回刷', 400);
+    (mode !== 'date_range' || body.startDate !== body.endDate || (requestedDatasets.length !== 1 && !isLightSyncGroup({datasets: requestedDatasets, startDate: body.startDate!, endDate: body.endDate!})))) {
+    return errorResponse('创作链路和付费广告仅支持单日回刷，可与自动续订合并更新', 400);
   }
   const yesterday = new Date(Date.now() + 8 * 3600000 - 86400000).toISOString().slice(0, 10);
   if (mode === 'date_range') {
@@ -2664,6 +2684,14 @@ async function retrySyncRun(env: Env, request: Request) {
   job.currentDate = source.currentDate ?? source.startDate;
   job.rowsSynced = source.completedRows ?? 0;
   job.completedRows = source.completedRows;
+  job.scheduledKey = source.scheduledKey;
+  if (isLightSyncGroup(source) && source.status === 'failed') {
+    job.rowsSynced = source.rowsSynced;
+    for (const step of job.steps ?? []) {
+      const completed = source.steps?.find(item => item.key === step.key && item.key !== 'finish' && item.status === 'success');
+      if (completed) { step.status = 'success'; step.detail = completed.detail; }
+    }
+  }
   await env.DB.prepare("INSERT INTO sync_jobs (run_id, status, payload, created_at, updated_at) VALUES (?, 'queued', ?, ?, ?)")
     .bind(job.runId, JSON.stringify(job), Date.now(), Date.now()).run();
   return json(job, 202);
@@ -2990,11 +3018,11 @@ export async function dailyDataRefresh(env: Env, start = false, force = false) {
     const date = shiftDate(day,-1);
     const ads = [...new Set([...Array.from({length:7},(_,i)=>shiftDate(date,-i)),...[14,30,60,90,180].map(i=>shiftDate(date,-i))])];
     const creation = [...new Set([...Array.from({length:4},(_,i)=>shiftDate(date,-i)),shiftDate(date,-7),shiftDate(date,-30)])];
-    const fresh: RefreshBatch = {day,tasks:['actions',...(['pay_type','chain','renewal','creative'].map(d=>'facts:'+d)),...ads.map(d=>'ads:'+d),...creation.map(d=>'creation:'+d)],cursor:0,status:'running'};
+    const fresh: RefreshBatch = {day,tasks:['facts:'+LIGHT_SYNC_DATASETS.join(','),'actions',...(['pay_type','chain','creative'].map(d=>'facts:'+d)),...ads.filter(d=>d!==date).map(d=>'ads:'+d),...creation.filter(d=>d!==date).map(d=>'creation:'+d)],cursor:0,status:'running'};
     // A delayed previous day must not make us miss today's 09:20 start. Manual
     // retries resume the failed cursor; already successful work is not restarted.
     await env.DB.prepare(`INSERT INTO daily_refresh_batches(day,payload,updated_at) VALUES(?,?,?)
-      ON CONFLICT(day) DO UPDATE SET payload=json_remove(json_set(payload,'$.status','running'),'$.error'),updated_at=excluded.updated_at
+      ON CONFLICT(day) DO UPDATE SET payload=json_remove(json_set(payload,'$.status','running','$.cursor',CASE WHEN json_type(payload,'$.errors')='object' THEN 0 ELSE json_extract(payload,'$.cursor') END),'$.error'),updated_at=excluded.updated_at
       WHERE ?=1 AND json_extract(payload,'$.status')='failed'`).bind(day,JSON.stringify(fresh),Date.now(),force?1:0).run();
   }
   const lease=Date.now()+15*60000;
@@ -3025,11 +3053,23 @@ export async function dailyDataRefresh(env: Env, start = false, force = false) {
       await markDailyDiagnosisDirty(env); return true;
     }
     if (task.startsWith('facts:')) {
-      const dataset=task.slice(6) as SyncDataset;
+      const datasets=task.slice(6).split(',') as SyncDataset[];
+      // Only a manually reopened failed batch revisits a recorded error.
+      // Its replacement job keeps the ownership key and successful light steps.
+      if (force || batch.errors?.[task]) {
+        const key = `${batch.day}:${datasets.join(',')}:${shiftDate(batch.day,-1)}`;
+        const prior = await env.DB!.prepare("SELECT payload FROM sync_jobs WHERE json_extract(payload,'$.scheduledKey')=? ORDER BY created_at DESC,rowid DESC LIMIT 1")
+          .bind(key).first<{payload:string}>();
+        const failed = prior ? JSON.parse(prior.payload) as SyncRunStatus : undefined;
+        if (failed?.status === 'failed') {
+          const retry = await retrySyncRun(env, new Request('https://schedule.internal/api/sync-runs/retry', {method:'POST',body:JSON.stringify({runId:failed.runId})}));
+          if (!retry.ok) throw new Error('重试任务尚未创建，请先处理当前活动同步任务');
+        }
+      }
       const deadline=Date.now()+90000;
-      let result=await runScheduledSync(env,[dataset],shiftDate(batch.day,-1),batch.day);
-      while(result.status==='queued' && !result.skipped && Date.now()<deadline)result=await runScheduledSync(env,[dataset],shiftDate(batch.day,-1),batch.day);
-      if(result.status==='paused') throw new Error('同步已暂停，请在任务后台恢复后手动继续每日批次');
+      let result=await runScheduledSync(env,datasets,shiftDate(batch.day,-1),batch.day);
+      while(result.status==='queued' && !result.skipped && Date.now()<deadline)result=await runScheduledSync(env,datasets,shiftDate(batch.day,-1),batch.day);
+      if(result.status==='paused') throw new RefreshPausedError('同步已暂停，请在任务后台恢复后手动继续每日批次');
       if(result.status==='failed') throw new Error(result.errorMessage || '源数据未就绪，保留原数据；请手动重试');
       return result.status==='success';
     }
@@ -3074,7 +3114,7 @@ async function cronHandler(
     if (platform) await queueWeeklyReport(env, platform);
     // Optional creative/advertising refreshes must not hold complete revenue,
     // funnel and renewal evidence hostage. Diagnosis validates D1 evidence itself.
-    if(batch?.status==='running' && batch.cursor<4)return json({ok:true,task:'daily-data-continuation',batch});
+    if(batch?.status==='running' && batch.tasks.slice(batch.cursor).some(task=>task==='actions' || /^facts:.*(pay_type|chain|renewal)/.test(task)))return json({ok:true,task:'daily-data-continuation',batch});
   }
   if (path === '/api/cron/daily-diagnoses' || path === '/api/cron/reports') {
     // Do not return streaming headers early: the platform scheduler can record
