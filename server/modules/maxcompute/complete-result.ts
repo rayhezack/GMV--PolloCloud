@@ -1,4 +1,4 @@
-import type { MaxComputeQueryResult } from './maxcompute.client';
+import type { MaxComputeQueryResult } from './result-types';
 
 type Execute = (sql: string) => Promise<MaxComputeQueryResult>;
 const COUNT_COLUMN = 'source_row_count';

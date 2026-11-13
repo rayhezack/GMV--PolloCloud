@@ -1,6 +1,6 @@
 # Pollo AI GMV Dashboard
 
-Pollo Cloud edition of the GMV trend and attribution dashboard. The SPA is built with Vite; its Worker reads analytical facts from the Pollo DA D1 tables and pulls new facts from MaxCompute.
+Pollo Cloud edition of the GMV trend and attribution dashboard. The SPA is built with Vite; its Worker reads analytical facts from the Pollo DA D1 tables and refreshes new facts through the private `env.ANALYTICS` data binding.
 
 ## Data sources
 
@@ -25,4 +25,4 @@ pollocloud db execute --name pollo-ai --file db/0009_pollo_da_analytics.sql
 pollocloud deploy
 ```
 
-See [POLLOCLOUD.md](POLLOCLOUD.md) for required server-side secrets and access settings. The design rules are in [DESIGN.md](DESIGN.md).
+See [POLLOCLOUD.md](POLLOCLOUD.md) for the private data binding and server-side settings. The design rules are in [DESIGN.md](DESIGN.md).

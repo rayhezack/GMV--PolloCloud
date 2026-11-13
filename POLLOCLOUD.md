@@ -1,6 +1,6 @@
 # Pollo Cloud deployment
 
-The dashboard builds as a Pollo Cloud SPA. Its Worker reads analytical data from the Pollo DA D1 tables and pulls new daily facts from MaxCompute into D1. Feishu Base remains only for task records consumed by the notification bot:
+The dashboard builds as a Pollo Cloud SPA. Its Worker reads analytical data from the Pollo DA D1 tables and refreshes new daily facts through the private `env.ANALYTICS` binding. Feishu Base remains only for task records consumed by the notification bot:
 
 ```bash
 npm ci
@@ -29,16 +29,14 @@ Configure these Pollo Cloud secrets before deployment:
 ```text
 FEISHU_APP_ID
 FEISHU_APP_SECRET
-MAXCOMPUTE_ENDPOINT
-MAXCOMPUTE_PROJECT
-MAXCOMPUTE_ACCESS_KEY_ID
-MAXCOMPUTE_ACCESS_KEY_SECRET
 KIMI_API_KEY
 ```
 
+The analytics binding is supplied by Pollo Cloud after deployment. It routes backend requests to the internal data platform; the Worker calls `https://data/v1/hologres/query` for synchronous Hologres reads and the `/v1/maxcompute/jobs` endpoints for asynchronous MaxCompute reads. No MaxCompute endpoint, project, AK/SK, or public warehouse URL belongs in the application secrets.
+
 The Feishu app must have record read/write API scopes and document-level access to Base `OjCAbXDNbavIU9seAzVcqUHanHg`. Record reads, creates, updates, and deletes have all been verified against this Base.
 
-Dashboard endpoints push platform and date filters into D1, merge identical in-flight reads, and cache successful responses in the app's D1 database for ten minutes. An expired response can be served for up to one hour while D1 refreshes in the background. `POST /api/sync-runs` stages each MaxCompute query result in D1. Only after every query succeeds does the Worker replace the matching `web` and `app` rows in the four `pollo_da_fact_rows` datasets and clear the response cache.
+Dashboard endpoints push platform and date filters into D1, merge identical in-flight reads, and cache successful responses in the app's D1 database for ten minutes. An expired response can be served for up to one hour while D1 refreshes in the background. `POST /api/sync-runs` stages each private analytics query result in D1. Only after every query succeeds does the Worker replace the matching `web` and `app` rows in the four `pollo_da_fact_rows` datasets and clear the response cache.
 
 The one-time migration uses `db/0009_pollo_da_analytics.sql`, then imports the Base snapshot into `pollo_da_base_records`, daily facts into `pollo_da_fact_rows`, reports into `pollo_da_reports`, and product actions into `pollo_da_product_actions`. The existing D1 database is bound to the `pollo-ai` app; the `pollo_da_*` prefix is the logical Pollo DA database namespace. The dashboard's analytical facts are D1-only; Base is not an analytical fallback.
 

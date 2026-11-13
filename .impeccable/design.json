@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-06T12:04:27.330769+00:00",
+  "generatedAt": "2026-11-09T09:33:16.246748+00:00",
   "title": "Design System: Pollo Stripe Revenue Workbench",
   "extensions": {
     "colorMeta": {
@@ -613,6 +613,11 @@
       {
         "name": "The Unit Follows Metric Rule",
         "body": "图卡切换指标时，主值、变化、坐标与 tooltip 同步切换单位；计数不带货币符号，百分比绝对变化用 pp，ROAS 用 x，cohort LTV 用美元／注册用户并保留两位小数。缺失和未成熟状态不能伪装成真实零值。",
+        "section": "components"
+      },
+      {
+        "name": "Report Reading Hierarchy",
+        "body": "依据DESIGN.md第8.3节：默认展示简短核心结论、结构化原因判断与行动建议，数据模块一句结论并默认折叠；完整漏斗、结构/效率、核心类型续订及产品动作证据点击展开。直接渲染模型Markdown的1./2./3.有序列表与局部加粗，所有并列论点标题加粗带冒号，论证紧接冒号、对应表格随后，不使用无序项目符号或强行加粗整段。原因明细以三级标题“原因论证”分区，历史报告兼容首段摘要。 窄屏端类型按钮按内容宽度收缩，菜单紧贴按钮，避免整行触发区将菜单推到远侧。",
         "section": "components"
       }
     ],

@@ -15,7 +15,7 @@ import { paymentAnalysisSql } from './payment-analysis-sql';
 import { GMV_ATTRIBUTION_TYPES, type GmvAttributionType, type PaymentAnalysisResponse, type PaymentTrendResponse } from '../shared/api.interface';
 /* Pollocloud Worker: D1 stores analytical facts; Base keeps task records for bot notifications. */
 
-import { MaxComputeClient } from '../server/modules/maxcompute/maxcompute.client';
+import { AnalyticsClient, type AnalyticsBinding } from '../server/modules/analytics/analytics.client';
 import { buildDatasetSql, type DatasetKind } from '../server/modules/maxcompute/sql-templates';
 import { buildAdsSql } from '../server/modules/maxcompute/ads-sql';
 import { buildCreationChainSql, type CreationChainKind } from '../server/modules/maxcompute/creation-chain-sql';
@@ -43,16 +43,13 @@ type D1Database = {
 };
 export type Env = {
   DB?: D1Database;
+  ANALYTICS?: AnalyticsBinding;
   STORAGE?: {
     put(key: string, value: string, options?: {contentType?: string}): Promise<unknown>;
     getText(key: string): Promise<string | null>;
   };
   FEISHU_APP_ID?: string;
   FEISHU_APP_SECRET?: string;
-  MAXCOMPUTE_ENDPOINT?: string;
-  MAXCOMPUTE_PROJECT?: string;
-  MAXCOMPUTE_ACCESS_KEY_ID?: string;
-  MAXCOMPUTE_ACCESS_KEY_SECRET?: string;
   KIMI_API_KEY?: string;
   KIMI_BASE_URL?: string;
   KIMI_MODEL?: string;
@@ -2323,18 +2320,6 @@ const MAXCOMPUTE_NUMBER_FIELDS = new Set([
   'expire_user_cnt', 'renew_user_cnt', 'renew_amount_usd',
 ]);
 
-function maxComputeConnection(env: Env) {
-  const entries = {
-    endpoint: env.MAXCOMPUTE_ENDPOINT,
-    project: env.MAXCOMPUTE_PROJECT,
-    accessKeyId: env.MAXCOMPUTE_ACCESS_KEY_ID,
-    accessKeySecret: env.MAXCOMPUTE_ACCESS_KEY_SECRET,
-  };
-  const missing = Object.entries(entries).filter(([, value]) => !value).map(([key]) => key);
-  if (missing.length) throw new Error(`MaxCompute 配置缺失：${missing.join(', ')}`);
-  return entries as { endpoint: string; project: string; accessKeyId: string; accessKeySecret: string };
-}
-
 async function pullDailyFacts(env: Env, platform: string, dataset: DatasetKind, startDate: string, endDate: string): Promise<D1Row[]> {
   if ((dataset === 'pay_type' || dataset === 'chain') && startDate !== endDate) {
     const rows: D1Row[] = [];
@@ -2342,11 +2327,11 @@ async function pullDailyFacts(env: Env, platform: string, dataset: DatasetKind, 
     return rows;
   }
   if (dataset === 'pay_type') platform = 'all';
-  const connection = maxComputeConnection(env);
+  const analytics = new AnalyticsClient(env);
   const queries = dataset === 'pay_type'
     ? (['NONE', 'CREATION_MODE', 'MODEL', 'ACTUAL_MODEL'] as const).map(mode => buildMiddleTableSql('pay_type', platform, startDate.replaceAll('-', ''), endDate.replaceAll('-', ''), mode))
     : [dataset === 'chain' ? buildChainFunnelSql(platform, startDate, endDate) : buildDatasetSql(dataset, { platform, start: startDate, end: endDate, granularity: 'daily' })];
-  const payloads = await Promise.all(queries.map(sql => new MaxComputeClient(connection, 90000).executeCompleteSql(sql)));
+  const payloads = await Promise.all(queries.map(sql => analytics.executeCompleteSql(sql)));
   const rows = payloads.flatMap((payload) => {
     return payload.rows.map<D1Row>((values) => {
     const row: D1Row = {};
@@ -2365,7 +2350,7 @@ async function pullDailyFacts(env: Env, platform: string, dataset: DatasetKind, 
     (['ACTIVE_PAYMENT', 'AUTO_RENEWAL', 'API'].includes(asText(row.pay_category)) && asText(row.pay_type) !== '汇总')
     || (['MODEL', 'ACTUAL_MODEL'].includes(asText(row.attribution_type)) && asText(row.pay_category) === '汇总' && asText(row.pay_type) === '汇总' && asNumber(row.model_cost_usd) !== 0)
   );
-  const registration = await new MaxComputeClient(connection, 60000).executeCompleteSql(buildPaymentRegistrationSql(startDate,endDate));
+  const registration = await analytics.executeCompleteSql(buildPaymentRegistrationSql(startDate,endDate));
   const children = registration.rows.map(values => Object.fromEntries(registration.column_names.map((column,i)=>[column.toLowerCase(),values[i]])) as D1Row)
     .filter(row => platform === 'all' || row.platform === platform)
     .map(row => ({...row,gmv_usd:Number(row.gmv_usd),source_kind:'registration'}));
@@ -2834,7 +2819,7 @@ async function runScheduledSync(env: Env, datasets: SyncDataset[], date?: string
 
 async function syncAdsDate(env: Env, date: string): Promise<number> {
   if (!env.DB?.batch) throw new Error('广告同步需要 D1 批量事务');
-  const payload = await new MaxComputeClient(maxComputeConnection(env), 120000).executeCompleteSql(buildAdsSql(date));
+  const payload = await new AnalyticsClient(env).executeCompleteSql(buildAdsSql(date));
   const columns = payload.column_names.map(column => column.toLowerCase());
   const required = ['period', 'week_start', 'week_end', 'channel', 'country', 'platform', 'cost_usd', 'impressions', 'clicks', 'register_user_cnt', 'gmv_d0', 'gmv_d14', 'gmv_d30', 'gmv_d60', 'gmv_d90', 'gmv_d180', 'source_row_count'];
   if (required.some(column => !columns.includes(column))) throw new Error('广告查询结果缺少必要列');
@@ -2908,8 +2893,8 @@ async function syncCreationChainDate(env: Env, date: string): Promise<{ overall:
   const counts = { overall: 0, function: 0 };
   const sourceRows: Record<CreationChainKind,D1Row[]> = { overall: [], function: [] };
   const kinds = ['overall', 'function'] as const;
-  const client = new MaxComputeClient(maxComputeConnection(env), 90000);
-  const payloads = await Promise.all(kinds.map(kind => client.executeCompleteSql(buildCreationChainSql(date, kind))));
+  const analytics = new AnalyticsClient(env);
+  const payloads = await Promise.all(kinds.map(kind => analytics.executeCompleteSql(buildCreationChainSql(date, kind))));
   for (const [index, kind] of kinds.entries()) {
     const payload = payloads[index];
     const columns = payload.column_names.map(name => name.toLowerCase());
