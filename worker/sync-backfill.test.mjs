@@ -86,6 +86,17 @@ test('cancel is terminal for queued, running, and paused jobs and cannot be resu
     assert.match(execute, /已结束/);
   } finally { db.close(); }
 });
+
+test('a cancellation observed while saving a step stops the next step', async () => {
+  const { db, env } = fixture();
+  try {
+    const job = worker.newSyncJob('date_range','2026-11-10','2026-11-10',['all','web','app'],['creative']);
+    db.prepare("INSERT INTO sync_jobs VALUES(?,'cancelled',?,?,?)").run(job.runId, JSON.stringify({...job,status:'cancelled',errorMessage:'任务已取消'}), Date.now(), Date.now());
+    job.status = 'queued';
+    await worker.saveSyncJob(env, job);
+    assert.equal(job.status, 'cancelled');
+  } finally { db.close(); }
+});
 function seed(db, dataset, period, platform, device = null) {
   db.prepare("INSERT INTO pollo_da_fact_rows(dataset,source_record_id,period,platform,device_type,attribution_type,pay_category,pay_type,fields_json,updated_at) VALUES(?,?,?,?,?,'NONE','ACTIVE_PAYMENT','首订','{}',0)")
     .run(dataset, `${period}:${platform}:${device}`, period, platform, device);

@@ -2424,6 +2424,13 @@ async function saveSyncJob(env: Env, job: SyncJobState, respectPause = true) {
     updated_at=? WHERE run_id=? RETURNING status`)
     .bind(Number(respectPause), job.status, JSON.stringify(job), JSON.stringify(job), Number(respectPause), job.status, job.status, Date.now(), job.runId).first<{status: SyncRunStatus['status']}>();
   if (saved) job.status = saved.status;
+  else {
+    const terminal = await env.DB!.prepare('SELECT status, payload FROM sync_jobs WHERE run_id=?').bind(job.runId).first<{ status: SyncRunStatus['status']; payload: string }>();
+    if (terminal?.status === 'cancelled') {
+      job.status = 'cancelled';
+      job.errorMessage = JSON.parse(terminal.payload).errorMessage || '任务已取消';
+    }
+  }
 }
 
 async function ensureSyncRunLog(env: Env, job: SyncJobState) {
