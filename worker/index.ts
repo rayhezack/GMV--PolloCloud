@@ -2434,8 +2434,8 @@ async function loadStagedRows(env: Env, runId: string, stepKey: string) {
 async function saveSyncJob(env: Env, job: SyncJobState, respectPause = true) {
   job.heartbeatAt = new Date().toISOString();
   const saved = await env.DB!.prepare(`UPDATE sync_jobs SET
-    payload=CASE WHEN ? AND status IN ('pausing','paused') AND ? IN ('queued','running') THEN json_set(?, '$.status', 'paused') ELSE ? END,
-    status=CASE WHEN ? AND status IN ('pausing','paused') AND ? IN ('queued','running') THEN 'paused' ELSE ? END,
+    payload=CASE WHEN status='cancelled' THEN payload WHEN ? AND status IN ('pausing','paused') AND ? IN ('queued','running') THEN json_set(?, '$.status', 'paused') ELSE ? END,
+    status=CASE WHEN status='cancelled' THEN status WHEN ? AND status IN ('pausing','paused') AND ? IN ('queued','running') THEN 'paused' ELSE ? END,
     updated_at=? WHERE run_id=? RETURNING status`)
     .bind(Number(respectPause), job.status, JSON.stringify(job), JSON.stringify(job), Number(respectPause), job.status, job.status, Date.now(), job.runId).first<{status: SyncRunStatus['status']}>();
   if (saved) job.status = saved.status;
@@ -2454,6 +2454,7 @@ async function ensureSyncRunLog(env: Env, job: SyncJobState) {
 
 async function runBaseSyncStep(env: Env, job: SyncJobState) {
   const current = await env.DB!.prepare('SELECT status FROM sync_jobs WHERE run_id=?').bind(job.runId).first<{status: string}>();
+  if (current?.status === 'cancelled') { job.status = 'cancelled'; job.errorMessage = '任务已取消'; return; }
   if (current && ['paused','pausing'].includes(current.status)) { job.status = 'paused'; await saveSyncJob(env, job); return; }
   if (isLightSyncGroup(job)) {
     await runLightSyncGroup(job, async key => {
@@ -2697,7 +2698,7 @@ async function retrySyncRun(env: Env, request: Request) {
   return json(job, 202);
 }
 
-async function controlSyncRun(env: Env, request: Request, action: 'pause' | 'resume') {
+async function controlSyncRun(env: Env, request: Request, action: 'pause' | 'resume' | 'cancel') {
   if (!env.DB) return errorResponse('同步任务数据库未配置', 503);
   const { runId } = await request.json().catch(() => ({})) as { runId?: string };
   if (!runId) return errorResponse('缺少任务 ID');
@@ -2705,6 +2706,16 @@ async function controlSyncRun(env: Env, request: Request, action: 'pause' | 'res
     .bind(runId).first<{ status: SyncRunStatus['status']; payload: string }>();
   if (!row) return errorResponse('未找到数据同步任务', 404);
   const job = JSON.parse(row.payload) as SyncJobState;
+  if (action === 'cancel') {
+    if (!['queued', 'running', 'pausing', 'paused'].includes(row.status)) return errorResponse('当前任务无法取消', 409);
+    job.status = 'cancelled';
+    job.errorMessage = '任务已取消，已完成的数据保留，未完成步骤不会继续';
+    job.finishedAt = new Date().toISOString();
+    job.steps?.forEach(step => { if (step.status === 'running' || step.status === 'waiting') { step.status = 'failed'; step.detail = '已取消'; } });
+    await env.DB.prepare("UPDATE sync_jobs SET status='cancelled', payload=?, updated_at=? WHERE run_id=? AND status IN ('queued','running','pausing','paused')")
+      .bind(JSON.stringify(job), Date.now(), runId).run();
+    return json(job);
+  }
   if (action === 'pause') {
     if (row.status === 'paused' || row.status === 'pausing') return json(job);
     if (row.status !== 'queued' && row.status !== 'running') return errorResponse('当前任务无法暂停', 409);
@@ -2744,7 +2755,13 @@ async function executeSyncRun(env: Env, request: Request, scheduled = false) {
         await runBaseSyncStep(env, job);
       } catch (error) {
         const control = await env.DB!.prepare('SELECT status FROM sync_jobs WHERE run_id = ?').bind(runId).first<{ status: SyncRunStatus['status'] }>();
-        if (control?.status === 'pausing' || control?.status === 'paused') {
+        if (control?.status === 'cancelled') {
+          job.status = 'cancelled';
+          job.errorMessage = '任务已取消，已完成的数据保留，未完成步骤不会继续';
+          job.finishedAt = new Date().toISOString();
+          await env.DB!.prepare("UPDATE sync_jobs SET status='cancelled', payload=?, updated_at=? WHERE run_id=? AND status='cancelled'")
+            .bind(JSON.stringify(job), Date.now(), runId).run().catch(() => undefined);
+        } else if (control?.status === 'pausing' || control?.status === 'paused') {
           job.status = 'paused';
           job.steps?.forEach(step => { if (step.status === 'running' || step.status === 'failed') { step.status = 'waiting'; step.detail = undefined; } });
           await saveSyncJob(env, job).catch(() => undefined);
@@ -3070,6 +3087,7 @@ export async function dailyDataRefresh(env: Env, start = false, force = false) {
       let result=await runScheduledSync(env,datasets,shiftDate(batch.day,-1),batch.day);
       while(result.status==='queued' && !result.skipped && Date.now()<deadline)result=await runScheduledSync(env,datasets,shiftDate(batch.day,-1),batch.day);
       if(result.status==='paused') throw new RefreshPausedError('同步已暂停，请在任务后台恢复后手动继续每日批次');
+      if(result.status==='cancelled') throw new Error('同步任务已取消，未完成数据未写入');
       if(result.status==='failed') throw new Error(result.errorMessage || '源数据未就绪，保留原数据；请手动重试');
       return result.status==='success';
     }
@@ -3428,6 +3446,10 @@ export default {
       if (url.pathname === '/api/sync-runs/resume' && request.method === 'POST') {
         const denial = await authorizeDashboardMutation(request);
         return denial || controlSyncRun(env, request, 'resume');
+      }
+      if (url.pathname === '/api/sync-runs/cancel' && request.method === 'POST') {
+        const denial = await authorizeDashboardMutation(request);
+        return denial || controlSyncRun(env, request, 'cancel');
       }
       if (url.pathname === '/api/sync-runs/run' && request.method === 'POST') {
         const denial = await authorizeDashboardMutation(request);

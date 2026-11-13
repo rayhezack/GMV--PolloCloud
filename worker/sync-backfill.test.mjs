@@ -69,6 +69,23 @@ test('browser polling cannot execute a scheduled or legacy job; explicit resume 
   const resumed=await (await worker.controlSyncRun(env,request({runId:job.runId}),'resume')).json();assert.equal(resumed.trigger,'manual');
   db.close();
 });
+
+test('cancel is terminal for queued, running, and paused jobs and cannot be resumed', async () => {
+  const { db, env } = fixture();
+  try {
+    const job = worker.newSyncJob('date_range','2026-11-10','2026-11-10',['all','web','app'],['creative']);
+    db.prepare("INSERT INTO sync_jobs VALUES(?,'paused',?,?,?)").run(job.runId, JSON.stringify({...job,status:'paused'}), Date.now(), Date.now());
+    const response = await worker.controlSyncRun(env, request({runId:job.runId}), 'cancel');
+    const cancelled = await response.json();
+    assert.equal(cancelled.status, 'cancelled');
+    assert.match(cancelled.errorMessage, /已完成的数据保留/);
+    assert.equal(db.prepare('SELECT status FROM sync_jobs WHERE run_id=?').get(job.runId).status, 'cancelled');
+    const resume = await worker.controlSyncRun(env, request({runId:job.runId}), 'resume');
+    assert.equal(resume.status, 409);
+    const execute = await (await worker.executeSyncRun(env, request({runId:job.runId}))).text();
+    assert.match(execute, /已结束/);
+  } finally { db.close(); }
+});
 function seed(db, dataset, period, platform, device = null) {
   db.prepare("INSERT INTO pollo_da_fact_rows(dataset,source_record_id,period,platform,device_type,attribution_type,pay_category,pay_type,fields_json,updated_at) VALUES(?,?,?,?,?,'NONE','ACTIVE_PAYMENT','首订','{}',0)")
     .run(dataset, `${period}:${platform}:${device}`, period, platform, device);

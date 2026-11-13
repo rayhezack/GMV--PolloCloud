@@ -263,7 +263,7 @@ export interface SyncRunResponse {
   startDate: string;
   endDate: string;
   platforms: DashboardPlatform[];
-  status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed';
+  status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed' | 'cancelled';
   rowsSynced: number;
   datasets?: SyncDataset[];
   skipped?: boolean;
@@ -277,7 +277,7 @@ export interface SyncRunStatus {
   runId: string;
   currentDate?: string;
   mode?: SyncMode;
-  status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed';
+  status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed' | 'cancelled';
   stage: SyncStage;
   startDate: string;
   endDate: string;

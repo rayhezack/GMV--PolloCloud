@@ -29,6 +29,7 @@ import {
   getLatestSyncRun,
   pauseSyncRun,
   resumeSyncRun,
+  cancelSyncRun,
 } from '@client/src/api/sync';
 import type {
   LatestDaySyncPlan,
@@ -261,6 +262,21 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
     finally { setControlling(false); }
   };
 
+  const cancelSync = async () => {
+    if (!status || controlling || !window.confirm('取消后不会继续未完成步骤，已完成数据会保留。确定取消同步吗？')) return;
+    setControlling(true);
+    setErrorMsg('');
+    try {
+      const next = await cancelSyncRun(status.runId);
+      setStatus(next);
+      trackSync(next);
+      setSyncing(false);
+      stopPolling();
+      await refreshPlan();
+    } catch (error) { setErrorMsg(getErrorMessage(error)); }
+    finally { setControlling(false); }
+  };
+
   const running =
     syncing || ['queued', 'running', 'pausing', 'paused'].includes(status?.status ?? '') || Boolean(plan?.running);
   const isAdmin = canManagePollocloudApp(user);
@@ -344,9 +360,12 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
         </Button>
         {isAdmin && status && <Button variant="ghost" size="sm" className="h-8 rounded-full px-4" onClick={() => { trackSync(status); openBackgroundTask(status.runId); }}>查看任务</Button>}
         {isAdmin && status && ['queued', 'running', 'pausing', 'paused'].includes(status.status) ? (
-          <Button variant="outline" size="sm" className={`${SYNC_PILL_CLASS} h-8 px-4`} disabled={controlling || status.status === 'pausing'} onClick={() => void controlSync()}>
-            {status.status === 'pausing' ? '正在暂停…' : controlling ? '处理中…' : status.status === 'paused' ? '继续同步' : '暂停同步'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className={`${SYNC_PILL_CLASS} h-8 px-4`} disabled={controlling || status.status === 'pausing'} onClick={() => void controlSync()}>
+              {status.status === 'pausing' ? '正在暂停…' : controlling ? '处理中…' : status.status === 'paused' ? '继续同步' : '暂停同步'}
+            </Button>
+            <Button variant="ghost" size="sm" className="h-8 rounded-full px-3 text-muted-foreground" disabled={controlling} onClick={() => void cancelSync()}>取消同步</Button>
+          </div>
         ) : <Dialog>
           <DialogTrigger asChild>
             <Button
@@ -446,6 +465,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
       </details>}
       {status?.status === 'pausing' && <p className="mt-3 text-xs text-muted-foreground" role="status">当前步骤完成后暂停，已完成的数据会保留。</p>}
       {status?.status === 'paused' && <p className="mt-3 text-xs text-muted-foreground" role="status">同步已暂停，可从当前进度继续。</p>}
+      {status?.status === 'cancelled' && <p className="mt-3 text-xs text-muted-foreground" role="status">同步已取消，已完成数据已保留。</p>}
       {errorMsg && <p className="mt-3 text-xs text-destructive" role="alert">{errorMsg}</p>}
     </section>
   );

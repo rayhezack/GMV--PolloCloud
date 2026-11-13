@@ -2,10 +2,10 @@ import { regenerateDailyDiagnosis, runDailyDiagnosis } from '@/api/daily-diagnos
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import type { DailyDiagnosisStatus, ReportGenerationStatus, SyncRunStatus } from '@shared/api.interface';
-import { CheckCircle2, Loader2, AlertCircle, Circle, ChevronUp, ChevronDown, X, ArrowUpRight, RotateCcw, Pause, Play, PauseCircle } from 'lucide-react';
+import { CheckCircle2, Loader2, AlertCircle, Circle, ChevronUp, ChevronDown, X, ArrowUpRight, RotateCcw, Pause, Play, PauseCircle, XCircle } from 'lucide-react';
 import { formatAnalysisWeekLabel, formatGeneratedAt, getReportPeriodKey } from '@/pages/ReportPage/report-page.utils';
 import { generateReport, pauseReportGeneration, resumeReportGeneration } from '@/api/report';
-import { pauseSyncRun, resumeSyncRun, retrySyncRun } from '@/api/sync';
+import { pauseSyncRun, resumeSyncRun, retrySyncRun, cancelSyncRun } from '@/api/sync';
 
 type Step = { key: string; label: string; status: 'waiting' | 'running' | 'success' | 'failed'; detail?: string };
 type Task = {
@@ -13,7 +13,7 @@ type Task = {
   kind: 'report' | 'sync' | 'daily';
   name: string;
   context: string;
-  status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed';
+  status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed' | 'cancelled';
   startedAt: string;
   updatedAt: string;
   steps: Step[];
@@ -154,9 +154,9 @@ export function ReportTask({
   const done = job.steps.filter(step => step.status === 'success').length;
   const progress = job.steps.length ? Math.round(done / job.steps.length * 100) : job.status === 'success' ? 100 : 0;
   const label = job.kind === 'daily' ? job.status === 'queued' ? '日诊断等待执行' : job.status === 'running' ? '日诊断生成中' : job.status === 'success' ? '日诊断已完成' : '日诊断失败' : job.kind === 'sync'
-    ? job.status === 'failed' ? '数据同步失败' : job.status === 'success' ? '数据已同步' : job.status === 'paused' ? '数据同步已暂停' : job.status === 'pausing' ? '数据同步暂停中' : '数据同步中'
+    ? job.status === 'cancelled' ? '数据同步已取消' : job.status === 'failed' ? '数据同步失败' : job.status === 'success' ? '数据已同步' : job.status === 'paused' ? '数据同步已暂停' : job.status === 'pausing' ? '数据同步暂停中' : '数据同步中'
     : job.status === 'failed' ? '报告生成失败' : job.status === 'success' ? '报告已生成' : job.status === 'paused' ? '报告生成已暂停' : job.status === 'pausing' ? '报告生成暂停中' : '报告生成中';
-  const StatusIcon = job.status === 'failed' ? AlertCircle : job.status === 'success' ? CheckCircle2 : job.status === 'paused' ? PauseCircle : Loader2;
+  const StatusIcon = job.status === 'cancelled' ? XCircle : job.status === 'failed' ? AlertCircle : job.status === 'success' ? CheckCircle2 : job.status === 'paused' ? PauseCircle : Loader2;
   const rerun = async () => {
     if (active(job) || retrying) return;
     setRetrying(job.id);
@@ -202,6 +202,14 @@ export function ReportTask({
       setRetrying('');
     }
   };
+  const cancelTask = async () => {
+    if (job.kind !== 'sync' || retrying || !window.confirm('取消后不会继续未完成步骤，已完成数据会保留。确定取消同步吗？')) return;
+    setRetrying(job.id);
+    setOperationError('');
+    try { onTrackSync(await cancelSyncRun(job.id)); }
+    catch (error) { setOperationError(error instanceof Error ? error.message : '取消任务失败'); }
+    finally { setRetrying(''); }
+  };
   return (
     <aside ref={dockRef} className="report-task-dock" aria-label="后台任务" data-expanded={expanded}>
       {expanded && <section id="report-task-details" className="report-task-details">
@@ -225,6 +233,7 @@ export function ReportTask({
               {job.status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
               {retrying === job.id ? '处理中' : job.status === 'paused' ? '继续运行' : job.status === 'pausing' ? '暂停中' : '暂停'}
             </button>}
+            {active(job) && job.kind === 'sync' && <button type="button" onClick={() => void cancelTask()} disabled={retrying === job.id}>取消同步</button>}
             {!active(job) && <button type="button" onClick={() => void rerun()} disabled={retrying === job.id}><RotateCcw size={14} className={retrying === job.id ? 'animate-spin' : ''} />{retrying === job.id ? '启动中' : '重新运行'}</button>}
             {job.kind === 'report' && (
               <Link to={job.href}>{job.status === 'success' ? '查看报告' : '前往报告'}<ArrowUpRight size={14} /></Link>
@@ -241,6 +250,7 @@ export function ReportTask({
         {active(job) && job.kind !== 'daily' && <button className="report-task-control" type="button" aria-label={job.status === 'paused' ? '继续运行任务' : '暂停任务'} title={job.status === 'paused' ? '继续运行' : '暂停'} disabled={retrying === job.id || job.status === 'pausing'} onClick={() => void pauseOrResume()}>
           {job.status === 'paused' ? <Play size={16} /> : <Pause size={16} />}
         </button>}
+        {active(job) && job.kind === 'sync' && <button className="report-task-control" type="button" aria-label="取消同步任务" title="取消同步" disabled={retrying === job.id} onClick={() => void cancelTask()}><XCircle size={16} /></button>}
         <button className="report-task-dismiss" type="button" aria-label="关闭任务提醒" onClick={() => { setExpandedTaskId(''); setDismissed(current => [...new Set([...current, job.id])]); }}><X size={16} /></button>
         <div className="report-progress" role="progressbar" aria-label="任务已完成步骤" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${progress}%` }} /></div>
       </div>

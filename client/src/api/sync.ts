@@ -26,6 +26,13 @@ export async function resumeSyncRun(runId: string): Promise<SyncRunStatus> {
   return response.data as SyncRunStatus;
 }
 
+export async function cancelSyncRun(runId: string): Promise<SyncRunStatus> {
+  const response = await apiRequest<SyncRunStatus>('/api/sync-runs/cancel', {
+    method: 'POST', body: JSON.stringify({ runId }),
+  });
+  return response.data as SyncRunStatus;
+}
+
 export async function createSyncRun(
   req: SyncRunRequest,
 ): Promise<SyncRunResponse> {
