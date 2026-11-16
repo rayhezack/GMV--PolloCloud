@@ -6,7 +6,10 @@ const amount = (row: Row, field: string) => {
   if (!Number.isFinite(value)) throw new Error(`源数据 ${field} 无效，已保留原数据`);
   return value;
 };
-const cents = (value: number) => Math.round(value * 100);
+// MaxCompute returns Decimal values, but the Worker receives them as JS numbers.
+// Keep a much smaller tolerance than one cent so binary floating-point noise does
+// not reject equal amounts while any business-visible cent drift still fails.
+const MONEY_CONSERVATION_EPSILON_USD = 1e-9;
 
 /** A dimension may only partition the population on which it is defined. */
 export function assertChainConservation(rows: Row[]) {
@@ -46,7 +49,9 @@ export function assertPaymentModeConservation(rows: Row[]) {
   if (!groups.size) throw new Error('付费结果为空');
   for (const modes of groups.values()) {
     const totals = [...modes.values()];
-    if (!['NONE','CREATION_MODE','MODEL','ACTUAL_MODEL'].every(mode => modes.has(mode)) || modes.size !== 4 || new Set(totals.map(cents)).size !== 1) throw new Error('四种付费归因模式金额不守恒，已保留原数据');
+    const reference = totals[0];
+    const amountsConserve = reference != null && totals.every(total => Math.abs(total - reference) <= MONEY_CONSERVATION_EPSILON_USD);
+    if (!['NONE','CREATION_MODE','MODEL','ACTUAL_MODEL'].every(mode => modes.has(mode)) || modes.size !== 4 || !amountsConserve) throw new Error('四种付费归因模式金额不守恒，已保留原数据');
   }
 }
 
