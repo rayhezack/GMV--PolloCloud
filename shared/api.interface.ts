@@ -246,7 +246,7 @@ export interface CreativeOverviewResponse {
 /* ===== 同步链路 ===== */
 
 export type SyncMode = 'latest_day' | 'latest_week' | 'full_refresh' | 'date_range';
-export type SyncDataset = 'pay_type' | 'chain' | 'creative' | 'renewal';
+export type SyncDataset = 'pay_type' | 'chain' | 'creative' | 'renewal' | 'creation_chain' | 'ads';
 
 export interface SyncRunRequest {
   mode?: SyncMode;
@@ -257,12 +257,13 @@ export interface SyncRunRequest {
 }
 
 export interface SyncRunResponse {
+  trigger?: 'manual' | 'scheduled';
   runId: string;
   mode?: SyncMode;
   startDate: string;
   endDate: string;
   platforms: DashboardPlatform[];
-  status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed';
+  status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed' | 'cancelled';
   rowsSynced: number;
   datasets?: SyncDataset[];
   skipped?: boolean;
@@ -271,10 +272,12 @@ export interface SyncRunResponse {
 }
 
 export interface SyncRunStatus {
+  trigger?: 'manual' | 'scheduled';
+  scheduledKey?: string;
   runId: string;
   currentDate?: string;
   mode?: SyncMode;
-  status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed';
+  status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed' | 'cancelled';
   stage: SyncStage;
   startDate: string;
   endDate: string;
@@ -322,6 +325,11 @@ export interface LatestDaySyncPlan {
   missingItems: SyncPlanMissingItem[];
   datasets?: SyncDataset[];
   fullRefreshRequired?: boolean;
+  datasetDates?: Array<{
+    dataset: SyncDataset;
+    latestDate: string | null;
+    missingDates?: string[];
+  }>;
 }
 
 /* ===== 看板 ===== */
@@ -379,8 +387,11 @@ export interface GmvAnomalyAlert {
 }
 
 export interface DashboardGmvAnomalyResponse {
+  monitoredPlatforms?: DashboardPlatform[];
   latestWeek: string;
   latestDay: string;
+  /** Dates with an active anomaly in the selected dashboard scope. */
+  anomalyDates?: string[];
   method: 'daily_and_weekly_rolling_p95_p05_min_10pct';
   alerts: GmvAnomalyAlert[];
 }
@@ -518,6 +529,7 @@ export interface WorkbookPreviewResponse {
 /* ===== 诊断报告 ===== */
 
 export interface ReportGenerationRequest {
+  trigger?: 'manual' | 'scheduled' | 'anomaly';
   platform: Platform;
   granularity: Granularity;
   startDate: string;
@@ -545,7 +557,33 @@ export interface PaymentTrendResponse {
 
 export type ReportHistoryItem = Omit<ReportSummary, 'markdown'>;
 
+/** Daily diagnoses use a separate API and never overwrite weekly history. */
+export type DailyDiagnosisReport = Omit<ReportSummary, 'platform'> & { platform: DashboardPlatform; runId: string };
+export interface DailyDiagnosisStatus {
+  platform: DashboardPlatform;
+  period: string;
+  baseline: string;
+  status: 'waiting' | 'queued' | 'running' | 'success' | 'failed' | 'clear' | 'normal' | 'weekly';
+  updatedAt: string;
+  error?: string;
+  report?: DailyDiagnosisReport;
+  task?: {
+    runId: string;
+    status: 'queued' | 'running' | 'success' | 'failed';
+    startedAt: string;
+    updatedAt: string;
+    finishedAt?: string;
+    stage: string;
+    errorMessage?: string;
+    retryCount: number;
+    nextAttemptAt?: string;
+    steps: NonNullable<ReportGenerationStatus['steps']>;
+  };
+}
+
 export interface ReportGenerationStatus {
+  trigger?: 'manual' | 'scheduled' | 'anomaly';
+  nextAttemptAt?: number;
   runId: string;
   platform: Platform;
   periodStart: string;
