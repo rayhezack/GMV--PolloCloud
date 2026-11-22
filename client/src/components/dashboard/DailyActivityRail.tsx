@@ -289,7 +289,7 @@ export default function DailyActivityRail({
                 new Map([...actionDates].map((date) => [date, filteredActions.filter((a) => a.date === date).length]))
               }
               anomalies={deviceType ? new Set() : anomalyDates}
-              start={shiftDay(trendWindow.endDate, -89)}
+              start={trendWindow.startDate}
               end={trendWindow.endDate}
             />
           ) : (

@@ -46,7 +46,14 @@ export function CountryChannels({
     }
   }, [open, initialCountry]);
   const selected = countries.find((c) => c.key === country) || countries[0];
-  const key = JSON.stringify({ ...request, country: selected?.key });
+  const trendEnd = request.endDate < asOf ? request.endDate : asOf;
+  const trendStart = shiftDay(trendEnd, -29);
+  const key = JSON.stringify({
+    ...request,
+    startDate: [request.startDate, shiftDay(trendStart, -7)].sort()[0],
+    endDate: trendEnd,
+    country: selected?.key,
+  });
   useEffect(() => {
     if (!open || !selected) return;
     let live = true;
@@ -108,17 +115,7 @@ export function CountryChannels({
   const currentMetric = metrics.find((m) => m.key === metric) || metrics[1];
   const [selectedDay, setSelectedDay] = useState('');
   const [grain, setGrain] = useState<'day' | 'week' | 'month'>('day');
-  const trend = active
-    ? adsBuckets(
-        active.trend,
-        currentMetric.key,
-        'D0',
-        asOf,
-        request.startDate,
-        request.endDate < asOf ? request.endDate : asOf,
-        grain,
-      )
-    : [];
+  const trend = active ? adsBuckets(active.trend, currentMetric.key, 'D0', asOf, trendStart, trendEnd, grain) : [];
   const side = (key: string, which: 'baseline' | 'current') => {
     if (!active) return null;
     const p = active[which];

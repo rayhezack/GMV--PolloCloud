@@ -82,8 +82,8 @@ export function PopulationPicker({ data, onSelect }: { data: ChainComparison; on
                   className="chain-population-select"
                   aria-pressed={r.selected}
                   onClick={() => {
-                    if (r.kind === 'row' && active) setOpen(r.key);
-                    onSelect(r.scope);
+                    if (r.kind === 'row' && active) setOpen(r.selected ? null : r.key);
+                    onSelect(r.selected ? {} : r.scope);
                   }}
                 >
                   {r.label}

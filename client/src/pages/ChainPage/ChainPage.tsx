@@ -259,8 +259,9 @@ export default function ChainPage() {
               granularity={granularity}
               onGranularityChange={setGranularity}
             />
-            {chainType === 'active' && mode === 'week' && (
+            {chainType === 'active' && (
               <ChainDiagnostics
+                mode={mode}
                 factorKey={factor?.key || 'activeUv'}
                 platform={platform}
                 deviceType={deviceType}

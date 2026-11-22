@@ -34,7 +34,7 @@ KIMI_API_KEY
 
 The analytics binding is supplied by Pollo Cloud after deployment. It routes backend requests to the internal data platform; the Worker calls `https://data/v1/hologres/query` for synchronous Hologres reads and the `/v1/maxcompute/jobs` endpoints for asynchronous MaxCompute reads. No MaxCompute endpoint, project, AK/SK, or public warehouse URL belongs in the application secrets.
 
-The phase-one role excludes sensitive user identifiers. The legacy `creative_daily` user-level query therefore is not part of the scheduled sync plan; creation analysis uses the permitted aggregated `ads_pollo_creation_function_chain_daily_dip` source and is stored in `pollo_da_creation_*` tables. Do not re-enable the legacy query unless the data group provides a non-sensitive aggregate view.
+Creation updates include two independent sources: `creation_chain` refreshes the aggregated overall/function tables, while `creative` refreshes activity tiers using the current task wide table and writes only aggregated facts to D1. Both are included in the daily queue; successful sibling tasks remain checkpointed if one source fails.
 
 The Feishu app must have record read/write API scopes and document-level access to Base `OjCAbXDNbavIU9seAzVcqUHanHg`. Record reads, creates, updates, and deletes have all been verified against this Base.
 

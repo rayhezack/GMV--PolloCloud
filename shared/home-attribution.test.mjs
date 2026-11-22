@@ -35,10 +35,10 @@ test('active and renewal use their own pay-type maps without replacing missing c
  const a={activeGmv:12,renewalGmv:4,activePayTypeGmv:{'首订':12},renewalPayTypeGmv:{'LITE':4}},b={activeGmv:10,renewalGmv:6,activePayTypeGmv:{'首订':10},renewalPayTypeGmv:{LITE:6}};
  assert.equal(sum(paymentChanges(a,b,'activeGmv')),2);assert.equal(sum(paymentChanges(a,b,'renewalGmv')),-2);
 });
-test('LMDI source list preserves all factors, residual, signed amounts and total-GMV extras',()=>{
+test('LMDI source list contains only its own process factors and residual',()=>{
  const comparison={ready:true,total:{delta:5},factors:[{key:'a',label:'DAU',effect:20},{key:'b',label:'曝光率',effect:-12}],residual:{effect:-3}};
  const rows=chainChanges(comparison);assert.equal(sum(rows),5);assert.equal(rows.find(r=>r.kind==='residual').amount,-3);
- assert.equal(sum(chainChanges(comparison,{renewal:-2,other:4})),7);assert.deepEqual(chainChanges({ready:false}),[]);
+ assert.deepEqual(rows.map(row=>row.id),['a','b','residual']);assert.deepEqual(chainChanges({ready:false}),[]);
 });
 test('zero net change keeps opposing contributions and residual',()=>{
  const rows=chainChanges({ready:true,total:{delta:0},factors:[{key:'a',label:'A',effect:10},{key:'b',label:'B',effect:-10}],residual:{effect:0}});

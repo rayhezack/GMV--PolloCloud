@@ -21,7 +21,7 @@ export function remoteD1DevProxy() {
     config(_, { command }) {
       return { define: {
         'import.meta.env.VITE_LOCAL_DATA_WINDOW': JSON.stringify(command === 'serve' && window ? { startDate: window.startDate, endDate: window.endDate } : null),
-        'import.meta.env.VITE_LOCAL_REVENUE_WINDOW': JSON.stringify(command === 'serve' && window ? { startDate: window.revenueHistoryStartDate ?? window.startDate, endDate: window.endDate } : null),
+        'import.meta.env.VITE_LOCAL_REVENUE_WINDOW': JSON.stringify(command === 'serve' && window ? { startDate: window.revenueBaselineStartDate ?? window.revenueHistoryStartDate ?? window.startDate, endDate: window.endDate } : null),
       } };
     },
     configureServer(server) {

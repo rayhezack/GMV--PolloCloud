@@ -62,7 +62,7 @@ test('a locked previous-day batch cannot swallow the next daily start or let rep
  const returned=await dailyDataRefresh(env,true);assert.equal(returned.status,'running');
  const newBatch=JSON.parse(db.prepare('SELECT payload FROM daily_refresh_batches WHERE day=?').get(today()).payload);
  assert.equal(newBatch.day,today());assert.equal(newBatch.cursor,0);
- assert.equal(newBatch.tasks.length,18);
- assert.deepEqual(newBatch.tasks.slice(0,4),['facts:renewal,ads,creation_chain','actions','facts:pay_type','facts:chain']);
+ assert.equal(newBatch.tasks.length,19);
+ assert.deepEqual(newBatch.tasks.slice(0,5),['facts:renewal,ads,creation_chain','actions','facts:pay_type','facts:chain','facts:creative']);
  assert.equal(db.prepare('SELECT count(*) n FROM daily_refresh_batches').get().n,2);
 });

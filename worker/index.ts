@@ -152,7 +152,7 @@ async function cachedDashboardResponse(env: Env, request: Request, context: { wa
   const url = new URL(request.url);
   url.searchParams.delete('cacheBust');
   url.searchParams.sort();
-  const version = url.pathname === '/api/dashboard/chain-funnel' ? 'v12-chain-enums' : url.pathname === '/api/dashboard/attributions' ? 'v9-lmdi' : url.pathname === '/api/dashboard/payment-analysis' ? 'v8-single-payment-facts' : url.pathname === '/api/dashboard/creative-overview' ? 'v9-creative-history' : url.pathname === '/api/dashboard/overview' ? 'v8' : url.pathname === '/api/dashboard/ads-overview' ? 'v6-ads-lazy' : url.pathname === '/api/dashboard/gmv-anomalies' ? 'v4-anomaly-calendar' : 'v3';
+  const version = url.pathname === '/api/dashboard/chain-funnel' ? 'v13-chain-day' : url.pathname === '/api/dashboard/attributions' ? 'v9-lmdi' : url.pathname === '/api/dashboard/payment-analysis' ? 'v8-single-payment-facts' : url.pathname === '/api/dashboard/creative-overview' ? 'v9-creative-history' : url.pathname === '/api/dashboard/overview' ? 'v8' : url.pathname === '/api/dashboard/ads-overview' ? 'v6-ads-lazy' : url.pathname === '/api/dashboard/gmv-anomalies' ? 'v4-anomaly-calendar' : url.pathname === '/api/dashboard/payment-trend' ? 'v4-observed-month' : 'v3';
   const key = `${version}:${url.pathname}?${url.searchParams}`;
   const isCacheablePayload = (payload: string) => {
     if (!['/api/dashboard/chain-funnel','/api/dashboard/creative-overview','/api/dashboard/ads-overview'].includes(url.pathname)) return true;
@@ -1308,10 +1308,12 @@ async function paymentTrend(env: Env, request: Request) {
   if (!DASHBOARD_PLATFORMS.has(platform) || !GMV_ATTRIBUTION_TYPES.includes(attributionType) || !['day','week','month','year'].includes(granularity) || !['ALL','ACTIVE_PAYMENT','AUTO_RENEWAL','API'].includes(income)) return errorResponse('趋势筛选无效');
   if (deviceType && (platform !== 'app' || !['ios','android'].includes(deviceType))) return errorResponse('设备筛选无效');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(analysis) || Number.isNaN(Date.parse(analysis))) return errorResponse('业务周无效');
-  const endDate = p.get('endDate') || shiftDate(analysis,6);
+  const watermark = await queryRows(env, `SELECT MAX(period) AS latest FROM pollo_da_fact_rows_read WHERE dataset='pay_type' AND dataset_kind='daily' AND platform=? AND (attribution_type=? OR (?='NONE' AND attribution_type IS NULL))${deviceType ? ' AND device_type=?' : ''}`, platform, attributionType, attributionType, ...(deviceType ? [deviceType] : []));
+  const latest = asText(watermark[0]?.latest);
+  if (!latest) return json({ granularity, startDate: '', endDate: '', points: [], series: [] });
+  const endDate = [p.get('endDate') || latest, latest].sort()[0];
   const monthStart = (value:string) => value.slice(0,7)+'-01';
-  const shiftMonth = (value:string,n:number) => { const d=new Date(monthStart(value)+'T00:00:00Z');d.setUTCMonth(d.getUTCMonth()+n);return d.toISOString().slice(0,10); };
-  const startDate = p.get('startDate') || (granularity==='day' ? shiftDate(endDate,-29) : granularity==='week' ? shiftDate(analysis,-84) : granularity==='year' ? endDate.slice(0,4)+'-01-01' : shiftMonth(endDate,-2));
+  const startDate = p.get('startDate') || shiftDate(endDate,-29);
   if (![startDate, endDate].every((date) => /^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date))) || startDate > endDate) return errorResponse('趋势日期范围无效');
   // Only date/source membership is needed here. Reading every SKU/model row for
   // a whole year overloads D1 before the actual grouped revenue query runs.
@@ -1546,20 +1548,23 @@ async function chainFunnel(env: Env, request: Request) {
   const endDate = url.searchParams.get('endDate') || '';
   const baselinePeriod = url.searchParams.get('baselinePeriod') || '';
   const analysisPeriod = url.searchParams.get('analysisPeriod') || '';
+  const mode = url.searchParams.get('mode') || 'week';
+  if (!['day', 'week'].includes(mode)) return errorResponse('链路比较模式无效');
+  const periodKey = mode === 'day' ? 'period' : 'week_start';
   const creationTier = url.searchParams.get('creationTier') || undefined;
   const userLifecycle = url.searchParams.get('userLifecycle') || undefined;
   if (!DASHBOARD_PLATFORMS.has(platform)) return errorResponse('platform 必须是 all / web / app 之一');
   if (![startDate, endDate, baselinePeriod, analysisPeriod].every((value) => /^\d{4}-\d{2}-\d{2}$/u.test(value))) {
     return errorResponse('支付链路比较窗口无效');
   }
-  if (baselinePeriod === analysisPeriod) return errorResponse('请选择两个不同的业务周');
+  if (baselinePeriod >= analysisPeriod) return errorResponse('基准日期必须早于分析日期');
   const unavailable = () => json({ ready: false, source: 'unavailable', comparison: null, totals: null, drivers: [], tiers: [], lifecycles: [], countries: [], breakdowns: { EXPOSE_TYPE: [], EXPOSE_REASON: [], SUBMIT_CHANNEL: [], PAYMENT_CHANNEL: [] } });
   try {
-    const conditions = ['period BETWEEN ? AND ?', 'week_start IN (?, ?)'];
+    const conditions = ['period BETWEEN ? AND ?', `${periodKey} IN (?, ?)`];
     const binds: unknown[] = [startDate, endDate, baselinePeriod, analysisPeriod];
     if (platform !== 'all') { conditions.push('platform = ?'); binds.push(platform); }
     if (deviceType) { conditions.push('device_type = ?'); binds.push(deviceType); }
-    const calendar = matchedComparisonCalendar(await queryRows(env, `SELECT DISTINCT period, week_start FROM pollo_da_chain_funnel WHERE ${conditions.join(' AND ')}`, ...binds), baselinePeriod, analysisPeriod);
+    const calendar = matchedComparisonCalendar(await queryRows(env, `SELECT DISTINCT period, ${periodKey} AS week_start FROM pollo_da_chain_funnel WHERE ${conditions.join(' AND ')}`, ...binds), baselinePeriod, analysisPeriod);
     if (creationTier && creationTier !== 'all') { conditions.push('creation_cnt_30d_label = ?'); binds.push(creationTier); }
     if (userLifecycle && userLifecycle !== 'all') { conditions.push("COALESCE(NULLIF(TRIM(user_lifecycle), ''), '未知') = ?"); binds.push(userLifecycle); }
     const where = conditions.join(' AND ');
@@ -1567,7 +1572,7 @@ async function chainFunnel(env: Env, request: Request) {
       queryRows(env, `
         SELECT
           period,
-          week_start,
+          ${periodKey} AS week_start,
           platform,
           device_type,
           country_tier,
@@ -1588,7 +1593,7 @@ async function chainFunnel(env: Env, request: Request) {
       queryRows(env, `
         SELECT
           period,
-          week_start,
+          ${periodKey} AS week_start,
           breakdown_type,
           ${BREAKDOWN_VALUE_SQL} AS breakdown_value,
           SUM(expose_uv) AS expose_uv,
@@ -3081,7 +3086,7 @@ export async function dailyDataRefresh(env: Env, start = false, force = false) {
     const date = shiftDate(day,-1);
     const ads = [1,2,3,7,14,30,60,90,180].map(age=>shiftDate(date,-age));
     const creation = [...new Set([...Array.from({length:4},(_,i)=>shiftDate(date,-i)),shiftDate(date,-7),shiftDate(date,-30)])];
-    const fresh: RefreshBatch = {day,tasks:['facts:'+LIGHT_SYNC_DATASETS.join(','),'actions',...(['pay_type','chain'].map(d=>'facts:'+d)),...ads.filter(d=>d!==date).map(d=>'ads:'+d),...creation.filter(d=>d!==date).map(d=>'creation:'+d)],cursor:0,status:'running'};
+    const fresh: RefreshBatch = {day,tasks:['facts:'+LIGHT_SYNC_DATASETS.join(','),'actions',...(['pay_type','chain','creative'].map(d=>'facts:'+d)),...ads.filter(d=>d!==date).map(d=>'ads:'+d),...creation.filter(d=>d!==date).map(d=>'creation:'+d)],cursor:0,status:'running'};
     // A delayed previous day must not make us miss today's 09:20 start. Manual
     // retries resume the failed cursor; already successful work is not restarted.
     await env.DB.prepare(`INSERT INTO daily_refresh_batches(day,payload,updated_at) VALUES(?,?,?)

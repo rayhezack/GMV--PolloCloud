@@ -39,7 +39,7 @@ export default function ActiveProcess({
   currentPoint?: OverviewTrendPoint;
   baselinePoint?: OverviewTrendPoint;
 }) {
-  const [mode, setMode] = useState<'payment' | 'chain'>('payment');
+  const [mode, setMode] = useState<'payment' | 'chain' | 'renewal'>('payment');
   const [retry, setRetry] = useState(0),
     [pairPending, setPairPending] = useState(false),
     [pairFailed, setPairFailed] = useState(false);
@@ -56,7 +56,7 @@ export default function ActiveProcess({
   const baseline = alert?.baselinePeriod ?? shiftDay(date, -7),
     scope = alert?.platform ?? platform;
   const contextMetric = alert?.metric ?? metric,
-    chainType = contextMetric === 'renewalGmv' ? 'renewal' : 'active';
+    chainType = mode === 'renewal' ? 'renewal' : 'active';
   const differentScope = scope !== platform || baseline !== shiftDay(date, -7);
   const contextKey = `${deviceType || 'app'}:${scope}:${date}:${baseline}:${chainType}:${refreshToken}:${retry}`;
   useEffect(() => {
@@ -131,26 +131,15 @@ export default function ActiveProcess({
     };
   }, [contextKey]);
   const payments = paymentChanges(current, previous, contextMetric);
-  const extras =
-    contextMetric === 'totalGmv' && current && previous
-      ? {
-          renewal: current.renewalGmv - previous.renewalGmv,
-          other:
-            current.totalGmv -
-            current.activeGmv -
-            current.renewalGmv -
-            (previous.totalGmv - previous.activeGmv - previous.renewalGmv),
-        }
-      : undefined;
   const sources =
-    mode === 'payment' ? payments : comparison && loadedKey === contextKey ? chainChanges(comparison, extras) : null;
+    mode === 'payment' ? payments : comparison && loadedKey === contextKey ? chainChanges(comparison) : null;
   const total =
     mode === 'payment'
       ? current && previous
         ? current[contextMetric] - previous[contextMetric]
         : null
       : loadedKey === contextKey && comparison?.ready && comparison.total
-        ? comparison.total.delta + (extras?.renewal ?? 0) + (extras?.other ?? 0)
+        ? comparison.total.delta
         : null;
   const chainHref = chainContextHref({
     platform: scope,
@@ -162,39 +151,44 @@ export default function ActiveProcess({
   return (
     <div className="home-attribution">
       <div className="home-source-header">
-        <Segment<'payment' | 'chain'>
+        <Segment<'payment' | 'chain' | 'renewal'>
           label="变化来源"
           value={mode}
           onChange={setMode}
           items={[
             { value: 'payment', label: '付费类型' },
             { value: 'chain', label: '支付链路' },
+            { value: 'renewal', label: '续订链路' },
           ]}
         />
         <InfoTip>
           金额为相应窗口的绝对 GMV 变化。支付链路使用线上 LMDI；未归因差额单列。弧长与贡献度均以净变化为基准，超过 100%
-          时弧线封顶；正负方向由金额与颜色表达。净变化为零时不计算占比。不表示因果。大盘模式额外列出续订与其他收入，主动链路只分解主动付费。
+          时弧线封顶；正负方向由金额与颜色表达。净变化为零时不计算占比。不表示因果。支付链路仅拆解主动付费；续订链路仅拆解自动续订，各自保留未归因差额。
         </InfoTip>
       </div>
       <div className="home-source-context">
         {scope === 'all' ? '全端' : scope === 'web' ? 'Web' : 'App'} ·{' '}
-        {{ totalGmv: '大盘 GMV', activeGmv: '主动付费', renewalGmv: '自动续订' }[contextMetric]}
+        {
+          { totalGmv: '大盘 GMV', activeGmv: '主动付费', renewalGmv: '自动续订' }[
+            mode === 'payment' ? contextMetric : mode === 'renewal' ? 'renewalGmv' : 'activeGmv'
+          ]
+        }
         <span>
           {shortDay(date)} / {shortDay(baseline)}
         </span>
       </div>
       {loading ||
-      (mode === 'chain' && (pending || (loadedKey !== contextKey && !failed))) ||
+      (mode !== 'payment' && (pending || (loadedKey !== contextKey && !failed))) ||
       (mode === 'payment' && pairPending) ? (
         <PanelState state="loading" />
       ) : !sources || total == null || !sources.length ? (
         <PanelState
-          state={(mode === 'chain' ? failed : pairFailed) ? 'error' : 'empty'}
+          state={(mode !== 'payment' ? failed : pairFailed) ? 'error' : 'empty'}
           onRetry={() => setRetry((v) => v + 1)}
           reason={
-            (mode === 'chain' ? failed : pairFailed)
+            (mode !== 'payment' ? failed : pairFailed)
               ? '变化来源读取失败，请重试'
-              : mode === 'chain'
+              : mode !== 'payment'
                 ? comparison?.reason || '链路快照未覆盖该日期'
                 : '付费类型快照未覆盖该日期'
           }
@@ -207,7 +201,7 @@ export default function ActiveProcess({
           sourcesTitle="GMV 贡献"
           sourcesDescription=""
           summaryLabel="GMV 净变化"
-          initialVisibleSources={3}
+          initialVisibleSources={mode === 'chain' ? 5 : 3}
           sources={sources}
           value={total}
           netDelta={total}

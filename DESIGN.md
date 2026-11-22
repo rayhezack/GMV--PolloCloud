@@ -240,7 +240,7 @@ components:
 
 #### GMV 趋势（首页）
 
-每日监测页由四等宽 KPI、趋势/异动两列和日历/每日动态两列组成。KPI 是大盘 GMV、主动付费、自动续订、续订率；大盘和主动付费仅在真实订单数据存在时切换金额/订单。ellipsis 点击展开 ActionNode，hover 不展开；导出先进入长表/宽表明细弹窗，CSV 下载在弹窗内。季度日历覆盖 90 天，业务周列/星期行，格内无日期数字；hover/focus 读日期、金额、比较与动作数，点击日期更新右侧动态。
+每日监测页由四等宽 KPI、趋势/异动两列和日历/每日动态两列组成。KPI 是大盘 GMV、主动付费、自动续订、续订率；大盘和主动付费仅在真实订单数据存在时切换金额/订单。ellipsis 点击展开 ActionNode，hover 不展开；导出先进入长表/宽表明细弹窗，CSV 下载在弹窗内。日历跟随页头所选日期范围，业务周列/星期行，格内无日期数字；hover/focus 读日期、金额、比较与动作数，点击日期更新右侧动态。
 
 - 模块：PageHeader、HomeKpis、Cash Flow 趋势、BudgetChart 当日构成、HomeSignals/诊断报告、GMV 日历、产品动作、长宽表弹窗、铃铛更新入口。
 
@@ -252,7 +252,7 @@ components:
 
 #### 支付链路
 
-先选人群，再拆收入；主动链路注册新/老/未知为一级，创作分层默认收起。人群及子层的 GMV 变化贡献使用共同根合计增量分母，零分母显示不可计算。LMDI 表的变化率在 GMV 贡献之前，Table2 明细入口先打开 960px ChainDetails，再从弹窗内导出 CSV；Escape 关闭并恢复触发点焦点。下排诊断表与白色金字塔结论并排。提交支付率拆为“支付效率”“提交结构”，展示整体 pp 变化及占整体净率变化的份额；负值与超过 100% 合法，净变化零时无份额，未解释影响单列。删除诊断 header 的重复公式，但保留 InfoTip 定义与 cell 中数量；结论使用 Kubai file-chart，核查使用 search，保持白底。
+先选人群，再拆收入；主动链路注册新/老/未知为一级，创作分层默认收起。人群及子层的 GMV 变化贡献使用共同根合计增量分母，零分母显示不可计算。LMDI 表的变化率在 GMV 贡献之前，Table2 明细入口先打开 960px ChainDetails，再从弹窗内导出 CSV；Escape 关闭并恢复触发点焦点。单日和业务周复用同一下钻诊断；下排诊断表与白色金字塔结论并排。提交支付率拆为“支付效率”“提交结构”，展示整体 pp 变化及占整体净率变化的份额；负值与超过 100% 合法，净变化零时无份额，未解释影响单列。删除诊断 header 的重复公式，但保留 InfoTip 定义与 cell 中数量；结论使用 Kubai file-chart，核查使用 search，保持白底。
 
 - 模块：PageHeader、单日/业务周比较、PopulationPicker、LmdiTable、FactorTrend、诊断证据 DataTable、DiagnosticConclusion、ChainDetails/CSV。
 

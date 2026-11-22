@@ -18,6 +18,7 @@ const diagnosticCount = (value: number) =>
     : count(value);
 export default function ChainDiagnostics({
   factorKey,
+  mode = 'week',
   platform,
   deviceType,
   baseline,
@@ -27,6 +28,7 @@ export default function ChainDiagnostics({
   creationTier,
 }: {
   factorKey: string;
+  mode?: 'day' | 'week';
   platform: DashboardPlatform;
   deviceType?: 'ios' | 'android';
   baseline: string;
@@ -45,12 +47,13 @@ export default function ChainDiagnostics({
     setData(null);
     setError('');
     void getChainFunnel({
+      mode,
       platform,
       deviceType,
       baselinePeriod: baseline,
       analysisPeriod: analysis,
       startDate: baseline,
-      endDate: shiftDay(analysis, 6),
+      endDate: mode === 'day' ? analysis : shiftDay(analysis, 6),
       cacheBust: revision + retry,
       userLifecycle: lifecycle,
       creationTier,
@@ -64,7 +67,7 @@ export default function ChainDiagnostics({
     return () => {
       live = false;
     };
-  }, [platform, deviceType, baseline, analysis, revision, retry, lifecycle, creationTier]);
+  }, [mode, platform, deviceType, baseline, analysis, revision, retry, lifecycle, creationTier]);
   const dimension =
     factorKey === 'subExposeRate' ? 'exposure' : factorKey === 'chainPaySuccessRate' ? payDimension : 'country';
   const submission = factorKey === 'subSubmitRate';
@@ -198,6 +201,7 @@ export default function ChainDiagnostics({
                   <PeriodHeading
                     label={`基准期${submission ? '提交率' : '提交支付率'}`}
                     dates={data.comparisonDates?.baseline}
+                    mode={mode}
                   />
                 ),
                 numeric: true,
@@ -217,6 +221,7 @@ export default function ChainDiagnostics({
                   <PeriodHeading
                     label={`分析期${submission ? '提交率' : '提交支付率'}`}
                     dates={data.comparisonDates?.analysis}
+                    mode={mode}
                   />
                 ),
                 numeric: true,
@@ -262,6 +267,7 @@ export default function ChainDiagnostics({
             metric={metricLabel}
             dimension={dimensionLabel}
             dates={data.comparisonDates}
+            mode={mode}
           />
         </>
       ) : (

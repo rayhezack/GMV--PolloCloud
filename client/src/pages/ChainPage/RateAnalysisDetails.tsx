@@ -11,6 +11,7 @@ export function RateAnalysisDetails({
   metric,
   dimension,
   dates,
+  mode = 'week',
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -18,6 +19,7 @@ export function RateAnalysisDetails({
   metric: string;
   dimension: string;
   dates?: { baseline: string[]; analysis: string[] };
+  mode?: 'day' | 'week';
 }) {
   const submission = metric === '付费墙提交率';
   const efficiency = submission ? '提交效率' : '支付效率',
@@ -94,14 +96,14 @@ export function RateAnalysisDetails({
             { key: 'label', header: dimension, minWidth: 86, render: (r) => r.label },
             {
               key: 'rate0',
-              header: <PeriodHeading label={`基准期${metric}`} dates={dates?.baseline} />,
+              header: <PeriodHeading label={`基准期${metric}`} dates={dates?.baseline} mode={mode} />,
               numeric: true,
               minWidth: 112,
               render: (r) => rate(r.rate0),
             },
             {
               key: 'rate1',
-              header: <PeriodHeading label={`分析期${metric}`} dates={dates?.analysis} />,
+              header: <PeriodHeading label={`分析期${metric}`} dates={dates?.analysis} mode={mode} />,
               numeric: true,
               minWidth: 112,
               render: (r) => rate(r.rate1),

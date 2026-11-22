@@ -63,6 +63,7 @@ export async function getCreativeOverview(params: {
 }
 
 export async function getChainFunnel(params: {
+  mode?: 'day' | 'week';
   platform: DashboardPlatform;
   deviceType?: AppDeviceType;
   startDate: string;

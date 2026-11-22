@@ -48,7 +48,7 @@ test('registration trend API conserves matched payments, isolates payment platfo
 });
 
 
-test('year payment trend reads January through the analysis window and uses actual monthly day denominators',async()=>{
+test('year aggregation defaults to the latest observed month and honors an explicit historical start',async()=>{
  const directory=mkdtempSync(join(tmpdir(),'payment-year-')),db=new DatabaseSync(':memory:');
  try{
   for(const file of ['0009_pollo_da_analytics.sql','0010_pay_type_subscription_tier.sql','0011_middle_table_dimensions.sql','0018_payment_product_dimensions.sql','0022_single_payment_facts.sql'])db.exec(sql(file));
@@ -60,8 +60,10 @@ test('year payment trend reads January through the analysis window and uses actu
   const request=new Request('https://example.com/api/dashboard/payment-trend?platform=web&analysisPeriod=2026-01-27&granularity=year&income=ALL');
   const response=await worker.fetch(request,{DB:adapter},{waitUntil(){}});
   const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));
-  assert.equal(result.startDate,'2026-01-01');assert.equal(result.endDate,'2026-02-02');
-  assert.deepEqual(result.points.map(p=>[p.period,p.days,p.gmvUsd]),[['2026-01-01',2,40],['2026-02-01',2,200]]);
-  assert.deepEqual(result.series[0].points.map((p,i)=>p.gmvUsd/result.points[i].days),[20,100]);
+  assert.equal(result.startDate,'2026-01-05');assert.equal(result.endDate,'2026-02-03');
+  assert.deepEqual(result.points.map(p=>[p.period,p.days,p.gmvUsd]),[['2026-01-01',0,null],['2026-02-01',3,1100]]);
+  assert.equal(result.series[0].points[1].gmvUsd/result.points[1].days,1100/3);
+  const historical=await (await worker.fetch(new Request(request.url+'&startDate=2026-01-01'),{DB:adapter},{waitUntil(){}})).json();
+  assert.deepEqual(historical.points.map(p=>[p.period,p.days,p.gmvUsd]),[['2026-01-01',2,40],['2026-02-01',3,1100]]);
  }finally{db.close();rmSync(directory,{recursive:true,force:true});}
 });

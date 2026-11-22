@@ -14,11 +14,8 @@ import type { AppDeviceType, DashboardPlatform, GmvAttributionType, PaymentTrend
 import { entityLabel, type PaymentGrouping, type RevenueScope } from './payment-analysis.data';
 import LoadingWave from './LoadingWave';
 import { Segment } from '@/components/v62/primitives';
-import { LOCAL_DATA_WINDOW } from '@/lib/local-data-window';
 
-const ranges = LOCAL_DATA_WINDOW
-  ? { day: '近 30 天', week: '近 30 天', month: '近 30 天' }
-  : { day: '近 30 天', week: '近 13 周', month: '近 3 月' };
+const ranges = { day: '近 30 天', week: '近 30 天', month: '近 30 天' };
 export default function PaymentTrend({
   platform,
   deviceType,
@@ -66,7 +63,6 @@ export default function PaymentTrend({
       analysisPeriod,
       attributionType: mode,
       granularity,
-      startDate: granularity === 'year' ? `${analysisPeriod.slice(0, 4)}-01-01` : undefined,
       income: scope,
       groupBy: grouping,
       cacheBust: refreshToken || retry || undefined,

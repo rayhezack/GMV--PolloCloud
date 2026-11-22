@@ -374,7 +374,8 @@
 [data-page='gmv-trend'] .gmv-heatmap-body {
   display: grid;
   width: 100%;
-  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-columns: 24px minmax(calc(var(--gmv-weeks) * 32px), 1fr);
+  overflow-x: auto;
   gap: var(--space-8);
   margin: var(--space-16) 0;
 }

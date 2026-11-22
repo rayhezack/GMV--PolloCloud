@@ -117,7 +117,7 @@ export default function OverviewPage() {
       platform,
       deviceType,
       granularity: 'day',
-      startDate: shiftDay(startDate < shiftDay(endDate, -89) ? startDate : shiftDay(endDate, -89), -7),
+      startDate: shiftDay(startDate, -7),
       endDate,
       cacheBust: revision,
     })
@@ -136,7 +136,7 @@ export default function OverviewPage() {
   }, [platform, deviceType, startDate, endDate, revision]);
   const visibleDays = rows.filter((row) => row.period >= startDate && row.period <= endDate);
   const candidate = params.get('focusPeriod') || params.get('selectedDay');
-  const selectedDay = rows.some((row) => row.period === candidate && row.period >= shiftDay(endDate, -89))
+  const selectedDay = rows.some((row) => row.period === candidate && row.period >= startDate && row.period <= endDate)
     ? candidate!
     : visibleDays.at(-1)?.period || endDate;
   const current = rows.find((row) => row.period === selectedDay);
