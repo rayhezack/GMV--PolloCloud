@@ -69,7 +69,7 @@ export async function fetchProductActions(readPage: PageReader): Promise<ActionR
 
 export async function syncProductActions(db: Database, readPage: PageReader, { force = false, now = Date.now(), scheduled = false } = {}) {
   const date = shanghaiDay(now), lease = crypto.randomUUID();
-  const scheduledAt = Date.parse(`${date}T09:10:00+08:00`);
+  const scheduledAt = Date.parse(`${date}T09:20:00+08:00`);
   if (scheduled && !force && now < scheduledAt) return { status: 'skipped', reason: 'before-daily-update' };
   const claim = await db.prepare(`UPDATE product_action_sync_state SET lease_id = ?, lease_until = ?
     WHERE id = 1 AND lease_until < ? AND (? = 1 OR sync_date IS NULL OR sync_date <> ? OR synced_at < ?) RETURNING id`)

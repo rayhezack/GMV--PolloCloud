@@ -1,0 +1,551 @@
+/* Adapted from Astryx table-inbox's index + reading-pane layout; existing app shell retained. */
+.chain-page .sys-page-header {
+  align-items: center;
+}
+.chain-date-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+.chain-day-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  background: transparent;
+  border: 0;
+  padding: var(--space-8);
+  border-radius: var(--radius-element);
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+.chain-day-picker:hover {
+  background: var(--selected);
+}
+.chain-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  align-items: start;
+}
+.chain-lmdi-panel {
+  padding: var(--space-24) var(--space-16);
+  min-width: 0;
+}
+.chain-evidence {
+  border-left: 1px solid var(--line);
+  min-width: 0;
+}
+.chain-evidence > .v62-trend-panel {
+  padding: var(--space-24) var(--space-16);
+  border-bottom: 1px solid var(--line);
+}
+.chain-evidence .sys-panel-header .astryx-hstack {
+  flex-wrap: wrap;
+}
+.chain-evidence .sys-panel-header .astryx-toolbar {
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+.chain-evidence .sys-panel-header h2 {
+  white-space: normal;
+}
+.chain-lmdi-panel .v62-explain-warning {
+  margin-bottom: var(--space-12);
+}
+.chain-page .sys-data-table table {
+  width: 100%;
+  table-layout: auto;
+}
+.chain-lmdi-panel .sys-data-table {
+  margin: 0 calc(-1 * var(--space-8));
+}
+.chain-page .sys-data-table :is(th, td) {
+  padding: 0 var(--space-8);
+  font-size: var(--fs-meta);
+}
+.chain-page .sys-data-table th {
+  height: 36px;
+  color: var(--text-2);
+  background: var(--surface);
+}
+.chain-page .sys-table-cell {
+  padding: var(--space-12) 0;
+  white-space: nowrap;
+}
+.chain-page .sys-data-table tr:has([data-kind='total']) td {
+  background: var(--surface-sunken);
+}
+.chain-page .sys-data-table tr:has([data-kind='residual']) td {
+  background: var(--surface-sunken);
+}
+.chain-page .sys-data-table tr:has(.chain-factor[data-selected='true']) td {
+  background: var(--selected);
+}
+.chain-page .sys-data-table tr:has(.chain-factor[data-selected='true']) td:first-child {
+  box-shadow: inset 2px 0 var(--accent);
+}
+.chain-factor {
+  background: transparent;
+  border: 0;
+  color: var(--text-1);
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: 24px;
+  text-align: left;
+}
+.chain-factor > span {
+  color: var(--text-2);
+}
+.chain-page [data-effect='positive'] {
+  color: var(--positive);
+}
+.chain-page [data-effect='negative'] {
+  color: var(--negative);
+}
+.chain-page [data-effect='residual'],
+.chain-page [data-effect='neutral'] {
+  color: var(--text-2);
+}
+.chain-page .sys-diverging {
+  gap: var(--space-4);
+  font-size: var(--fs-meta);
+}
+.chain-page .sys-diverging-track {
+  width: 80px;
+  flex-basis: 80px;
+}
+.chain-page .sys-diverging b {
+  min-width: 52px;
+}
+.chain-strata {
+  border-top: 1px solid var(--line);
+  margin-top: var(--space-24);
+  padding-top: var(--space-16);
+}
+.chain-strata .sys-data-table {
+  max-height: none;
+}
+.chain-strata .sys-table-cell[data-first='true'] {
+  padding-left: var(--space-8);
+}
+.chain-small-toggle {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: var(--surface-sunken);
+  color: var(--text-2);
+  padding: var(--space-12);
+  font: inherit;
+  font-size: var(--fs-meta);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-element);
+  margin-top: var(--space-8);
+}
+.chain-small-toggle:hover {
+  background: var(--selected);
+}
+.chain-evidence .v62-diagnostics {
+  padding: var(--space-16);
+  border: 0;
+}
+.chain-diagnostic-controls {
+  padding-bottom: var(--space-12);
+  overflow: auto;
+}
+.chain-diagnostic-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) 0;
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+}
+.chain-empty-tools {
+  padding: var(--space-16) var(--space-24);
+}
+@media (max-width: 1100px) {
+  .chain-page .sys-page-tools {
+    gap: var(--space-8);
+  }
+  .chain-workspace {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+  .chain-date-tools {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 850px) {
+  .chain-workspace {
+    grid-template-columns: 1fr;
+  }
+  .chain-evidence {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    grid-row: 1;
+  }
+}
+.chain-strata .sys-table-cell[data-first='true'] {
+  white-space: normal;
+  line-height: 1.5;
+}
+.chain-page .sys-table-cell {
+  font-size: var(--fs-body);
+}
+/* Finance Overview: native chart mechanics adapted to the dashboard's light surface. */
+.chain-evidence > .chain-finance-chart {
+  padding: var(--space-24) var(--space-16);
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  gap: var(--space-12);
+  background: var(--surface);
+  font-family: inherit;
+  overflow: visible;
+}
+.chain-finance-chart .sys-panel-header {
+  margin: 0;
+}
+.chain-finance-plot {
+  position: relative;
+  min-width: 0;
+}
+.chain-finance-grid {
+  stroke: var(--line);
+  stroke-dasharray: 3 4;
+}
+.chain-finance-scrub {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  border-radius: var(--radius-element);
+}
+.chain-finance-scrub:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.chain-finance-tooltip {
+  position: absolute;
+  top: 8px;
+  z-index: 5;
+  pointer-events: none;
+  width: 200px;
+  padding: var(--space-12);
+  background: var(--surface);
+  box-shadow: var(--shadow-popover);
+  border-radius: var(--radius-element);
+}
+.chain-finance-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-8);
+  align-items: end;
+  font-variant-numeric: tabular-nums;
+}
+.chain-finance-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+.chain-finance-summary span {
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+}
+.chain-finance-summary strong {
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.chain-finance-summary b {
+  font-weight: 500;
+  font-size: var(--fs-body);
+}
+.chain-lifecycle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text-1);
+  cursor: pointer;
+  min-height: 24px;
+}
+.chain-lifecycle > span {
+  color: var(--text-2);
+}
+.chain-creation-child {
+  display: block;
+  padding-left: var(--space-24);
+  color: var(--text-2);
+}
+.chain-reading {
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  padding: var(--space-16) 0 0;
+  margin-top: var(--space-16);
+  color: var(--text-1);
+  font-size: var(--fs-body);
+  line-height: 1.65;
+}
+.chain-reading > strong {
+  display: block;
+  font-size: var(--fs-panel);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.chain-reading p {
+  margin: var(--space-8) 0 0;
+}
+.chain-reading-facts {
+  margin-top: var(--space-16);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: var(--space-8);
+}
+.chain-reading-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+.chain-reading-facts b {
+  white-space: nowrap;
+  font-weight: 500;
+}
+.chain-reading-effects {
+  display: flex;
+  gap: var(--space-16);
+  padding: var(--space-12) 0;
+  margin-top: var(--space-12);
+  border-block: 1px solid var(--line);
+}
+.chain-reading-effects > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.chain-reading-effects span,
+.chain-reading-note {
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+}
+@media (max-width: 1150px) {
+  .chain-finance-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+  .chain-finance-summary > div:first-child {
+    grid-column: 1/-1;
+  }
+}
+.chain-finance-chart {
+  color: var(--text-1);
+}
+.chain-finance-chart .v62-axis-text {
+  font-family: inherit;
+  fill: var(--text-2);
+}
+
+.chain-reading ol {
+  margin: var(--space-12) 0 0;
+  padding-left: var(--space-16);
+}
+.chain-reading li + li {
+  margin-top: var(--space-12);
+}
+.chain-scope-toolbar {
+  padding: var(--space-16) var(--space-24) 0;
+}
+.chain-populations {
+  padding: var(--space-16) var(--space-24);
+  border-bottom: 1px solid var(--line);
+}
+.chain-population-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.chain-population-label[data-child='true'] {
+  padding-left: var(--space-24);
+}
+.chain-population-select,
+.chain-population-toggle {
+  padding: var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  cursor: pointer;
+}
+.chain-population-select {
+  flex: 1;
+  text-align: left;
+}
+.chain-population-label[data-selected='true'] .chain-population-select {
+  font-weight: 600;
+  color: var(--accent);
+}
+.chain-populations tr:has(.chain-population-label[data-selected='true']) {
+  background: var(--selected);
+}
+.chain-populations .sys-table-cell {
+  padding-block: var(--space-8);
+}
+
+.chain-day-picker:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  background: var(--selected);
+}
+
+.chain-population-tiers .v62-button {
+  display: inline-flex;
+  align-items: center;
+}
+.chain-channel-atom {
+  display: grid;
+  gap: var(--space-4);
+}
+.chain-channel-atom b {
+  font-weight: 500;
+}
+.chain-channel-atom small {
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  white-space: nowrap;
+}
+
+/* Decomposition and trend share a row; the diagnosis uses the whole next row. */
+.chain-page .chain-workspace {
+  background: var(--surface);
+  gap: 0;
+  align-items: stretch;
+}
+.chain-page .chain-evidence {
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+}
+.chain-evidence > .chain-finance-chart {
+  border-bottom: 0;
+}
+.chain-workspace > .v62-diagnostics {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--line);
+  padding: var(--space-24);
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  column-gap: var(--space-24);
+  align-items: start;
+}
+.chain-workspace > .v62-diagnostics > .sys-panel-header {
+  grid-column: 1 / -1;
+}
+.chain-workspace > .v62-diagnostics > .sys-data-table {
+  min-width: 0;
+}
+.chain-workspace > .v62-diagnostics > .chain-reading {
+  margin: 0;
+  padding: 0 0 0 var(--space-24);
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--surface);
+  position: sticky;
+  top: var(--space-24);
+}
+@media (max-width: 850px) {
+  .chain-workspace > .v62-diagnostics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .chain-workspace > .v62-diagnostics > .chain-reading {
+    padding: var(--space-16) 0 0;
+    margin-top: var(--space-16);
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+
+.chain-reading > strong {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+}
+.chain-reading-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.chain-reading-check .workbench-icon {
+  width: 20px;
+  height: 20px;
+  flex-basis: 20px;
+}
+.chain-detail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-16);
+  margin-bottom: var(--space-16);
+}
+.chain-detail-table .astryx-table-scroll-wrapper {
+  width: 100%;
+  margin: 0;
+}
+.chain-detail-table .sys-data-table {
+  min-width: 0;
+}
+
+.chain-reading ol {
+  padding: 0;
+  list-style: none;
+}
+.chain-reading li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: var(--space-8);
+}
+.chain-reading li > .workbench-icon {
+  width: 20px;
+  height: 20px;
+  flex-basis: 20px;
+  margin-top: 2px;
+}
+.rate-analysis-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-24);
+  padding-block: var(--space-16);
+  margin-bottom: var(--space-16);
+  border-bottom: 1px solid var(--line);
+}
+.rate-analysis-summary > div {
+  display: grid;
+  gap: var(--space-8);
+}
+.rate-analysis-summary span {
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+.rate-analysis-summary b {
+  font-size: var(--fs-panel);
+  font-variant-numeric: tabular-nums;
+}
+.rate-analysis-table {
+  min-width: 0;
+}
+.rate-analysis-table .sys-table-cell {
+  font-size: var(--fs-meta);
+}
+
+.rate-analysis-table table { width: 100%; table-layout: fixed; }
+.rate-analysis-table :is(th, td) { padding-inline: var(--space-8); }
+.rate-analysis-table th { white-space: normal; }
+
+.rate-analysis-table .astryx-table-scroll-wrapper { width: 100%; }

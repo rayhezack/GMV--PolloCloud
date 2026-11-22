@@ -58,10 +58,11 @@ test('screenshot regression: unrecorded paid UV with zero submissions does not b
   assert.deepEqual(parent(d.groups),parent(rows));
 });
 
-test('invalid channel rate and exit are reconciled separately, not zero-filled or discarded',()=>{
+test('zero-denominator channel and exit are reconciled separately while positive denominators keep independent ratios',()=>{
   const rows=[segment('stable',[20,100],[18,90]),segment('unmatched',[5,0],[7,3]),segment('exiting',[2,10],[0,0])];
   const d=decomposeRate(rows,parent(rows),{separateUnresolved:true});assert.equal(d.valid,true);
-  assert.equal(d.groups.find(g=>g.key==='unmatched').rate1,null);
+  assert.equal(d.groups.find(g=>g.key==='unmatched').rate0,null);
+  close(d.groups.find(g=>g.key==='unmatched').rate1,7/3);
   assert.equal(d.groups.find(g=>g.key==='exiting').rate1,null);
   close(d.efficiency+d.structure+d.unresolved,d.delta);
   assert.equal(d.simpson,false);

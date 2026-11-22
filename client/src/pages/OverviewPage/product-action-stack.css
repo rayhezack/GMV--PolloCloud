@@ -1,0 +1,160 @@
+.product-action-stack {
+  min-width: 0;
+  margin-top: var(--space-8);
+}
+.product-action-viewport {
+  height: 324px;
+  overflow-y: auto;
+  overflow-x: clip;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+  border-radius: var(--radius-element);
+}
+.product-action-viewport:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.product-action-stage {
+  position: sticky;
+  top: 0;
+  height: 324px;
+  overflow: clip;
+  isolation: isolate;
+}
+.product-action-card {
+  position: absolute;
+  inset: 0 var(--space-8) auto;
+  transform-origin: center;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-container);
+  overflow: hidden;
+}
+.product-action-card[data-active='true'] {
+  background: var(--surface);
+  box-shadow: 0 5px 18px rgb(13 37 61 / 0.09);
+  z-index: 1;
+}
+.product-action-card > button {
+  width: 100%;
+  min-height: 46px;
+  padding: var(--space-8) var(--space-12);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+.product-action-card > button > span:not(.product-action-marker) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding-top: var(--space-4);
+}
+.product-action-card[data-active='true'] > button > span:not(.product-action-marker) {
+  white-space: normal;
+  font-weight: 600;
+}
+.product-action-card > button > svg {
+  flex: none;
+  margin-top: var(--space-4);
+}
+.product-action-card[data-active='true'] > button > svg {
+  transform: rotate(180deg);
+}
+/* Independent, static Kubai rocket marker; the selected card never recolors it. */
+.product-action-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  border-radius: var(--radius-full);
+  background: var(--selected);
+}
+.product-action-marker img {
+  width: 20px;
+  height: 20px;
+}
+.product-action-list {
+  display: grid;
+  gap: var(--space-8);
+}
+.product-action-list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  padding: var(--space-12) var(--space-8);
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-element);
+  font: inherit;
+}
+.product-action-list-item:hover {
+  background: var(--selected);
+}
+.product-action-list-item > span:not(.product-action-marker) {
+  flex: 1;
+  min-width: 0;
+}
+.product-action-list-item strong {
+  display: block;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.product-action-list-item small {
+  display: block;
+  margin-top: var(--space-4);
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+.product-action-list-item > svg {
+  flex: none;
+}
+.product-action-list-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.product-action-content {
+  padding: 0 var(--space-16) var(--space-12);
+}
+.product-action-content small {
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+.product-action-content p {
+  margin: var(--space-8) 0 0;
+  max-height: 112px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.product-action-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+}
+.product-action-footer > span {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+}

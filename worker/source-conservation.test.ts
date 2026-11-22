@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { assertCreationConservation, assertPaymentModeConservation } from './source-conservation.ts';
 
-const mode = (attribution_type: string, gmv_usd: number) => ({
+const mode = (attribution_type: string, gmv_usd: number | string) => ({
   period: '2026-11-06', platform: 'all', device_type: 'web', pay_type: '首订', attribution_type, gmv_usd,
 });
 
@@ -22,4 +22,16 @@ test('payment modes conserve to the cent and reject a one-cent drift', () => {
   const rows = ['NONE', 'CREATION_MODE', 'MODEL', 'ACTUAL_MODEL'].map(name => mode(name, 100.01));
   assert.doesNotThrow(() => assertPaymentModeConservation(rows));
   assert.throws(() => assertPaymentModeConservation([...rows.slice(0, 3), mode('ACTUAL_MODEL', 100)]), /不守恒/);
+});
+
+test('payment modes ignore Decimal-to-Number noise around half-cent boundaries', () => {
+  const cases = [
+    [7401.355, 7401.355, 7401.354999999999, 7401.355000000001],
+    [237.225, 237.225, 237.22500000000002, 237.22499999999997],
+    [61.875, 61.875, 61.87500000000001, 61.87499999999999],
+  ];
+  for (const values of cases) {
+    const rows = ['NONE', 'CREATION_MODE', 'MODEL', 'ACTUAL_MODEL'].map((name, index) => mode(name, values[index]));
+    assert.doesNotThrow(() => assertPaymentModeConservation(rows));
+  }
 });

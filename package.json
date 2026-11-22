@@ -7,7 +7,8 @@
     "dev": "vite --config vite.pollocloud.config.ts --host 127.0.0.1 --port 5189",
     "build": "vite build --config vite.pollocloud.config.ts && node scripts/prepare-pollocloud-dist.mjs",
     "type:check": "tsc --noEmit --project tsconfig.app.json",
-    "prebuild": "node scripts/prepare-report-skill.mjs"
+    "prebuild": "node scripts/prepare-report-skill.mjs",
+    "lint:design": "node scripts/lint-design.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",
@@ -43,7 +44,10 @@
     "react-aria-components": "^1.22.1",
     "reflect-metadata": "^0.1.14",
     "shadcn": "^4.23.0",
-    "tslib": "^2.8.1"
+    "tslib": "^2.8.1",
+    "@astryxdesign/core": "0.7.16",
+    "@astryxdesign/theme-neutral": "0.7.16",
+    "@stylexjs/stylex": "^0.19.2"
   },
   "devDependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -176,7 +180,8 @@
     "xlsx": "^0.18.5",
     "xlsx-js-style": "^1.2.0",
     "zod": "^3.25.76",
-    "zustand": "~5.0.8"
+    "zustand": "~5.0.8",
+    "@astryxdesign/cli": "0.7.16"
   },
   "overrides": {
     "dayjs": "^1.11.15"

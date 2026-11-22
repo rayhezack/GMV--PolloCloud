@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ShieldCheck, Trash2, UserPlus } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/activity-notifications';
 import { adminMembersApi } from '@/api';
 import { Button } from '@/components/ui/button';
 import {

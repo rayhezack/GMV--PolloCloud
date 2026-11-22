@@ -1,8 +1,10 @@
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuPortal } from '@/components/ui/dropdown-menu';
 import { WeekComparisonPicker } from '@/components/dashboard/WeekComparisonPicker';
 import DateRangePicker from '@/components/dashboard/DashboardDateRangePicker';
+import DailyActivityRail from '@/components/dashboard/DailyActivityRail';
 import { formatChartTooltipValue, formatChartTooltipChange } from "@/lib/chart-tooltip-format";
 import {
+  lazy,
   startTransition,
   useCallback,
   useEffect,
@@ -17,9 +19,6 @@ import {
 import dayjs from 'dayjs';
 import { Slide } from 'loading-dev';
 import { LOCAL_DATA_WINDOW, LOCAL_REVENUE_WINDOW } from '@/lib/local-data-window';
-import PaymentAnalysis from '@/components/dashboard/PaymentAnalysis';
-import { AdsDashboard, CreativeDashboard } from '@/components/dashboard/OperationalDashboards';
-import { ChainWorkbench } from '@/components/dashboard/ChainWorkbench';
 import { GlobalFinanceMarketComboChart } from '@/components/global-finance-market-combo-chart';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
@@ -137,8 +136,13 @@ import type {
   RenewalPlanTier,
   SyncRunStatus,
 } from '@shared/api.interface';
-import SyncControlBar from './SyncControlBar';
 import LoadingWave from '@/components/dashboard/LoadingWave';
+
+const PaymentAnalysis = lazy(() => import('@/components/dashboard/PaymentAnalysis'));
+const AdsDashboard = lazy(() => import('@/components/dashboard/OperationalDashboards').then(module => ({ default: module.AdsDashboard })));
+const CreativeDashboard = lazy(() => import('@/components/dashboard/OperationalDashboards').then(module => ({ default: module.CreativeDashboard })));
+const ChainWorkbench = lazy(() => import('@/components/dashboard/ChainWorkbench').then(module => ({ default: module.ChainWorkbench })));
+const SyncControlBar = lazy(() => import('./SyncControlBar'));
 
 gsap.registerPlugin(useGSAP);
 
@@ -208,42 +212,42 @@ const ACTIVE_PAYMENT_TREND_METRICS: TrendMetricSpec[] = [
     key: 'activeGmv',
     label: '主动付费GMV',
     valueLabel: '主动付费GMV',
-    color: '#5B3FF2',
+    color: 'var(--accent)',
     format: (value) => formatCurrency(value),
   },
   {
     key: 'dau',
     label: 'DAU',
     valueLabel: 'DAU',
-    color: '#5B3FF2',
+    color: 'var(--accent)',
     format: formatCompactNumber,
   },
   {
     key: 'paywallExposureRate',
     label: '付费墙曝光率',
     valueLabel: '曝光率',
-    color: '#5B3FF2',
+    color: 'var(--accent)',
     format: formatPercent,
   },
   {
     key: 'submitRate',
     label: '付费墙提交率',
     valueLabel: '提交率',
-    color: '#5B3FF2',
+    color: 'var(--accent)',
     format: formatPercent,
   },
   {
     key: 'payRate',
     label: '提交支付率',
     valueLabel: '提交支付率',
-    color: '#5B3FF2',
+    color: 'var(--accent)',
     format: formatPercent,
   },
   {
     key: 'aov',
     label: '客单价',
     valueLabel: '客单价',
-    color: '#5B3FF2',
+    color: 'var(--accent)',
     format: (value) => formatCurrency(value, false),
   },
 ];
@@ -253,28 +257,28 @@ const RENEWAL_TREND_METRICS: TrendMetricSpec[] = [
     key: 'renewalGmv',
     label: '续订 GMV',
     valueLabel: '续订 GMV',
-    color: '#5B3FF2',
+    color: 'var(--accent)',
     format: (value) => formatCurrency(value),
   },
   {
     key: 'expireUserCnt',
     label: '到期用户数',
     valueLabel: '到期用户数',
-    color: '#5B3FF2',
+    color: 'var(--accent)',
     format: formatCompactNumber,
   },
   {
     key: 'renewalRate',
     label: '续订率',
     valueLabel: '续订率',
-    color: '#5B3FF2',
+    color: 'var(--accent)',
     format: formatPercent,
   },
   {
     key: 'renewalAov',
     label: '续订客单价',
     valueLabel: '续订客单价',
-    color: '#5B3FF2',
+    color: 'var(--accent)',
     format: (value) => formatCurrency(value, false),
   },
 ];
@@ -305,7 +309,7 @@ const USER_TAG_OPTIONS = [
 
 const SURFACE_CARD_CLASS = 'dashboard-panel';
 const SELECT_TRIGGER_CLASS =
-  'rounded-full border-transparent bg-white text-gray-700 shadow-none transition-colors enabled:hover:bg-gray-50 focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-[#5b3ff2] data-[state=open]:border-transparent';
+  'rounded-full border-transparent bg-white text-gray-700 shadow-none transition-colors enabled:hover:bg-gray-50 focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-[var(--accent)] data-[state=open]:border-transparent';
 const SUBSURFACE_CLASS = 'rounded-2xl bg-white p-2';
 const FILTER_LABEL_CLASS = 'text-[11px] font-medium text-gray-500';
 const FILTER_PILL_CLASS =
@@ -885,19 +889,9 @@ function GmvCoverageExplanation({
         </section>
         <section id="method-lineage" className="dashboard-methodology-section">
           <h3>图表与数据源</h3>
-          <p>看板读取 D1 同步表，按页面所选端口、日期与业务周聚合；以下为每类图表的实际依赖，源表缺失或对账未通过时不推定缺失维度。</p>
-          <a href="/data-lineage.html" target="_blank" rel="noreferrer">查看完整血缘图</a>
-          <div className="dashboard-lineage-figure"><img src="/data-lineage-overview.svg" width="1280" height="720" alt="数据管道总览：MaxCompute 和飞书 Base 经独立同步进入 D1，再由 Worker API 聚合及校验后供看板读取" /></div>
-          <div className="dashboard-lineage-figure"><img src="/data-lineage-payment.svg" width="1280" height="720" alt="支付依赖图：GMV 与付费类型共享支付结果，注册拆分同时依赖支付结果对账和注册明细，支付链路独立读取漏斗及续订 cohort" /></div>
-          <div className="dashboard-lineage-figure"><img src="/data-lineage-operations.svg" width="1280" height="720" alt="创作与投放依赖图：功能表现和创作分层共享活跃事实，广告指标与 LTV 共用注册 cohort 事实" /></div>
-          <dl className="dashboard-methodology-definitions">
-            <div><dt>GMV 趋势与三张指标卡</dt><dd>MaxCompute 支付归因日表 → D1 pollo_da_fact_rows（pay_type，NONE 结果行）→ overview/payTypeTrend。卡片金额为展示范围内最新日期的单日值，WoW 与 7 天前同日比较；折线展示所选范围全部可用日期。收入趋势的支付结果线同源；付费墙等诊断线另读 pollo_da_chain_funnel，不混入卡片 GMV。</dd></div>
-            <div><dt>付费类型贡献与下钻</dt><dd>支付归因日表 → D1 pollo_da_fact_rows。结果汇总取 NONE 行；功能/模型归因分别取 CREATION_MODE、MODEL 或 ACTUAL_MODEL，不能跨模式相加。订单注册国家经数仓维表映射为 T1/T2/T3（清单外及未知归 T2），注册端取自支付订单，注册新老由订单关联账户注册日期计算 → pollo_da_payment_registration，按同口径订单结果核对后才展示。页面端筛选取支付端，注册端下钻用于区分同端与跨端付费。续订按 SKU、升级按前后 SKU、积分包按积分档位、周期重置按前后周期拆分；前值取同一订阅、同一支付端的上一笔有效实付，无法关联时为未知。</dd></div>
-            <div><dt>支付链路与自动续订</dt><dd>付费墙用户日表 → pollo_da_chain_funnel / pollo_da_chain_breakdown → 漏斗、驱动及触点下钻。续订 cohort 表 → pollo_da_fact_rows（renewal）→ 到期用户、续订率、续订客单价；到期 cohort GMV 与支付日续费 GMV 不能直接相减。</dd></div>
-            <div><dt>创作积极性与分层</dt><dd>创作功能链路日表 → pollo_da_creation_overall_daily / pollo_da_creation_function_daily → 指标卡、创作趋势、功能表现。行为日志和创作记录 → pollo_da_fact_rows（creative）→ 活跃 UV、渗透率及 30 日创作分层。创作 Tab 不展示链路表的 GMV，该字段不是本页支付结果。</dd></div>
-            <div><dt>广告投放</dt><dd>广告归因日表 → pollo_da_ads_daily → 点击、成本、注册、ROAS 卡片，国家与渠道周对比，以及注册 Cohort 的 LTV/CAC。国家表按当前选择的分析周指标降序；Cohort 收入按注册日归组，不等同于支付日 GMV。</dd></div>
-            <div><dt>异动与动作标注</dt><dd>异动检测读取支付结果与链路的 D1 日表；产品动作由飞书 Base 同步到 pollo_da_product_actions / pollo_da_product_action_details，仅作日期标注，不参与收入计算。</dd></div>
-          </dl>
+          <p>看板读取 D1 同步表，按页面所选端口、日期与业务周聚合；血缘图展示实际依赖，源表缺失或对账未通过时不推定缺失维度。</p>
+          <a href="/assets/lineage/data-lineage.html" target="_blank" rel="noreferrer">查看完整血缘图</a>
+          <iframe className="dashboard-lineage-viewer" src="/assets/lineage/data-lineage.html" title="交互式数据血缘：上游表、D1 与看板依赖" loading="lazy" />
         </section>
         <section id="method-window" className="dashboard-methodology-section">
           <h3>统计窗口</h3>
@@ -940,7 +934,7 @@ function GmvCoverageExplanation({
           <h3>GMV 异动诊断</h3>
           <p>异动诊断按 Web、App 和大盘分别计算最新完整日的 GMV，指标包括大盘 GMV、主动付费和续订 GMV。每个指标同时检查最新一日对前一日的日环比，以及最新一日对上周同一天的周同比。</p>
           <p>历史基准沿用业务周口径：业务周采用周六至周五，至少需要最近 12 个完整业务周的日均数据。日环比和周同比各自使用对应历史样本计算 P95/P05 阈值，并设置 ±10% 的最低触发线；任一口径超过阈值，就纳入最新 GMV 异动判断。</p>
-          <p>同一平台、同一指标、同一日期只生成一个 Toast；如果日环比和周同比同时触发，会在同一个 Toast 中并列展示两种变化，作为共同证据。数据缺失、对比基准为 0 或完整业务周不足 12 个时不发出提醒。</p>
+          <p>同一平台、同一指标、同一日期在每日动态中合并展示；如果日环比和周同比同时触发，会在监测详情中并列展示两种变化，作为共同证据。数据缺失、对比基准为 0 或完整业务周不足 12 个时不发出提醒。</p>
           <p>续订 GMV 只使用已有有效金额的完整业务周；选择 P95/P05 而不是 P99/P01，是因为当前历史周数有限，P99/P01 更接近极值，容易漏掉明显变化且阈值不稳定。</p>
         </section>
         <section id="method-payment" className="dashboard-methodology-section">
@@ -1096,7 +1090,7 @@ function MetricTrendChart({ data, metricControls, granularity, onGranularityChan
   const toolbar = <div className="trend-control-row">{metricControls}<CanvasToolbar granularity={granularity} onGranularityChange={onGranularityChange} showData={showData} onToggleData={()=>setShowData(v=>!v)} onExport={exportRows}/></div>;
   if (!visible.length) return <>{toolbar}<EmptyBlock title="暂无趋势" description=""/></>;
   return <>
-    <GlobalFinanceMarketComboChart key={`${metric.key}:${granularity}:${rangeStartDate}:${rangeEndDate}`} locale="zh-CN" title="" comparisonStats comparisonPoints={forecast} variant={singleLine ? "line" : "combo"} data={{actual,forecast:singleLine ? [] : forecast,flows:singleLine ? [] : flows,growth:change==null?undefined:{value:change},outlook:forecast.length?{year:0,value:previous}:undefined}} products={[]} categories={[]} periods={[]} period={granularity} toolbar={toolbar} actualLabel={metric.label} forecastLabel="上周同期" flowLabel="较上周变化" aumLabel="当日 GMV" growthLabel={granularity === "month" ? "较上月同期" : "较上周同期"} outlookLabel={granularity === "month" ? "上月同期" : "上周同期"} formatValue={metric.format} formatComparisonValue={value => unit === "currency" ? `$${Math.round(value).toLocaleString("en-US")}` : formatChartTooltipValue(value, unit)} formatTooltipValue={value => formatChartTooltipValue(value, unit)} formatChangeValue={value => formatChartTooltipChange(value, unit)} onExport={exportRows}/>
+    <GlobalFinanceMarketComboChart key={`${metric.key}:${granularity}:${rangeStartDate}:${rangeEndDate}`} locale="zh-CN" title="" comparisonStats comparisonPoints={forecast} variant={singleLine ? "line" : "combo"} data={{actual,forecast:singleLine ? [] : forecast,flows:singleLine ? [] : flows,growth:change==null?undefined:{value:change},outlook:forecast.length?{year:0,value:previous}:undefined}} products={[]} categories={[]} periods={[]} period={granularity} toolbar={toolbar} actualLabel={metric.label} forecastLabel="上周同日" flowLabel="较上周变化" aumLabel="当日 GMV" growthLabel={granularity === "month" ? "较上月同期" : "较上周同日"} outlookLabel={granularity === "month" ? "上月同期" : "上周同日"} formatValue={metric.format} formatComparisonValue={value => unit === "currency" ? `$${Math.round(value).toLocaleString("en-US")}` : formatChartTooltipValue(value, unit)} formatTooltipValue={value => formatChartTooltipValue(value, unit)} formatChangeValue={value => formatChartTooltipChange(value, unit)} onExport={exportRows}/>
     {showData && <div className="chart-data"><table><thead><tr><th>日期</th><th>{metric.label}</th></tr></thead><tbody>{actual.map(p=><tr key={p.date}><td>{p.date}</td><td>{metric.format(p.value)}</td></tr>)}</tbody></table></div>}
   </>;
 }
@@ -1128,7 +1122,7 @@ function AnimatedPopoverContent({
     <PopoverContent
       align={align}
       className={cn(
-        'w-auto rounded-2xl border border-[#E5E7EB] bg-white p-0 shadow-none data-[state=closed]:animate-none data-[state=open]:animate-none',
+        'w-auto rounded-2xl border border-[var(--line)] bg-white p-0 shadow-none data-[state=closed]:animate-none data-[state=open]:animate-none',
         className,
       )}
     >
@@ -1593,7 +1587,7 @@ function WeekComparisonSelector({
           {showWeeks ? <div>
           <div
             className="text-xs text-slate-500"
-            title="未结束业务周按截至昨日的已发生业务日对比上周同期；完整周按全周日均对比。"
+            title="未结束业务周按截至昨日的已发生业务日对比上周同日；完整周按全周日均对比。"
           >
             归因业务周 · 周六至周五
           </div>
@@ -1983,7 +1977,7 @@ type PaymentTrendMode = 'day' | 'week';
 
 const ACTIVE_PAYMENT_STACK_ORDER = ['首订', '积分包', '套餐升级', '重新订阅', '其他'];
 const RENEWAL_PAYMENT_STACK_ORDER = ['Lite', 'Pro', 'Ultra', '其他'];
-const PAYMENT_STACK_COLORS = ['#9D7BF5', '#5B8DEF', '#9AB8DB', '#F2C46D', '#74DCAE'];
+const PAYMENT_STACK_COLORS = ['var(--series-1)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)', 'var(--series-6)'];
 
 function PaymentTrendPanel({
   type,
@@ -2283,7 +2277,7 @@ function PaymentDrillExplorer({
               <div className="payment-explorer-detail-total"><div><span>分析期日均 GMV</span><strong>{formatContributionValue(selected.analysisDailyAvg, 'GMV')}</strong></div><span className={cn((selected.wowChange ?? 0) < 0 ? 'is-negative' : 'is-positive')}>{changeLabel} {formatSignedPercent(selected.wowChange)}</span></div>
               <div className="payment-explorer-detail-compare"><div><span>基准期日均</span><strong>{formatContributionValue(selected.baselineDailyAvg, 'GMV')}</strong></div><div><span>日均变化</span><strong className={cn(selectedDelta < 0 ? 'is-negative' : 'is-positive')}>{signedGmv(selectedDelta)}</strong></div></div>
             </div>
-            {dailyTrendSeries.length > 0 && <div className="payment-explorer-daily"><div className="payment-explorer-daily-heading">逐日走势</div><PullToRefresh rows={dailyTrendSeries} highlightFrom={baselineSeries.length} color="#5b3ff2" compact formatValue={(value) => formatContributionValue(value, 'GMV')} formatDate={(period) => period.slice(5).replace('-', '/')} ariaLabel={`${label(selected.key)}逐日 GMV 趋势`} /></div>}
+            {dailyTrendSeries.length > 0 && <div className="payment-explorer-daily"><div className="payment-explorer-daily-heading">逐日走势</div><PullToRefresh rows={dailyTrendSeries} highlightFrom={baselineSeries.length} color="var(--accent)" compact formatValue={(value) => formatContributionValue(value, 'GMV')} formatDate={(period) => period.slice(5).replace('-', '/')} ariaLabel={`${label(selected.key)}逐日 GMV 趋势`} /></div>}
             <div className="payment-explorer-users-heading"><span>注册新老</span><Tooltip><TooltipTrigger asChild><button type="button" aria-label="贡献度口径"><Info size={14} /></button></TooltipTrigger><TooltipContent className="payment-explorer-tooltip payment-explorer-method-tooltip" side="top" sideOffset={8}>贡献度 = 用户群日均变化 / 所选项日均净变化。净变化接近零时可能超过 100%。</TooltipContent></Tooltip></div>
             {selectedRows.length > 0 ? <div className="payment-explorer-users">
               {users.map((user) => <div className="payment-explorer-user" key={user.key}>
@@ -2899,15 +2893,15 @@ const DashboardPage = () => {
     const defaultWeeks = getDefaultWeekSelection();
     let changed = false;
     if (!next.get('platform')) {
-      next.set('platform', 'web');
+      next.set('platform', 'all');
       changed = true;
     }
-    if (!next.get('granularity')) {
+    if (activeTab==='trend' && !next.get('granularity')) {
       next.set('granularity', 'day');
       changed = true;
     }
-    if (!next.get('metric') || ['totalGmv', 'gmv'].includes(next.get('metric')!)) {
-      next.set('metric', 'activeGmv');
+    if (activeTab==='trend' && !next.get('metric')) {
+      next.set('metric', 'totalGmv');
       changed = true;
     }
     const deviceType = next.get('deviceType');
@@ -2928,7 +2922,7 @@ const DashboardPage = () => {
       isSelectableWeekParam(baselineWeek) &&
       isSelectableWeekParam(analysisWeek) &&
       baselineWeek !== analysisWeek;
-    if (!hasValidComparison) {
+    if (['chain','payment'].includes(activeTab) && !hasValidComparison) {
       next.set('baselineWeek', defaultWeeks.baselineWeek);
       changed = true;
       next.set('analysisWeek', defaultWeeks.analysisWeek);
@@ -2940,11 +2934,7 @@ const DashboardPage = () => {
   }, [searchParams, setSearchParams]);
 
   const platform = (
-    searchParams.get('platform') === 'all'
-      ? 'all'
-      : searchParams.get('platform') === 'app'
-        ? 'app'
-        : 'web'
+    searchParams.get('platform') === 'web' ? 'web' : searchParams.get('platform') === 'app' ? 'app' : 'all'
   ) as DashboardPlatform;
   const deviceTypeParam = searchParams.get('deviceType');
   const deviceType: DeviceFilter =
@@ -3194,32 +3184,6 @@ const DashboardPage = () => {
     setAttributions({ payType: null, chain: null, creative: null });
   }, [platform, effectiveDeviceType, baselineWeek, analysisWeek]);
 
-  // Warm other workspaces after the current workspace gets the network first.
-  // Sequential reads avoid competing large model payloads and reuse the same API cache.
-  useEffect(() => {
-    let cancelled = false;
-    const common = {
-      platform, deviceType: effectiveDeviceType,
-      startDate: attributionWindow.startDate, endDate: attributionWindow.endDate,
-      baselinePeriod: baselineWeek, analysisPeriod: analysisWeek,
-      cacheBust: refreshToken || undefined,
-    };
-    const timer = window.setTimeout(async () => {
-      const reads = [
-        () => dashboardApi.getAdsOverview(common),
-        () => dashboardApi.getChainFunnel(common),
-        () => dashboardApi.getPaymentAnalysis({ platform, deviceType: effectiveDeviceType, baselinePeriod: baselineWeek, analysisPeriod: analysisWeek, attributionType: 'NONE', cacheBust: refreshToken || undefined }),
-        () => dashboardApi.getCreativeOverview(common),
-        () => dashboardApi.getDashboardAttributions({ ...common, granularity: 'week', dimension: 'creative' }),
-      ];
-      for (const read of reads) {
-        if (cancelled) break;
-        try { await read(); } catch { /* The destination owns visible error handling. */ }
-      }
-    }, 250);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [platform, effectiveDeviceType, baselineWeek, analysisWeek, attributionWindow.startDate, attributionWindow.endDate, refreshToken]);
-
   const setSectionError = useCallback(
     (key: DashboardLoadKey, value?: string) => {
       setLoadErrors((current) => ({ ...current, [key]: value }));
@@ -3312,7 +3276,7 @@ const DashboardPage = () => {
     let cancelled = false;
     setCardTrendLoading(true);
     const cacheKey = [
-      'overview',
+      'overview-cards',
       platform,
       effectiveDeviceType ?? 'all',
       cardGranularity,
@@ -3325,6 +3289,7 @@ const DashboardPage = () => {
 
     void getCachedRequest(requestCacheRef.current, cacheKey, () =>
       dashboardApi.getDashboardOverview({
+        view: 'cards',
         platform,
         deviceType: effectiveDeviceType,
         granularity: cardGranularity,
@@ -3538,6 +3503,7 @@ const DashboardPage = () => {
     ].join('|');
     void getCachedRequest(requestCacheRef.current, cacheKey, () =>
       dashboardApi.getDashboardAttributions({
+        view: 'summary',
         platform,
         deviceType: effectiveDeviceType,
         granularity: 'week',
@@ -3823,24 +3789,7 @@ const DashboardPage = () => {
           </Link>
         </div>
       </div>
-      {activeTab === 'trend' && (
-        <>
-          <RevenueCards
-            items={paySections[0]?.items ?? []}
-            structureItems={revenueStructureItems}
-            loading={!cardTrend.length && cardTrendLoading}
-            period={formatWeekRange(analysisWeek)}
-            trend={cardTrend}
-            dailyTrend={cardTrend}
-            zoomTrend={cardTrend}
-            granularity={cardGranularity}
-            analysisWeek={analysisWeek}
-            baselineWeek={baselineWeek}
-            headlineStartDate={selectedTrendWindow.startDate}
-            headlineEndDate={selectedTrendWindow.endDate}
-          />
-        </>
-      )}
+      {activeTab === 'trend' && <DailyActivityRail platform={platform} refreshToken={refreshToken} trendWindow={selectedTrendWindow} />}
       {activeTab === 'data' && (
         <>
           <SyncControlBar onSyncSettled={refresh} />
@@ -3858,7 +3807,22 @@ const DashboardPage = () => {
       ) : null}
 
       {activeTab === 'trend' && (
-        <div className="dashboard-view" key="trend">
+        <div className="trend-workspace" key="trend">
+          <RevenueCards
+            items={paySections[0]?.items ?? []}
+            structureItems={revenueStructureItems}
+            loading={!cardTrend.length && cardTrendLoading}
+            period={formatWeekRange(analysisWeek)}
+            trend={cardTrend}
+            dailyTrend={cardTrend}
+            zoomTrend={cardTrend}
+            granularity={cardGranularity}
+            analysisWeek={analysisWeek}
+            baselineWeek={baselineWeek}
+            headlineStartDate={selectedTrendWindow.startDate}
+            headlineEndDate={selectedTrendWindow.endDate}
+          />
+          <div className="dashboard-view">
           <PageSection
             title="收入趋势"
           >
@@ -3890,6 +3854,7 @@ const DashboardPage = () => {
               )}
             </div>
           </PageSection>
+          </div>
         </div>
       )}
 

@@ -228,7 +228,7 @@
 .payment-daily-sheet .payment-table-footer button { width:auto; border-radius:8px; }
 .payment-series-toolbar { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin:10px 0 4px; }
 .payment-series-legend { display:flex; flex-wrap:wrap; gap:7px 12px; font-size:10px; color:#61718a; }
-.payment-series-legend span { display:inline-flex; align-items:center; gap:5px; overflow-wrap:anywhere; }
+.payment-series-legend button { display:inline-flex; align-items:center; gap:5px; overflow-wrap:anywhere; }
 .payment-series-legend i,.payment-history-tooltip i { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
 .payment-series-toolbar > button { height:24px; padding:0 5px; font-size:10px; flex-shrink:0; }
 .payment-series-menu { border:0; background:white; box-shadow:0 8px 28px #0d253d1a; padding:10px; border-radius:10px; }
@@ -295,7 +295,7 @@
 .payment-detail-types h3 { margin:0 0 8px; font-size:13px; }
 .payment-detail-types > [data-slot='table-container'] { flex:none; overflow:visible; }
 .payment-detail-types td,.payment-detail-types th { height:28px; padding:6px 8px; font-size:11px; line-height:16px; }
-.payment-detail-types thead th { position:sticky; top:0; z-index:1; color:#61718a; background:#eef3f9; }
+.payment-detail-types thead th { position:sticky; top:0; z-index:1; color:var(--text-3); background:var(--surface); }
 .payment-detail-types th:not(:first-child), .payment-detail-types td:not(:first-child) { text-align:right; white-space:nowrap; }
 .payment-detail-types .payment-brand-label { gap:5px; overflow-wrap:anywhere; }
 
@@ -319,3 +319,38 @@
 
 .payment-layer-back { align-self:flex-start; padding:0; background:transparent; border:0; color:#61718a; font-size:12px; cursor:pointer; }
 .payment-layer-back:hover { color:#533afd; }
+
+/* WP5: Astryx controls stay adjacent; shared table owns numeric alignment. */
+.payment-bento-toolbar { justify-content:flex-start; gap:var(--space-12); }
+.payment-table-title [data-slot='card-title'] { display:flex; align-items:center; gap:var(--space-8); }
+.payment-table-content .sys-data-table { width:100%; }
+.payment-table-content .sys-data-table .payment-entity { width:100%; text-align:left; }
+.payment-table-content .sys-diverging { min-width:154px; }
+.astryx-drawer .payment-detail-sheet { display:flex; flex-direction:column; width:100%!important; max-width:none!important; padding:0; gap:var(--space-16); color:var(--text-1); font-family:var(--font-family-body); }
+.astryx-drawer .payment-detail-sheet .astryx-drawer-header { flex-shrink:0; }
+
+.payment-table-content .sys-table-cell { padding:var(--space-4) 0; }
+.payment-table-content .sys-data-table tbody tr:has(.sys-table-cell[data-kind='total']) { background:var(--surface-sunken); }
+
+.astryx-drawer .payment-detail-sheet { padding:var(--space-24); box-shadow:none; box-sizing:border-box; overflow:visible; }
+.astryx-drawer .sys-data-table { min-width:0; }
+.astryx-drawer .sys-table-cell { padding:var(--space-4) 0; }
+
+/* Registry Investment Performance chart, composed inside the existing dashboard sheet. */
+.payment-revenue-card { overflow: clip; }
+.payment-investment-chart[data-charts] {
+  --primary-purple-500: var(--v62-accent);
+  --fg-loud: var(--v62-ink);
+  --fg-normal: var(--v62-muted);
+  --fg-soft: var(--v62-muted);
+  --border-soft: var(--v62-line);
+  --icon-normal: var(--v62-muted);
+  font-variant-numeric: tabular-nums;
+}
+.payment-series-legend button { border: 0; padding: 2px 0; background: transparent; cursor: pointer; border-radius: 4px; }
+.payment-series-legend button:focus-visible { outline: 2px solid var(--v62-accent); outline-offset: 3px; }
+.payment-investment-chart [data-slot='investment-performance-chart-tooltip'] { box-shadow: 0 8px 24px color-mix(in srgb, var(--v62-ink) 12%, transparent); }
+.payment-investment-chart [data-slot='investment-performance-chart-grid-row'],
+.payment-investment-chart [data-slot='investment-performance-chart-grid-column'] { stroke-dasharray: 3 4; }
+.payment-investment-chart [data-slot='investment-performance-chart-tooltip'] .typo-label-02-regular,
+.payment-investment-chart [data-slot='investment-performance-chart-tooltip'] .typo-label-03-medium { font-size: 12px; line-height: 1.4; }

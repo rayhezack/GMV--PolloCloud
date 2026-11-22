@@ -1,82 +1,64 @@
-import { useEffect, useRef, useState } from "react";
-import { useInView, useReducedMotion } from "framer-motion";
-import { useSearchParams } from "react-router-dom";
-import { Line, LineChart, CartesianGrid, XAxis, YAxis } from "recharts";
-import { ChevronDown } from "lucide-react";
-import { getPaymentTrend } from "@/api/dashboard";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
-import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { formatChartTooltipValue } from "@/lib/chart-tooltip-format";
-import type {
-  AppDeviceType,
-  DashboardPlatform,
-  GmvAttributionType,
-  PaymentTrendResponse,
-} from "@shared/api.interface";
-import {
-  entityLabel,
-  type PaymentGrouping,
-  type RevenueScope,
-} from "./payment-analysis.data";
+import { chartTicks } from '@/components/charts/geometry';
+import { entityColor } from '@shared/chart-colors';
+import { paymentWeekBands, paymentTrendUnit } from '@shared/comparison-display';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { ChevronDown } from 'lucide-react';
+import { getPaymentTrend } from '@/api/dashboard';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { InvestmentPerformanceChart } from '@/components/investment-performance-chart';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { money } from '@shared/format';
+import type { AppDeviceType, DashboardPlatform, GmvAttributionType, PaymentTrendResponse } from '@shared/api.interface';
+import { entityLabel, type PaymentGrouping, type RevenueScope } from './payment-analysis.data';
 import LoadingWave from './LoadingWave';
-import { IconBar } from '@/components/bencho/IconBar';
+import { Segment } from '@/components/v62/primitives';
 import { LOCAL_DATA_WINDOW } from '@/lib/local-data-window';
 
-const colors = [
-  "#533afd",
-  "#9884db",
-  "#347f9c",
-  "#ca809e",
-  "#b18745",
-  "#729d94",
-];
 const ranges = LOCAL_DATA_WINDOW
-  ? { day: "近 30 天", week: "近 30 天", month: "近 30 天" }
-  : { day: "近 30 天", week: "近 13 周", month: "近 3 月" };
+  ? { day: '近 30 天', week: '近 30 天', month: '近 30 天' }
+  : { day: '近 30 天', week: '近 13 周', month: '近 3 月' };
 export default function PaymentTrend({
   platform,
   deviceType,
   analysisPeriod,
+  baselinePeriod,
   mode,
   scope,
   grouping,
   refreshToken,
   onDataChange,
+  highlightedEntity,
 }: {
   platform: DashboardPlatform;
   deviceType?: AppDeviceType;
   analysisPeriod: string;
+  baselinePeriod: string;
   mode: GmvAttributionType;
   scope: RevenueScope;
   grouping: PaymentGrouping;
   refreshToken: number;
   onDataChange?: (data: PaymentTrendResponse | null) => void;
+  highlightedEntity?: string | null;
 }) {
   const [params, setParams] = useSearchParams();
   const granularity = (
-    ["day", "week", "month", "year"].includes(params.get("paymentGranularity") || "")
-      ? params.get("paymentGranularity")
-      : "day"
-  ) as PaymentTrendResponse["granularity"];
+    ['day', 'week', 'month', 'year'].includes(params.get('paymentGranularity') || '')
+      ? params.get('paymentGranularity')
+      : 'day'
+  ) as PaymentTrendResponse['granularity'];
   const [data, setData] = useState<PaymentTrendResponse | null>(null),
     [loading, setLoading] = useState(true),
-    [error, setError] = useState(""),
+    [error, setError] = useState(''),
     [retry, setRetry] = useState(0);
   const [selected, setSelected] = useState<string[]>([]),
-    [search, setSearch] = useState("");
-  const root = useRef<HTMLDivElement>(null),
-    revealed = useInView(root, { once: true }),
-    reduced = useReducedMotion();
+    [search, setSearch] = useState('');
+  const [legendHighlight, setLegendHighlight] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
     setLoading(true);
-    setError("");
+    setError('');
     onDataChange?.(null);
     void getPaymentTrend({
       platform,
@@ -84,7 +66,7 @@ export default function PaymentTrend({
       analysisPeriod,
       attributionType: mode,
       granularity,
-      startDate: granularity === 'year' ? `${analysisPeriod.slice(0,4)}-01-01` : undefined,
+      startDate: granularity === 'year' ? `${analysisPeriod.slice(0, 4)}-01-01` : undefined,
       income: scope,
       groupBy: grouping,
       cacheBust: refreshToken || retry || undefined,
@@ -101,7 +83,7 @@ export default function PaymentTrend({
         }
       })
       .catch((e) => {
-        if (active) setError(e?.response?.data?.error || "趋势读取失败");
+        if (active) setError(e?.response?.data?.error || '趋势读取失败');
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -109,79 +91,93 @@ export default function PaymentTrend({
     return () => {
       active = false;
     };
-  }, [
-    platform,
-    deviceType,
-    analysisPeriod,
-    mode,
-    scope,
-    grouping,
-    granularity,
-    refreshToken,
-    retry,
-  ]);
+  }, [platform, deviceType, analysisPeriod, mode, scope, grouping, granularity, refreshToken, retry]);
   const shown = (data?.series || []).filter((s) => selected.includes(s.key));
-  // The API keeps the full calendar window so daily averages retain their
-  // observed-day denominator. The chart should only plot observed buckets;
-  // null buckets create misleading blank stretches on the x-axis.
-  const points = (data?.points || []).map((p, i) => ({
-    period: p.period,
-    ...Object.fromEntries(
-      shown.map((s, n) => [
-        `s${n}`,
-        s.points[i]?.gmvUsd == null || !p.days
-          ? null
-          : s.points[i].gmvUsd! / p.days,
-      ]),
+  // Keep every bucket and omit only missing readings; the chart breaks lines at those observations.
+  const points = (data?.points || []).map((point, i) => ({
+    date: point.period,
+    values: Object.fromEntries(
+      shown.flatMap((series) => {
+        const value = series.points[i]?.gmvUsd;
+        return value == null || !point.days ? [] : [[series.key, value / point.days]];
+      }),
     ),
-  })).filter((_, i) => data!.points[i].days > 0);
-  const config = Object.fromEntries(
-    shown.map((s, i) => [
-      `s${i}`,
-      { label: entityLabel(s.label), color: colors[i % colors.length] },
-    ]),
-  );
+  }));
+  const chartSeries = shown.map((series) => ({
+    key: series.key,
+    label: entityLabel(series.label),
+    color: entityColor(entityLabel(series.label)),
+  }));
+  const ticks = chartTicks(points.flatMap((point) => Object.values(point.values)));
+  const title =
+    grouping === 'payType'
+      ? '付费类型趋势'
+      : grouping === 'actualSupplier'
+        ? '渠道商趋势'
+        : grouping === 'actualProvider'
+          ? '厂商趋势'
+          : mode === 'CREATION_MODE'
+            ? '创作功能趋势'
+            : mode === 'MODEL'
+              ? '创作模型趋势'
+              : '调用模型趋势';
   const toggle = (key: string) =>
     setSelected((current) =>
-      current.includes(key)
-        ? current.length > 1
-          ? current.filter((k) => k !== key)
-          : current
-        : [...current, key],
+      current.includes(key) ? (current.length > 1 ? current.filter((k) => k !== key) : current) : [...current, key],
     );
   return (
-    <Card ref={root} className="payment-viz-card payment-revenue-card">
+    <Card className="payment-viz-card payment-revenue-card">
       <CardHeader className="payment-viz-head">
         <div>
-          <CardTitle>
-            {grouping === "payType"
-              ? "付费类型趋势"
-              : grouping === "actualSupplier"
-                ? "渠道商趋势"
-                : grouping === "actualProvider"
-                  ? "厂商趋势"
-                  : mode === "CREATION_MODE"
-                    ? "创作功能趋势"
-                    : mode === "MODEL"
-                      ? "创作模型趋势"
-                      : "调用模型趋势"}
-          </CardTitle>
+          <CardTitle>{title}</CardTitle>
           <span className="payment-baseline">
-            {granularity === 'year' ? `${(data?.endDate ?? analysisPeriod).slice(0,4)} 年 · 月日均 GMV` : `${ranges[granularity]} · 日均 GMV`}
+            {paymentTrendUnit(
+              granularity,
+              ranges[granularity as keyof typeof ranges],
+              (data?.endDate ?? analysisPeriod).slice(0, 4),
+            )}
           </span>
         </div>
-        <IconBar label="趋势颗粒度" value={granularity}
-          items={[{value:'day',label:'日'},{value:'week',label:'周'},{value:'month',label:'月'},{value:'year',label:'年'}] as const}
-          onChange={value => setParams(p => { const next = new URLSearchParams(p); next.set('paymentGranularity',value); return next; }, {replace:true})}/>
+        <Segment
+          label="趋势颗粒度"
+          value={granularity}
+          items={
+            [
+              { value: 'day', label: '日' },
+              { value: 'week', label: '周' },
+              { value: 'month', label: '月' },
+              { value: 'year', label: '年' },
+            ] as const
+          }
+          onChange={(value) =>
+            setParams(
+              (p) => {
+                const next = new URLSearchParams(p);
+                next.set('paymentGranularity', value);
+                return next;
+              },
+              { replace: true },
+            )
+          }
+        />
       </CardHeader>
       <CardContent className="payment-viz-content">
         <div className="payment-series-toolbar">
           <div className="payment-series-legend">
             {shown.map((s, i) => (
-              <span key={s.key}>
-                <i style={{ background: colors[i % colors.length] }} />
+              <button
+                type="button"
+                key={s.key}
+                aria-label={`突出显示${entityLabel(s.label)}`}
+                onPointerEnter={() => setLegendHighlight(s.key)}
+                onPointerLeave={() => setLegendHighlight(null)}
+                onFocus={() => setLegendHighlight(s.key)}
+                onBlur={() => setLegendHighlight(null)}
+                onClick={() => toggle(s.key)}
+              >
+                <i style={{ background: entityColor(entityLabel(s.label)) }} />
                 {entityLabel(s.label)}
-              </span>
+              </button>
             ))}
           </div>
           <Popover>
@@ -200,18 +196,10 @@ export default function PaymentTrend({
               />
               <div>
                 {(data?.series || [])
-                  .filter((s) =>
-                    entityLabel(s.label)
-                      .toLowerCase()
-                      .includes(search.toLowerCase()),
-                  )
+                  .filter((s) => entityLabel(s.label).toLowerCase().includes(search.toLowerCase()))
                   .map((s) => (
                     <label key={s.key}>
-                      <input
-                        type="checkbox"
-                        checked={selected.includes(s.key)}
-                        onChange={() => toggle(s.key)}
-                      />
+                      <input type="checkbox" checked={selected.includes(s.key)} onChange={() => toggle(s.key)} />
                       {entityLabel(s.label)}
                     </label>
                   ))}
@@ -233,97 +221,45 @@ export default function PaymentTrend({
         ) : !data?.points.some((p) => p.days) ? (
           <div className="payment-trend-state">暂无数据</div>
         ) : (
-          <div
+          <InvestmentPerformanceChart
             key={`${mode}-${scope}-${grouping}-${granularity}`}
-            className={`payment-reveal ${revealed ? "is-revealed" : ""}`}
-          >
-            <ChartContainer
-              className="payment-line-chart"
-              config={config}
-              aria-label="下钻类型日均 GMV 趋势"
-            >
-              <LineChart
-                data={points}
-                accessibilityLayer
-                margin={{ left: 0, right: 12, top: 12, bottom: 0 }}
-              >
-                <CartesianGrid
-                  vertical={false}
-                  stroke="#e8edf3"
-                  strokeDasharray="3 4"
-                />
-                <XAxis
-                  dataKey="period"
-                  tickFormatter={(s: string) =>
-                    granularity === "year" ? `${+s.slice(5,7)}月` : s.slice(5, 10).replace("-", "/")
-                  }
-                  axisLine={false}
-                  tickLine={false}
-                  tickMargin={12}
-                  minTickGap={26}
-                />
-                <YAxis
-                  domain={([min, max]: [number, number]) => {
-                    const pad = Math.max(
-                      (max - min) * 0.15,
-                      Math.abs(max) * 0.03,
-                      1,
-                    );
-                    return [Math.max(0, min - pad), max + pad];
-                  }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={54}
-                  tickCount={4}
-                  tickFormatter={(n: number) =>
-                    `$${Math.abs(n) >= 1000 ? (n / 1000).toFixed(0) + "k" : Math.round(n)}`
-                  }
-                />
-                <ChartTooltip
-                  cursor={{ stroke: "#c5cbd9" }}
-                  content={({ active, payload, label }) =>
-                    active && payload?.length ? (
-                      <div className="payment-history-tooltip">
-                        <strong>
-                          {granularity === "year" ? `${String(label).slice(0,4)}年${+String(label).slice(5,7)}月 · 日均` : label}
-                        </strong>
-                        {payload.map((p) => (
-                          <span key={String(p.dataKey)}>
-                            <i style={{ background: p.color }} />
-                            {config[String(p.dataKey)]?.label}
-                            <b>
-                              {p.value == null
-                                ? "—"
-                                : formatChartTooltipValue(Number(p.value), "currency")}
-                            </b>
-                          </span>
-                        ))}
-                      </div>
-                    ) : null
-                  }
-                />
-                {shown.map((s, i) => (
-                  <Line
-                    key={s.key}
-                    dataKey={`s${i}`}
-                    name={entityLabel(s.label)}
-                    type="monotone"
-                    stroke={colors[i % colors.length]}
-                    strokeWidth={2}
-                    dot={
-                      s.points.filter((p) => p.gmvUsd != null).length === 1
-                        ? { r: 3 }
-                        : false
-                    }
-                    connectNulls={false}
-                    isAnimationActive={!reduced}
-                    animationBegin={180 + i * 70}
-                    animationDuration={650}
-                  />
-                ))}
-              </LineChart>
-            </ChartContainer>
-          </div>
+            title={title}
+            series={chartSeries}
+            data={points}
+            ticks={ticks}
+            plotHeight={224}
+            highlightedSeries={
+              legendHighlight ?? shown.find((s) => s.key === highlightedEntity || s.label === highlightedEntity)?.key
+            }
+            formatValue={money}
+            formatAxis={(value) =>
+              new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                notation: 'compact',
+                maximumFractionDigits: 0,
+              }).format(value)
+            }
+            formatDate={(date, context) =>
+              granularity === 'year'
+                ? context === 'axis'
+                  ? `${+date.slice(5, 7)}月`
+                  : `${date.slice(0, 4)}年${+date.slice(5, 7)}月 · 日均`
+                : context === 'axis'
+                  ? date.slice(5, 10).replace('-', '/')
+                  : date
+            }
+            bands={
+              granularity === 'day'
+                ? paymentWeekBands(
+                    points.map((p) => p.date),
+                    baselinePeriod,
+                    analysisPeriod,
+                    data.endDate,
+                  )
+                : []
+            }
+          />
         )}
       </CardContent>
     </Card>

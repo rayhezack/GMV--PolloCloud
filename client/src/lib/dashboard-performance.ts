@@ -1,4 +1,4 @@
-// Opt-in local acceptance probe (?perf=1). It is excluded from production builds.
+// Opt-in acceptance probe (?perf=1); exports timings only, without credentials or response data.
 const targets: Record<string, { title: string; selector: string }> = {
   trend: { title: 'GMV 趋势', selector: '.revenue-card-ready' },
   payment: { title: '付费类型', selector: '.payment-table-content tbody tr' },
@@ -10,9 +10,12 @@ const output = document.createElement('output');
 output.id = 'v23-performance';
 output.hidden = true;
 document.body.append(output);
-const results: { switches: Array<{ view: string; ms: number }>; frames: Array<{ samples: number; p95: number; max: number }>; resources: unknown[] } = { switches: [], frames: [], resources: [] };
+const results: { firstDataMs?: number; navigation?: unknown; switches: Array<{ view: string; ms: number }>; frames: Array<{ samples: number; p95: number; max: number }>; resources: unknown[] } = { switches: [], frames: [], resources: [] };
 const publish = () => {
-  results.resources = performance.getEntriesByType('resource').filter(e => e.name.includes('/api/dashboard/')).slice(-20).map(e => ({ url: e.name.split('/api/')[1], ms: Math.round(e.duration) }));
+  const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+  if (navigation) results.navigation = { ttfb: Math.round(navigation.responseStart), domReady: Math.round(navigation.domContentLoadedEventEnd) };
+  if (results.firstDataMs === undefined && document.querySelector('.revenue-card-ready')) results.firstDataMs = Math.round(performance.now());
+  results.resources = performance.getEntriesByType('resource').filter(e => e.name.includes('/api/') || e.name.includes('/assets/')).slice(0,40).map(e => ({ url: e.name.split(location.origin)[1], start: Math.round(e.startTime), ms: Math.round(e.duration), bytes: (e as PerformanceResourceTiming).transferSize }));
   output.textContent = JSON.stringify(results);
 };
 let pending: { view: string; started: number; scheduled: boolean } | null = null;
@@ -23,6 +26,7 @@ document.addEventListener('click', event => {
   if (targets[view]) pending = { view, started: performance.now(), scheduled: false };
 }, true);
 new MutationObserver(() => {
+  publish();
   const sample = pending;
   if (!sample || sample.scheduled) return;
   const target = targets[sample.view];
@@ -34,7 +38,7 @@ new MutationObserver(() => {
     pending = null;
     publish();
   }));
-}).observe(document.querySelector('main')!, { subtree: true, childList: true, characterData: true });
+}).observe(document.getElementById('root')!, { subtree: true, childList: true, characterData: true });
 let sampling = false;
 document.addEventListener('pointermove', event => {
   if (sampling || !(event.target instanceof Element) || !event.target.closest('.op-growth')) return;
@@ -55,3 +59,5 @@ document.addEventListener('pointermove', event => {
   requestAnimationFrame(sample);
 }, { passive: true });
 publish();
+
+new PerformanceObserver(() => publish()).observe({ type: 'resource', buffered: true });

@@ -1,22 +1,19 @@
+import { regenerateDailyDiagnosis, runDailyDiagnosis } from '@/api/daily-diagnosis';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import type { ReportGenerationStatus, SyncRunStatus } from '@shared/api.interface';
-import { CheckCircle2, Loader2, AlertCircle, Circle, ChevronUp, ChevronDown, X, ArrowUpRight, RotateCcw, Pause, Play, PauseCircle } from 'lucide-react';
+import type { DailyDiagnosisStatus, ReportGenerationStatus, SyncRunStatus } from '@shared/api.interface';
+import { CheckCircle2, Loader2, AlertCircle, Circle, ChevronUp, ChevronDown, X, ArrowUpRight, RotateCcw, Pause, Play, PauseCircle, XCircle } from 'lucide-react';
 import { formatAnalysisWeekLabel, formatGeneratedAt, getReportPeriodKey } from '@/pages/ReportPage/report-page.utils';
 import { generateReport, pauseReportGeneration, resumeReportGeneration } from '@/api/report';
-import { pauseSyncRun, resumeSyncRun, retrySyncRun } from '@/api/sync';
-import { getGmvAnomalies } from '@/api/dashboard';
-import { toast } from 'sonner';
-import { pushToast } from '@/components/bencho/ToastStack';
-import { claimFailureNotification } from './task-failure-notifications';
+import { pauseSyncRun, resumeSyncRun, retrySyncRun, cancelSyncRun } from '@/api/sync';
 
 type Step = { key: string; label: string; status: 'waiting' | 'running' | 'success' | 'failed'; detail?: string };
 type Task = {
   id: string;
-  kind: 'report' | 'sync';
+  kind: 'report' | 'sync' | 'daily';
   name: string;
   context: string;
-  status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed';
+  status: 'queued' | 'running' | 'pausing' | 'paused' | 'success' | 'failed' | 'cancelled';
   startedAt: string;
   updatedAt: string;
   steps: Step[];
@@ -26,111 +23,7 @@ type Task = {
 };
 
 const DISMISSED_TASKS_KEY = 'pollo-dismissed-task-runs';
-const NOTIFIED_TASKS_KEY = 'pollo-notified-task-runs';
-const NOTIFIED_ANOMALIES_KEY = 'pollo-notified-gmv-anomalies';
-
 const isActiveStatus = (status: Task['status']) => ['queued', 'running', 'pausing', 'paused'].includes(status);
-
-const platformLabel = (platform: 'all' | 'web' | 'app') => platform === 'all' ? '大盘' : platform === 'web' ? 'Web' : 'App';
-const metricLabel = (metric: string) => metric === 'totalGmv' ? '大盘GMV' : metric === 'activeGmv' ? '主动付费GMV' : '续订GMV';
-
-async function notifyGmvAnomalies() {
-  const result = await getGmvAnomalies();
-  let notified: string[] = [];
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(NOTIFIED_ANOMALIES_KEY) || '[]');
-    if (Array.isArray(stored)) notified = stored.filter((item): item is string => typeof item === 'string');
-  } catch { /* optional */ }
-  const dayKey = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date());
-  const alerts = result.alerts;
-  if (alerts.length === 0) return;
-  // One GMV event per user per Shanghai calendar day. All platform/metric
-  // signals and both comparison windows are evidence for that single event.
-  const fingerprint = `${dayKey}:gmv-anomaly`;
-  if (notified.includes(fingerprint)) return;
-  notified = [...notified.slice(-99), fingerprint];
-  try {
-    window.localStorage.setItem(NOTIFIED_ANOMALIES_KEY, JSON.stringify(notified));
-  } catch { /* optional */ }
-  const evidence = alerts.map((alert) => {
-    const label = alert.window === 'day' ? '日环比' : '周同比';
-    const change = `${alert.change >= 0 ? '+' : ''}${(alert.change * 100).toFixed(1)}%`;
-    return { alert, label, change };
-  });
-  const period = alerts[0]?.period || result.latestDay;
-  const evidenceGroups = new Map<string, typeof evidence>();
-  evidence.forEach((item) => {
-    const key = `${item.alert.platform}:${item.alert.metric}`;
-    const group = evidenceGroups.get(key) ?? [];
-    group.push(item);
-    evidenceGroups.set(key, group);
-  });
-  const evidenceDetail = [...evidenceGroups.values()]
-    .map((group) => {
-      const first = group[0].alert;
-      const comparisons = group
-        .sort((a, b) => (a.alert.window === 'week' ? 0 : 1) - (b.alert.window === 'week' ? 0 : 1))
-        .map(({ label, change }) => `${label} ${change}`)
-        .join('，');
-      return `${platformLabel(first.platform)}${metricLabel(first.metric)} ${comparisons}`;
-    })
-    .join('\n');
-  const metricOrder = { totalGmv: 0, activeGmv: 1, renewalGmv: 2 } as const;
-  const platformOrder = { all: 0, app: 1, web: 2 } as const;
-  const target = [...alerts].sort((a, b) => {
-    const directionRank = Number(a.direction !== 'down') - Number(b.direction !== 'down');
-    if (directionRank !== 0) return directionRank;
-    const magnitudeRank = Math.abs(b.change) - Math.abs(a.change);
-    if (magnitudeRank !== 0) return magnitudeRank;
-    const metricRank = metricOrder[a.metric] - metricOrder[b.metric];
-    if (metricRank !== 0) return metricRank;
-    return platformOrder[a.platform] - platformOrder[b.platform];
-  })[0];
-  const kind = alerts.some((alert) => alert.direction === 'down') ? 'error' : 'warning';
-  const focusParams = new URLSearchParams({
-    tab: 'trend',
-    platform: target.platform,
-    granularity: 'day',
-    metricDate: target.period,
-    focusMetric: target.metric,
-    focusPlatform: target.platform,
-    focusPeriod: target.period,
-  });
-  pushToast({
-    kind,
-    title: 'GMV 异动',
-    body: `${period} 多种对比口径共同提示 GMV 异动`,
-    detail: `分析日期：${period}\n${evidenceDetail}\n日环比与周同比共同说明最新 GMV 存在异动。可继续下钻主动付费和自动续订，定位具体变化来源。`,
-    href: `/?${focusParams.toString()}`,
-    linkLabel: '查看 GMV 趋势',
-  });
-}
-
-function notifyTaskCompletion(task: Task) {
-  let notified: string[] = [];
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(NOTIFIED_TASKS_KEY) || '[]');
-    if (Array.isArray(stored)) notified = stored.filter((item): item is string => typeof item === 'string');
-  } catch { /* optional */ }
-  if (notified.includes(task.id)) return false;
-  try {
-    window.localStorage.setItem(NOTIFIED_TASKS_KEY, JSON.stringify([...notified.slice(-49), task.id]));
-  } catch { /* optional */ }
-  const failed = task.status === 'failed';
-  if (failed && !claimFailureNotification(task, window.localStorage)) return false;
-  pushToast({
-    id: failed ? `task-error:${task.kind}:${task.errorMessage || '任务执行失败'}` : `task-complete:${task.id}`,
-    kind: failed ? 'error' : 'success',
-    title: task.kind === 'sync' ? (failed ? '数据同步失败' : '数据同步完成') : (failed ? '诊断报告生成失败' : '诊断报告已生成'),
-    body: failed ? (task.errorMessage || '任务执行失败，请打开任务详情查看') : task.context,
-    detail: failed
-      ? (task.errorMessage || '任务执行失败，请打开任务详情查看')
-      : `${task.kind === 'sync' ? '数据同步任务' : '诊断报告任务'}已完成。\n${task.context}`,
-    href: task.href,
-    linkLabel: task.kind === 'sync' ? '查看数据与口径' : '查看诊断报告',
-  });
-  return true;
-}
 
 function readDismissedTasks(): string[] {
   try {
@@ -144,11 +37,15 @@ function readDismissedTasks(): string[] {
 export function ReportTask({
   jobs,
   syncJob,
+  dailyJobs = [],
+  onTrackDaily,
   onTrackReport,
   onTrackSync,
 }: {
   jobs: ReportGenerationStatus[];
   syncJob: SyncRunStatus | null;
+  dailyJobs?: DailyDiagnosisStatus[];
+  onTrackDaily: (job: DailyDiagnosisStatus) => void;
   onTrackReport: (job: ReportGenerationStatus) => void;
   onTrackSync: (job: SyncRunStatus) => void;
 }) {
@@ -158,9 +55,16 @@ export function ReportTask({
   const [selected, setSelected] = useState('');
   const [dismissed, setDismissed] = useState(readDismissedTasks);
   const [retrying, setRetrying] = useState('');
+  const [operationError, setOperationError] = useState('');
   const previousStatuses = useRef(new Map<string, Task['status']>());
   const completionTimers = useRef(new Map<string, number>());
   const tasks: Task[] = [
+    ...dailyJobs.flatMap(item => item.task ? [{
+      id:item.task.runId, kind:'daily' as const, name:`日诊断 · ${item.platform === 'all' ? '大盘' : item.platform === 'web' ? 'Web' : 'App'}`,
+      context:`${item.period} · 对比 ${item.baseline}`,status:item.task.status,
+      startedAt:item.task.startedAt,updatedAt:item.task.updatedAt,steps:item.task.steps,errorMessage:item.task.errorMessage,
+      href:`/?tab=trend&platform=${item.platform}`,
+    }] : []),
     ...jobs.map(job => ({
       id: job.runId, kind: 'report' as const, name: `报告 · ${job.platform === 'web' ? 'Web' : 'App'}`,
       context: `${job.platform === 'web' ? 'Web' : 'App'} · ${formatAnalysisWeekLabel(job.periodStart, job.periodEnd)}`,
@@ -171,7 +75,7 @@ export function ReportTask({
     })),
     ...(syncJob ? [{
       id: syncJob.runId, kind: 'sync' as const, name: '数据同步',
-      context: `${syncJob.platforms.map(item => item === 'web' ? 'Web' : 'App').join(' + ')} · ${syncJob.startDate} ~ ${syncJob.endDate}`,
+      context: `${syncJob.platforms.map(item => item === 'all' ? '大盘' : item === 'web' ? 'Web' : 'App').join(' + ')} · ${syncJob.startDate} ~ ${syncJob.endDate}`,
       status: syncJob.status, startedAt: syncJob.startedAt, updatedAt: syncJob.heartbeatAt || syncJob.finishedAt || syncJob.startedAt,
       steps: syncJob.steps ?? [], errorMessage: syncJob.errorMessage, href: '/?tab=data',
       recoveryScopes: syncJob.datasets ?? ['pay_type', 'chain', 'creative', 'renewal'],
@@ -188,19 +92,10 @@ export function ReportTask({
   useEffect(() => {
     const nextStatuses = new Map(tasks.map(task => [task.id, task.status]));
     for (const task of tasks) {
-      if (task.status === 'success') claimFailureNotification(task, window.localStorage);
       const previous = previousStatuses.current.get(task.id);
-      if (!previous && !isActiveStatus(task.status)) {
-        if (task.kind !== 'sync' || task.status !== 'success') notifyTaskCompletion(task);
-        if (task.kind === 'sync' && task.status === 'success') void notifyGmvAnomalies().catch(() => undefined);
-      }
-      if (previous && isActiveStatus(previous) && !isActiveStatus(task.status)) {
-        if (task.kind !== 'sync' || task.status !== 'success') notifyTaskCompletion(task);
-        if (task.kind === 'sync' && task.status === 'success') void notifyGmvAnomalies().catch(() => undefined);
-      }
-      if (!isActiveStatus(task.status) && !dismissed.includes(task.id) && !completionTimers.current.has(task.id)) {
+      if (task.status === 'success' && expandedTaskId !== task.id && !dismissed.includes(task.id) && !completionTimers.current.has(task.id)) {
         const age = previous ? 0 : Date.now() - Date.parse(task.updatedAt);
-        const delay = previous ? (task.status === 'failed' ? 6500 : 4000) : Math.max(1000, 3500 - Math.max(0, age));
+        const delay = previous ? 4000 : Math.max(1000, 3500 - Math.max(0, age));
         const timer = window.setTimeout(() => {
           completionTimers.current.delete(task.id);
           setExpandedTaskId(current => current === task.id ? '' : current);
@@ -210,7 +105,7 @@ export function ReportTask({
       }
     }
     previousStatuses.current = nextStatuses;
-  }, [dismissed, jobs, syncJob]);
+  }, [dismissed, jobs, syncJob, dailyJobs, expandedTaskId]);
   useEffect(() => () => {
     completionTimers.current.forEach(timer => window.clearTimeout(timer));
     completionTimers.current.clear();
@@ -226,10 +121,10 @@ export function ReportTask({
     setSelected(current => {
       const currentTask = visible.find(task => task.id === current);
       const latestActive = visible.filter(active).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
-      if (latestActive && (!currentTask || !active(currentTask) || latestActive.startedAt > currentTask.startedAt)) return latestActive.id;
+      if (latestActive && !currentTask) return latestActive.id;
       return currentTask?.id ?? [...visible].sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]?.id ?? '';
     });
-  }, [jobs, syncJob, dismissed]);
+  }, [jobs, syncJob, dailyJobs, dismissed]);
   useEffect(() => {
     setExpandedTaskId('');
   }, [location.pathname, location.search]);
@@ -243,32 +138,50 @@ export function ReportTask({
     document.addEventListener('pointerdown', collapseOutside);
     return () => document.removeEventListener('pointerdown', collapseOutside);
   }, [expanded]);
+  useEffect(() => {
+    const show = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail;
+      setDismissed(current => current.filter(item => item !== id));
+      const timer = completionTimers.current.get(id);
+      if (timer) { window.clearTimeout(timer); completionTimers.current.delete(id); }
+      setSelected(id);
+      setExpandedTaskId(id);
+    };
+    window.addEventListener('pollo-open-background-task', show);
+    return () => window.removeEventListener('pollo-open-background-task', show);
+  }, []);
   if (!job) return null;
   const done = job.steps.filter(step => step.status === 'success').length;
   const progress = job.steps.length ? Math.round(done / job.steps.length * 100) : job.status === 'success' ? 100 : 0;
-  const label = job.kind === 'sync'
-    ? job.status === 'failed' ? '数据同步失败' : job.status === 'success' ? '数据已同步' : job.status === 'paused' ? '数据同步已暂停' : job.status === 'pausing' ? '数据同步暂停中' : '数据同步中'
+  const label = job.kind === 'daily' ? job.status === 'queued' ? '日诊断等待执行' : job.status === 'running' ? '日诊断生成中' : job.status === 'success' ? '日诊断已完成' : '日诊断失败' : job.kind === 'sync'
+    ? job.status === 'cancelled' ? '数据同步已取消' : job.status === 'failed' ? '数据同步失败' : job.status === 'success' ? '数据已同步' : job.status === 'paused' ? '数据同步已暂停' : job.status === 'pausing' ? '数据同步暂停中' : '数据同步中'
     : job.status === 'failed' ? '报告生成失败' : job.status === 'success' ? '报告已生成' : job.status === 'paused' ? '报告生成已暂停' : job.status === 'pausing' ? '报告生成暂停中' : '报告生成中';
-  const StatusIcon = job.status === 'failed' ? AlertCircle : job.status === 'success' ? CheckCircle2 : job.status === 'paused' ? PauseCircle : Loader2;
+  const StatusIcon = job.status === 'cancelled' ? XCircle : job.status === 'failed' ? AlertCircle : job.status === 'success' ? CheckCircle2 : job.status === 'paused' ? PauseCircle : Loader2;
   const rerun = async () => {
     if (active(job) || retrying) return;
     setRetrying(job.id);
+    setOperationError('');
     try {
-      if (job.kind === 'report') {
+      if (job.kind === 'daily') {
+        const source = dailyJobs.find(item => item.task?.runId === job.id);
+        if (!source) throw new Error('未找到日诊断任务');
+        const next = await regenerateDailyDiagnosis(source.platform,source.period);
+        onTrackDaily(next);
+        if (next.task) { setSelected(next.task.runId); setExpandedTaskId(next.task.runId); }
+        void runDailyDiagnosis(source.platform,source.period,next.task?.runId).then(onTrackDaily).catch(() => undefined);
+      } else if (job.kind === 'report') {
         const source = jobs.find(item => item.runId === job.id);
         if (!source) throw new Error('未找到原报告任务');
         const next = await generateReport({ platform: source.platform, granularity: 'week', startDate: source.periodStart, endDate: source.periodEnd });
         onTrackReport(next);
         setSelected(next.runId);
-        toast.info('报告任务已重新启动');
       } else {
         const next = await retrySyncRun(job.id);
         onTrackSync(next);
         setSelected(next.runId);
-        toast.info('数据同步任务已重新启动');
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '任务重新运行失败');
+      setOperationError(error instanceof Error ? error.message : '任务重新运行失败');
     } finally {
       setRetrying('');
     }
@@ -276,23 +189,31 @@ export function ReportTask({
   const pauseOrResume = async () => {
     if (retrying || job.status === 'pausing') return;
     setRetrying(job.id);
+    setOperationError('');
     try {
       const next = job.kind === 'report'
         ? job.status === 'paused' ? await resumeReportGeneration(job.id) : await pauseReportGeneration(job.id)
         : job.status === 'paused' ? await resumeSyncRun(job.id) : await pauseSyncRun(job.id);
       if (job.kind === 'report') onTrackReport(next as ReportGenerationStatus);
       else onTrackSync(next as SyncRunStatus);
-      toast.info(job.status === 'paused' ? '任务已继续运行' : next.status === 'paused' ? '任务已暂停' : '将在当前阶段完成后暂停');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '任务状态更新失败');
+      setOperationError(error instanceof Error ? error.message : '任务状态更新失败');
     } finally {
       setRetrying('');
     }
   };
+  const cancelTask = async () => {
+    if (job.kind !== 'sync' || retrying || !window.confirm('取消后不会继续未完成步骤，已完成数据会保留。确定取消同步吗？')) return;
+    setRetrying(job.id);
+    setOperationError('');
+    try { onTrackSync(await cancelSyncRun(job.id)); }
+    catch (error) { setOperationError(error instanceof Error ? error.message : '取消任务失败'); }
+    finally { setRetrying(''); }
+  };
   return (
     <aside ref={dockRef} className="report-task-dock" aria-label="后台任务" data-expanded={expanded}>
       {expanded && <section id="report-task-details" className="report-task-details">
-        <header><strong>{job.kind === 'sync' ? '数据同步任务' : '报告任务'}</strong><button type="button" aria-label="收起任务详情" onClick={() => setExpandedTaskId('')}><ChevronDown size={18} /></button></header>
+        <header><strong>{job.kind === 'sync' ? '数据同步任务' : job.kind === 'daily' ? '日诊断任务' : '报告任务'}</strong><button type="button" aria-label="收起任务详情" onClick={() => setExpandedTaskId('')}><ChevronDown size={18} /></button></header>
         {visible.length > 1 && <div className="report-task-platforms">{visible.map(item => <button type="button" key={item.id} aria-pressed={item.id === job.id} onClick={() => { setSelected(item.id); setExpandedTaskId(item.id); }}>{item.name}</button>)}</div>}
         <p className="report-task-period">{job.context}</p>
         <ol className="report-task-list">
@@ -305,15 +226,16 @@ export function ReportTask({
           </li>)}
         </ol>
         <footer>
-          {job.status === 'failed' && <p role="alert">{job.errorMessage}</p>}
+          {(operationError || job.status === 'failed') && <p role="alert">{operationError || job.errorMessage}</p>}
           <span>更新于 {formatGeneratedAt(job.updatedAt)}</span>
           <div className="report-task-actions">
-            {active(job) && <button type="button" onClick={() => void pauseOrResume()} disabled={retrying === job.id || job.status === 'pausing'}>
+            {active(job) && job.kind !== 'daily' && <button type="button" onClick={() => void pauseOrResume()} disabled={retrying === job.id || job.status === 'pausing'}>
               {job.status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
               {retrying === job.id ? '处理中' : job.status === 'paused' ? '继续运行' : job.status === 'pausing' ? '暂停中' : '暂停'}
             </button>}
+            {active(job) && job.kind === 'sync' && <button type="button" onClick={() => void cancelTask()} disabled={retrying === job.id}>取消同步</button>}
             {!active(job) && <button type="button" onClick={() => void rerun()} disabled={retrying === job.id}><RotateCcw size={14} className={retrying === job.id ? 'animate-spin' : ''} />{retrying === job.id ? '启动中' : '重新运行'}</button>}
-            {job.kind !== 'sync' && (
+            {job.kind === 'report' && (
               <Link to={job.href}>{job.status === 'success' ? '查看报告' : '前往报告'}<ArrowUpRight size={14} /></Link>
             )}
           </div>
@@ -325,9 +247,10 @@ export function ReportTask({
           <span><strong>{label}</strong><small>{active(job) ? `${done} / ${job.steps.length} 步骤 · 点击查看进度` : `${job.name} · 点击查看详情`}</small></span>
           {expanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
         </button>
-        {active(job) && <button className="report-task-control" type="button" aria-label={job.status === 'paused' ? '继续运行任务' : '暂停任务'} title={job.status === 'paused' ? '继续运行' : '暂停'} disabled={retrying === job.id || job.status === 'pausing'} onClick={() => void pauseOrResume()}>
+        {active(job) && job.kind !== 'daily' && <button className="report-task-control" type="button" aria-label={job.status === 'paused' ? '继续运行任务' : '暂停任务'} title={job.status === 'paused' ? '继续运行' : '暂停'} disabled={retrying === job.id || job.status === 'pausing'} onClick={() => void pauseOrResume()}>
           {job.status === 'paused' ? <Play size={16} /> : <Pause size={16} />}
         </button>}
+        {active(job) && job.kind === 'sync' && <button className="report-task-control" type="button" aria-label="取消同步任务" title="取消同步" disabled={retrying === job.id} onClick={() => void cancelTask()}><XCircle size={16} /></button>}
         <button className="report-task-dismiss" type="button" aria-label="关闭任务提醒" onClick={() => { setExpandedTaskId(''); setDismissed(current => [...new Set([...current, job.id])]); }}><X size={16} /></button>
         <div className="report-progress" role="progressbar" aria-label="任务已完成步骤" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${progress}%` }} /></div>
       </div>

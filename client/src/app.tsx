@@ -1,20 +1,51 @@
+import { Theme } from '@astryxdesign/core/theme';
+import { polloV62Theme } from '../../src/themes/pollo-v62/pollo-v62';
+import '../../src/themes/pollo-v62/pollo-v62.css';
+import '../../src/themes/pollo-v62/tokens.css';
+import './components/system/system.css';
 /* eslint-disable @lark-apaas/require-app-container -- Pollocloud owns the page shell. */
 import React from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
 import { canManagePollocloudApp } from '@/lib/pollocloud';
 
 import Layout from './components/Layout';
-import DashboardPage from './pages/DashboardPage/DashboardPage';
+const DataPage = React.lazy(() => import('./pages/DataPage/DataPage'));
+import OverviewPage from './pages/OverviewPage/OverviewPage';
+const ChainPage = React.lazy(() => import('./pages/ChainPage/ChainPage'));
+const PaymentPage = React.lazy(() => import('./pages/PaymentPage/PaymentPage'));
+const CreativePage = React.lazy(() => import('./pages/CreativePage/CreativePage'));
+const AdsPage = React.lazy(() => import('./pages/AdsPage/AdsPage'));
+const DetailsPage = React.lazy(() => import('./pages/DetailsPage/DetailsPage'));
+import { dashboardView } from './components/dashboard/navigation';
+
+function DashboardRoute() {
+  const location = useLocation();
+  const view = dashboardView(location.pathname, location.search).id;
+  return view === 'trend' ? (
+    <OverviewPage />
+  ) : view === 'chain' ? (
+    <ChainPage />
+  ) : view === 'payment' ? (
+    <PaymentPage />
+  ) : view === 'creative' ? (
+    <CreativePage />
+  ) : view === 'ads' ? (
+    <AdsPage />
+  ) : view === 'details' ? (
+    <DetailsPage />
+  ) : (
+    <DataPage />
+  );
+}
 import NotFound from './pages/NotFound/NotFound';
 
 const ReportPage = React.lazy(() => import('./pages/ReportPage/ReportPage'));
 const AdminManagementPage = React.lazy(() => import('./pages/AdminManagementPage/AdminManagementPage'));
 const PermissionsPage = React.lazy(() => import('./pages/PermissionsPage/PermissionsPage'));
 
-if (import.meta.env.DEV && new URLSearchParams(location.search).has('perf')) {
-  // Delay until React has mounted the shell used by the acceptance probe.
-  window.addEventListener('load', () => { void import('./lib/dashboard-performance'); }, { once: true });
+if (new URLSearchParams(location.search).has('perf')) {
+  void import('./lib/dashboard-performance');
 }
 
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
@@ -33,22 +64,24 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
 
 const RoutesComponent = () => {
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route index element={<DashboardPage />} />
-        <Route path="report" element={<ReportPage />} />
-        <Route path="permissions" element={<PermissionsPage />} />
-        <Route
-          path="admin"
-          element={
-            <AdminRoute>
-              <AdminManagementPage />
-            </AdminRoute>
-          }
-        />
-      </Route>
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+    <Theme theme={polloV62Theme} mode="light">
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<DashboardRoute />} />
+          <Route path="report" element={<ReportPage />} />
+          <Route path="permissions" element={<PermissionsPage />} />
+          <Route
+            path="admin"
+            element={
+              <AdminRoute>
+                <AdminManagementPage />
+              </AdminRoute>
+            }
+          />
+        </Route>
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </Theme>
   );
 };
 

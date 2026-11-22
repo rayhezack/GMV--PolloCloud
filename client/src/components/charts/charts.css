@@ -1,0 +1,25 @@
+.chart-tooltip-content { display:grid; gap:var(--space-8); color:var(--text-2); font-size:var(--fs-meta); min-width:180px; }
+.chart-tooltip-content>b { color:var(--text-1); font-weight:500; }
+.chart-tooltip-content>span { display:flex; align-items:center; justify-content:space-between; gap:var(--space-16); }
+.chart-tooltip-content strong { color:var(--text-1); font-weight:500; font-variant-numeric:tabular-nums; }
+.chart-tooltip-content [data-tone='positive'] { color:var(--positive); }.chart-tooltip-content [data-tone='negative'] { color:var(--negative); }
+.chart-tooltip-content small { font-size:var(--fs-meta); color:var(--warn); }
+.chart-weekend { fill:var(--canvas); fill-opacity:.5; }
+.chart-anomaly { fill:var(--surface); stroke:var(--negative); stroke-width:1.5; }
+.cash-flow-adapted { font-family:var(--font-family-body); color:var(--text-1); min-width:0; }
+.cash-flow-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); padding:var(--space-8) 0 var(--space-16); gap:var(--space-16); }
+.cash-flow-summary>div+div { border-left:1px solid var(--line); padding-left:var(--space-16); }
+.cash-flow-summary span { display:block; color:var(--text-2); font-size:var(--fs-meta); margin-bottom:var(--space-8); }
+.cash-flow-summary strong { font-size:var(--fs-h1); font-weight:500; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.cash-flow-summary small { display:inline-block; font-size:var(--fs-meta); margin-top:var(--space-4); color:var(--text-2); }
+.cash-flow-summary [data-tone='negative'] { color:var(--negative); }.cash-flow-summary [data-tone='positive'] { color:var(--positive); }
+.cash-flow-plot { position:relative; width:100%; outline-offset:var(--space-4); border-radius:var(--radius-element); }
+.cash-flow-plot svg { display:block; width:100%; overflow:visible; }
+.cash-flow-plot text { fill:var(--text-3); font-size:var(--fs-meta); font-family:inherit; font-variant-numeric:tabular-nums; }
+.cash-flow-tip { position:absolute; z-index:10; pointer-events:none; background:var(--surface); border-radius:var(--radius-element); box-shadow:var(--shadow-floating); padding:var(--space-12); }
+.chart-incomplete { fill:var(--warn); font-size:var(--fs-meta); }
+@media(max-width:1280px) { .cash-flow-summary { gap:var(--space-8); }.cash-flow-summary>div+div { padding-left:var(--space-8); } }
+@media(prefers-reduced-motion:reduce) { .cash-flow-adapted * { animation:none!important; transition:none!important; } }
+.v62-home-cash-flow > .cash-flow-summary { display:grid; }
+.v62-home-cash-flow.is-single-series > .cash-flow-summary > :not(:first-child) { display:none; }
+.v62-home-cash-flow.is-single-series > .cash-flow-summary { grid-template-columns:1fr; }

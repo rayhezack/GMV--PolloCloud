@@ -1,0 +1,375 @@
+/* Application structures; floating behavior belongs to Astryx. */
+.sys-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-16);
+  padding: var(--space-16) var(--space-24);
+  border-bottom: 1px solid var(--line);
+}
+.sys-page-header h1 {
+  margin: 0;
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  color: var(--text-1);
+}
+.sys-page-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-12);
+  min-width: 0;
+}
+.sys-panel-header {
+  display: grid;
+  gap: var(--space-8);
+  margin-bottom: var(--space-12);
+}
+.sys-panel-header h2 {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-panel);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sys-meta,
+.sys-comparison,
+.sys-freshness {
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+}
+.sys-freshness {
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-element);
+  padding: var(--space-4) var(--space-8);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sys-freshness:hover {
+  background: var(--selected);
+}
+.sys-delta {
+  display: inline-flex;
+  white-space: nowrap;
+  padding: var(--space-4) var(--space-4);
+  border-radius: var(--radius-element);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  background: var(--surface-sunken);
+  color: var(--text-2);
+}
+.sys-delta[data-tone='positive'] {
+  color: var(--positive);
+  background: var(--positive-soft);
+}
+.sys-delta[data-tone='negative'] {
+  color: var(--negative);
+  background: var(--negative-soft);
+}
+.sys-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--line);
+  padding: var(--space-16) var(--space-24);
+}
+.sys-kpi {
+  position: relative;
+  min-width: 0;
+  padding: 0 var(--space-16);
+  border-right: 1px solid var(--line);
+}
+.sys-kpi:first-child {
+  padding-left: 0;
+}
+.sys-kpi:last-child {
+  border-right: 0;
+}
+.sys-kpi[data-selected='true']::after {
+  position: absolute;
+  content: '';
+  bottom: calc(-1 * var(--space-16));
+  height: 2px;
+  left: var(--space-16);
+  right: var(--space-16);
+  background: var(--accent);
+}
+.sys-kpi:first-child[data-selected='true']::after {
+  left: 0;
+}
+.sys-kpi-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+}
+.sys-kpi[data-selected='true'] .sys-kpi-label {
+  color: var(--accent);
+}
+.sys-kpi-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  margin: var(--space-8) 0;
+}
+.sys-kpi-value strong {
+  font-size: var(--fs-kpi);
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--text-1);
+}
+.sys-kpi-baseline {
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+}
+.sys-kpi-select {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-element);
+  cursor: pointer;
+}
+.sys-kpi-label > *,
+.sys-kpi-actions {
+  position: relative;
+  z-index: 1;
+}
+.sys-kpi-actions {
+  opacity: 0;
+}
+.sys-kpi:hover .sys-kpi-actions,
+.sys-kpi:focus-within .sys-kpi-actions {
+  opacity: 1;
+}
+.sys-diverging {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-8);
+  font-size: var(--fs-body);
+  font-variant-numeric: tabular-nums;
+}
+.sys-diverging b {
+  min-width: 64px;
+  font-weight: 400;
+  text-align: right;
+}
+.sys-diverging-track {
+  display: block;
+  width: 112px;
+  flex: 0 0 112px;
+  height: 16px;
+  position: relative;
+}
+.sys-diverging-track::before {
+  content: '';
+  position: absolute;
+  inset: 4px 0;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-full);
+}
+.sys-diverging-track::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  bottom: 2px;
+  width: 1px;
+  background: var(--line);
+}
+.sys-diverging-track i {
+  display: block;
+  position: absolute;
+  top: 4px;
+  height: 8px;
+  background: var(--positive);
+  border-radius: var(--radius-full);
+}
+.sys-diverging-track i[data-tone='negative'] {
+  background: var(--negative);
+}
+.sys-diverging-track i[data-tone='neutral'] {
+  background: var(--residual);
+}
+.sys-diverging[data-variant='child'] i {
+  background: var(--positive-soft);
+}
+.sys-diverging[data-variant='child'] i[data-tone='negative'] {
+  background: var(--negative-bar);
+}
+.sys-diverging[data-variant='residual'] i {
+  background: repeating-linear-gradient(135deg, var(--residual) 0 2px, transparent 2px 4px);
+}
+.sys-skeleton {
+  display: grid;
+  gap: var(--space-16);
+  padding: var(--space-24);
+}
+.sys-panel-state {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+}
+.sys-data-table {
+  overflow: auto;
+  color: var(--text-1);
+  font-size: var(--fs-body);
+  font-variant-numeric: tabular-nums;
+}
+.sys-data-table .astryx-table-scroll-wrapper {
+  margin: 0;
+}
+.sys-data-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+.sys-table-cell {
+  display: block;
+  padding: var(--space-8) 0;
+}
+.sys-table-cell[data-kind='total'] {
+  font-weight: 500;
+}
+.sys-table-cell[data-kind='residual'] {
+  color: var(--text-2);
+  background: var(--surface-sunken);
+}
+.sys-table-cell[data-kind='child'] {
+  color: var(--text-2);
+}
+.sys-table-cell[data-kind='child'][data-first='true'] {
+  padding-left: var(--space-16);
+}
+.sys-data-table[data-sticky-first='true'] :is(th, td):first-child {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+.sys-sort {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+:where(button, a, [role='slider']):focus-visible:not(.chain-day-picker) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sys-skeleton * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+.sys-modal-body {
+  max-height: calc(90dvh - 120px);
+  overflow: auto;
+  min-height: 0;
+  padding-top: var(--space-16);
+  font-family: var(--font-family-body);
+  color: var(--text-1);
+  font-size: var(--fs-body);
+}
+.sys-panel-header > div {
+  width: 100%;
+  margin: 0;
+}
+.sys-panel-header .astryx-section {
+  width: 100%;
+  padding: 0;
+}
+.sys-panel-header .astryx-toolbar {
+  width: 100%;
+}
+.sys-modal-body > .chain-finance-chart {
+  min-width: 0;
+  padding: 0;
+  gap: var(--space-12);
+  border-radius: 0;
+  overflow: visible;
+  font-family: inherit;
+}
+
+.chain-finance-legend {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-12);
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+}
+.chain-finance-legend span {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.chain-finance-legend i {
+  width: 16px;
+  height: 2px;
+  background: var(--accent);
+}
+.chain-finance-legend i.reference {
+  height: 0;
+  border-top: 2px dashed var(--text-3);
+  background: transparent;
+}
+
+/* Unify legacy and Astryx table hover without translucent black overlays. */
+html[data-astryx-theme='pollo-v62'] .dashboard-shell tbody tr:is(:hover, [data-state='selected']) {
+  background: var(--selected) !important;
+}
+html[data-astryx-theme='pollo-v62'] .dashboard-shell tbody tr:is(:hover, [data-state='selected']) > td {
+  background-color: var(--selected) !important;
+}
+
+/* Official Cash Flow chart, mapped to the dashboard's Stripe tokens. */
+.cash-flow-registry[data-charts] {
+  --primary-blue-500: var(--accent);
+  --primary-blue-600: var(--accent);
+  --surface-subdued: var(--baseline);
+  --surface-white: var(--surface);
+  --surface-soft: var(--line);
+  --border-soft: var(--line);
+  --fg-loud: var(--text-1);
+  --fg-soft: var(--text-2);
+  padding: 0;
+  gap: 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  min-width: 0;
+  font-family: inherit;
+}
+.cash-flow-registry [data-slot='cash-flow-area-chart-tooltip'] {
+  z-index: 3;
+  max-width: calc(100% - 24px);
+}
+.cash-flow-registry [class*='typo-label-'] {
+  font-family: inherit;
+  font-size: var(--fs-body);
+}
+.cash-flow-registry [data-slot='cash-flow-area-chart-plot'] {
+  flex-shrink: 0;
+}
+.cash-flow-registry [data-slot='cash-flow-area-chart-marker'][data-series='current'] > span > span {
+  background: var(--accent);
+}
+
+/* Shared table headers, including portaled drawers and modal detail tables. */
+html[data-astryx-theme='pollo-v62'] :is(.dashboard-shell, .sys-modal-body, .payment-detail-sheet, .sys-data-table) :is(thead, thead tr, thead th) {
+  background: var(--surface);
+}
+html[data-astryx-theme='pollo-v62'] :is(.dashboard-shell, .sys-modal-body, .payment-detail-sheet, .sys-data-table) thead th {
+  color: var(--text-3);
+  font-weight: 500;
+  border-bottom: 1px solid var(--line);
+}

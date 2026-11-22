@@ -1832,11 +1832,11 @@
 .report-platform-option > span:first-child { flex: 1; white-space: nowrap; }
 .report-week-trigger:focus-visible, .report-task-dock button:focus-visible, .report-task-dock a:focus-visible { outline: 2px solid var(--ui-purple); outline-offset: 3px; }
 .report-week-menu { z-index: 60; min-width: var(--radix-select-trigger-width); max-width: calc(100vw - 32px); border: 0; outline: none; border-radius: 16px; padding: 8px; background: white; box-shadow: 0 14px 36px rgb(37 36 61 / 12%); overflow: hidden; }
-.report-week-viewport { max-height: min(264px, calc(var(--radix-select-content-available-height) - 16px)); padding: 58px 0; scroll-padding: 58px 0; overscroll-behavior: contain; mask-image: linear-gradient(to bottom, transparent 0, #000 18%, #000 82%, transparent 100%); }
+.report-week-viewport { max-height: min(264px, calc(var(--radix-select-content-available-height) - 16px)); padding: 0; scroll-padding: 8px 0; overscroll-behavior: contain; }
 .report-week-option { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 10px 34px 10px 14px; border-radius: 10px; outline: none; cursor: pointer; user-select: none; color: var(--ui-ink); font-size: 14px; font-variant-numeric: tabular-nums; transform-origin: center; transition: opacity 160ms ease, transform 160ms ease, color 160ms ease; }
-.report-week-option[data-distance='1'] { opacity: .72; transform: scale(.96); }
-.report-week-option[data-distance='2'] { opacity: .42; transform: scale(.92); }
-.report-week-option[data-distance='3'] { opacity: .2; transform: scale(.89); }
+.report-week-option[data-distance='1'],
+.report-week-option[data-distance='2'],
+.report-week-option[data-distance='3'] { opacity: 1; transform: none; }
 .report-week-option > span { position: relative; z-index: 1; }
 .report-week-option .report-week-highlight { position: absolute; inset: 0; z-index: 0; background: #ececef; border-radius: inherit; }
 .report-week-option:hover, .report-week-option[data-focused='true'] { background: #ececef; }
@@ -3275,3 +3275,6 @@
 .platform-filter-menu { min-width: 184px; padding: 9px; }
 .platform-filter-menu .icon-control-option { cursor: pointer; }
 .platform-filter-menu .icon-control-option.is-active { color: var(--ui-ink); background: #f0f1f4; }
+
+.dashboard-lineage-viewer { display:block; width:100%; height:780px; margin-top:16px; border:1px solid var(--ui-line); border-radius:18px; background:#f4f6fa; }
+@media(max-width:700px) { .dashboard-lineage-viewer { height:720px; } }

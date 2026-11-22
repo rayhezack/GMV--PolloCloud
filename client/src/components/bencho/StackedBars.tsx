@@ -29,6 +29,7 @@ type StackedBarsProps = {
   gap?: number;
   isVisible?: boolean;
   ariaLabel?: string;
+  highlightedCategory?:number|null;
 };
 
 export function StackedBars({
@@ -39,6 +40,7 @@ export function StackedBars({
   gap = 8,
   isVisible = true,
   ariaLabel = '堆叠柱状图',
+  highlightedCategory = null,
 }: StackedBarsProps) {
   const [at, setAt] = useState<number | null>(null);
   const [seen, setSeen] = useState(false);
@@ -85,7 +87,7 @@ export function StackedBars({
       .map((value, index) => ({ value, index }))
       .filter(({ value }) => value > 0)
       .sort((a, b) => b.value - a.value)
-      .slice(0, Math.max(3, Math.min(categories.length, 4)))
+      .slice(0, categories.length)
     : [];
   const stackGap = Math.max(4, Math.min(18, gap));
 
@@ -184,7 +186,7 @@ export function StackedBars({
         <div className="stb-columns">
           {data.map((item, index) => {
             const total = totals[index] ?? 0;
-            const stackHeight = Math.max(8, total / maxTotal * 100);
+            const stackHeight = total / maxTotal * 100;
             return (
               <button
                 key={`${item.label}-${index}`}
@@ -198,12 +200,13 @@ export function StackedBars({
                 <span className="stb-stack-wrap" style={{ height: `${stackHeight}%` }}>
                   <span className="stb-stack">
                     {item.values.map((value, categoryIndex) => (
-                      <motion.span
+                      value > 0 && <motion.span
                         key={`${item.label}-${categories[categoryIndex] ?? categoryIndex}`}
                         className="stb-segment"
                         style={{
                           '--stb-bar-color': colors[categoryIndex % Math.max(colors.length, 1)] ?? 'var(--ui-purple)',
-                          height: `${Math.max(3, value / Math.max(total, 1) * 100)}%`,
+                          height: `${value / Math.max(total, 1) * 100}%`,
+                          opacity:highlightedCategory==null||highlightedCategory===categoryIndex?1:.36,
                         } as CSSProperties}
                         initial={reducedMotion ? false : { scaleY: 0, opacity: 0 }}
                         animate={seen && isVisible || reducedMotion ? { scaleY: 1, opacity: 1 } : { scaleY: 0, opacity: 0 }}

@@ -1,0 +1,121 @@
+/* Sole semantic token source. The unused themes/ copy is pending removal. */
+:root,
+[data-astryx-theme='pollo-v62'] {
+  color-scheme: light;
+  --canvas: #f5f6f8;
+  --surface: #ffffff;
+  --surface-sunken: #f7f8fa;
+  --selected: #f0f1f4;
+  --line: #e3e8ee;
+  --text-1: #0d253d;
+  --text-2: #53627a;
+  --text-3: #64748d;
+  --accent: #533afd;
+  --accent-soft: #f0edff;
+  --accent-pale: #e9e3ff;
+  --positive: #12804a;
+  --positive-soft: #eaf6ee;
+  --negative: #d33a43;
+  --negative-soft: #fff0f0;
+  --negative-bar: #f3aab0;
+  --warn: #9a5b00;
+  --warn-soft: #fff6e5;
+  --baseline: #a6a6b2;
+  --residual: #b8bfca;
+  --series-1: #533afd;
+  --series-2: #9b87d8;
+  --series-3: #357fa4;
+  --series-4: #bd6a8b;
+  --series-5: #ad7b35;
+  --series-6: #698e81;
+  --div-0: #f3f4f6;
+  --fs-kpi: 28px;
+  --fs-h1: 20px;
+  --fs-panel: 15px;
+  --fs-strong: 14px;
+  --fs-body: 13px;
+  --fs-meta: 12px;
+  --radius-container: 16px;
+  --radius-element: 10px;
+  --radius-cell: 4px;
+  --radius-full: 999px;
+  --shadow-floating: 0 12px 40px rgb(13 37 61 / 0.12);
+  --font-family-body: 'Inter Variable', Inter, 'PingFang SC', -apple-system, sans-serif;
+  --seq-1: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  --seq-2: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  --seq-3: color-mix(in srgb, var(--accent) 29%, var(--surface));
+  --seq-4: color-mix(in srgb, var(--accent) 40%, var(--surface));
+  --seq-5: color-mix(in srgb, var(--accent) 50%, var(--surface));
+  --div-pos-1: color-mix(in srgb, var(--positive) 12%, var(--surface));
+  --div-pos-2: color-mix(in srgb, var(--positive) 28%, var(--surface));
+  --div-pos-3: color-mix(in srgb, var(--positive) 48%, var(--surface));
+  --div-neg-1: color-mix(in srgb, var(--negative) 12%, var(--surface));
+  --div-neg-2: color-mix(in srgb, var(--negative) 28%, var(--surface));
+  --div-neg-3: color-mix(in srgb, var(--negative) 48%, var(--surface));
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --v62-accent: var(--accent);
+  --v62-accent-soft: var(--accent-soft);
+  --v62-accent-pale: var(--accent-pale);
+  --v62-ink: var(--text-1);
+  --v62-muted: var(--text-2);
+  --v62-canvas: var(--canvas);
+  --v62-surface: var(--surface);
+  --v62-selected: var(--selected);
+  --v62-line: var(--line);
+  --v62-positive: var(--positive);
+  --v62-positive-soft: var(--positive-soft);
+  --v62-negative: var(--negative);
+  --v62-negative-soft: var(--negative-soft);
+  --v62-negative-bar: var(--negative-bar);
+  --v62-benchmark: var(--baseline);
+  --v62-floating-shadow: var(--shadow-floating);
+  --v62-radius: var(--radius-container);
+  --v62-category-1: var(--series-1);
+  --v62-category-2: var(--series-3);
+  --v62-category-3: var(--series-4);
+  --v62-category-4: var(--series-5);
+  --v62-category-other: var(--residual);
+  --v62-space-page: var(--space-24);
+}
+/* Component states belong to the theme, not individual pages. */
+.astryx-segmented-control {
+  background: var(--surface-sunken);
+  border-radius: var(--radius-element);
+  box-shadow: none;
+}
+.astryx-segmented-control-item {
+  --color-text-secondary: var(--text-2);
+  border: 0;
+  border-radius: var(--radius-element);
+  font-size: var(--fs-meta);
+}
+.astryx-segmented-control-item[data-selected='selected'],
+.astryx-segmented-control-item:hover {
+  background: var(--selected);
+  color: var(--text-1);
+  box-shadow: none;
+}
+.astryx-segmented-control-item[data-selected='selected'] {
+  font-weight: 500;
+}
+[data-astryx-layer-root] {
+  --shadow-med: var(--shadow-floating);
+  --shadow-high: var(--shadow-floating);
+}
+/* Do not let legacy display rules reveal closed native popovers. */
+[popover]:not(:popover-open) {
+  display: none !important;
+}
+.astryx-tooltip {
+  background: var(--surface);
+  color: var(--text-2);
+  box-shadow: var(--shadow-floating);
+  border: 0;
+  border-radius: var(--radius-element);
+  font-size: var(--fs-meta);
+}

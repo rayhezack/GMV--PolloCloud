@@ -64,9 +64,9 @@
 }
 
 .dashboard-date-picker [data-slot='date-input-group-segment']:focus {
-  color: #533afd;
-  background: #e9e5ff;
-  outline: none;
+  color: inherit;
+  background: #f0f1f4;
+  outline: none !important;
 }
 
 .dashboard-date-picker [data-slot='date-range-picker-trigger'] {

@@ -1,7 +1,9 @@
+import { PageHeader } from '@/components/system';
+import { Segment } from '@/components/v62/primitives';
 import { useEffect, useMemo, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { FileText, Copy } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/activity-notifications';
 import { Button } from '@/components/ui/button';
 import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
 import { canManagePollocloudApp } from '@/lib/pollocloud';
@@ -20,8 +22,22 @@ export default function ReportPage() {
   const { user, loading: accessLoading } = usePollocloudUser();
   const [searchParams, setSearchParams] = useSearchParams();
   const platform: Platform = searchParams.get('platform') === 'app' ? 'app' : 'web';
+  useEffect(() => {
+    if (searchParams.get('platform') !== 'web' && searchParams.get('platform') !== 'app')
+      setSearchParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.set('platform', 'web');
+          return next;
+        },
+        { replace: true },
+      );
+  }, [searchParams, setSearchParams]);
   const defaults = buildDefaultRequest(platform);
-  const period = parseReportPeriodKey(searchParams.get('period')) ?? { periodStart: defaults.startDate, periodEnd: defaults.endDate };
+  const period = parseReportPeriodKey(searchParams.get('period')) ?? {
+    periodStart: defaults.startDate,
+    periodEnd: defaults.endDate,
+  };
   const { periodStart, periodEnd } = period;
   const [report, setReport] = useState<ReportSummary | null>(null);
   const [history, setHistory] = useState<ReportHistoryItem[]>([]);
@@ -42,10 +58,21 @@ export default function ReportPage() {
     setReport(null);
     setLoadError('');
     void Promise.all([listReportHistory(platform), getReportHistory({ platform, periodStart, periodEnd })])
-      .then(([items, detail]) => { if (!cancelled) { setHistory(items); setReport(detail); } })
-      .catch(error => { if (!cancelled) setLoadError(error.message); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .then(([items, detail]) => {
+        if (!cancelled) {
+          setHistory(items);
+          setReport(detail);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) setLoadError(error.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [platform, periodStart, periodEnd, reload]);
 
   useEffect(() => {
@@ -67,7 +94,10 @@ export default function ReportPage() {
       }
     };
     void refresh();
-    return () => { cancelled = true; clearTimeout(timer); };
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [platform, periodStart, periodEnd, trackReport]);
 
   const generate = async (scope: CreateMenuScope) => {
@@ -76,36 +106,101 @@ export default function ReportPage() {
     setSubmitting(true);
     try {
       const platforms: Platform[] = scope === 'both' ? ['web', 'app'] : [scope];
-      const jobs = await Promise.all(platforms.map(target => generateReport({ platform: target, granularity: 'week', startDate: periodStart, endDate: periodEnd })));
-      const selectedJob = jobs.find(job => job.platform === platform) ?? jobs[0];
+      const jobs = await Promise.all(
+        platforms.map((target) =>
+          generateReport({ platform: target, granularity: 'week', startDate: periodStart, endDate: periodEnd }),
+        ),
+      );
+      const selectedJob = jobs.find((job) => job.platform === platform) ?? jobs[0];
       setGeneration(selectedJob);
       jobs.forEach(trackReport);
-      toast.info(scope === 'both' ? 'Web 和 App 报告已并行启动' : `${scope === 'web' ? 'Web' : 'App'} 报告生成任务已启动`);
-    } catch (error) { toast.error(error instanceof Error ? error.message : '报告生成失败'); }
-    finally { setSubmitting(false); }
+      toast.info(
+        scope === 'both' ? 'Web 和 App 报告已并行启动' : `${scope === 'web' ? 'Web' : 'App'} 报告生成任务已启动`,
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '报告生成失败');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <div className="dashboard-content report-reading-page">
-      <div className="dashboard-heading">
-        <div><h1>诊断报告</h1><p>从核心结论到证据，回溯业务周的变化。</p></div>
-        <div className="report-heading-actions">
-          <ReportWeekSelect weeks={weeks} value={getReportPeriodKey(periodStart, weeks.find(week => week.periodStart === periodStart)?.periodEnd ?? periodEnd)} onValueChange={value => {
-            const next = new URLSearchParams(searchParams); next.set('period', value); setSearchParams(next);
-          }} />
-          <CreateMenu
-            busy={generating}
-            disabled={generationPending || loading || Boolean(loadError) || accessLoading || !isAdmin}
-            onSelect={scope => void generate(scope)}
-          />
-          {report && <Button variant="ghost" size="sm" className="report-copy-button rounded-xl" onClick={() => void copyAnalysis(normalizeReportNarrative(report.markdown))}><Copy size={14} />复制报告</Button>}
-        </div>
-      </div>
-      {pollError && <p className="text-sm text-muted-foreground" role="status">{pollError}</p>}
-      {loading ? <section className="report-empty report-loading" role="status"><LoadingWave label="正在读取报告" /></section>
-        : loadError ? <section className="report-empty" role="alert"><p>{loadError}</p><Button variant="outline" onClick={() => setReload(value => value + 1)}>重试</Button></section>
-          : report ? <ReportInsightArticle report={report} />
-            : <section className="report-empty"><FileText size={32} /><strong>该业务周暂无报告</strong><p>{isAdmin ? '选择业务周后，点击「生成」即可创建报告。' : '请联系管理员生成该业务周的报告。'}</p></section>}
+    <div className="v62-page v62-sheet-page report-reading-page">
+      <PageHeader
+        title="诊断报告"
+        tools={
+          <>
+            <Segment
+              label="报告端"
+              value={platform}
+              onChange={(value) =>
+                setSearchParams((current) => {
+                  const next = new URLSearchParams(current);
+                  next.set('platform', value);
+                  return next;
+                })
+              }
+              items={[
+                { value: 'web', label: 'Web' },
+                { value: 'app', label: 'App' },
+              ]}
+            />
+            <ReportWeekSelect
+              weeks={weeks}
+              value={getReportPeriodKey(
+                periodStart,
+                weeks.find((week) => week.periodStart === periodStart)?.periodEnd ?? periodEnd,
+              )}
+              onValueChange={(value) => {
+                const next = new URLSearchParams(searchParams);
+                next.set('period', value);
+                setSearchParams(next);
+              }}
+            />
+            <CreateMenu
+              busy={generating}
+              disabled={generationPending || loading || Boolean(loadError) || accessLoading || !isAdmin}
+              onSelect={(scope) => void generate(scope)}
+            />
+            {report && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="v62-button report-copy-button"
+                onClick={() => void copyAnalysis(normalizeReportNarrative(report.markdown))}
+              >
+                <Copy size={14} />
+                复制报告
+              </Button>
+            )}
+          </>
+        }
+      />
+      {pollError && (
+        <p className="text-sm text-muted-foreground" role="status">
+          {pollError}
+        </p>
+      )}
+      {loading ? (
+        <section className="report-empty report-loading" role="status">
+          <LoadingWave label="正在读取报告" />
+        </section>
+      ) : loadError ? (
+        <section className="report-empty" role="alert">
+          <p>{loadError}</p>
+          <Button variant="outline" onClick={() => setReload((value) => value + 1)}>
+            重试
+          </Button>
+        </section>
+      ) : report ? (
+        <ReportInsightArticle report={report} />
+      ) : (
+        <section className="report-empty">
+          <FileText size={32} />
+          <strong>该业务周暂无报告</strong>
+          <p>{isAdmin ? '选择业务周后，点击「生成」即可创建报告。' : '请联系管理员生成该业务周的报告。'}</p>
+        </section>
+      )}
     </div>
   );
 }
