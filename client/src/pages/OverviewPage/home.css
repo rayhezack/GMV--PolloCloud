@@ -1,0 +1,712 @@
+/* WP3: one white sheet, restrained chart hierarchy, compact attribution rail. */
+.v62-workspace-header .v62-header-actions {
+  margin-left: auto;
+}
+[data-page='gmv-trend'] .sys-page-header {
+  grid-column: 1 / -1;
+  padding: var(--space-16) var(--space-24);
+}
+[data-page='gmv-trend'] .home-kpis {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+[data-page='gmv-trend'] .home-kpi-node {
+  padding: 0 var(--space-16);
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  min-width: 0;
+}
+[data-page='gmv-trend'] .home-kpi-node:first-child {
+  padding-left: 0;
+}
+[data-page='gmv-trend'] .home-kpi-node:last-child {
+  border-right: 0;
+}
+[data-page='gmv-trend'] .home-kpi-node .action-node-content {
+  padding: 0;
+}
+[data-page='gmv-trend'] .home-kpi-node .sys-kpi {
+  padding: 0;
+  border: 0;
+}
+[data-page='gmv-trend'] .home-kpi-node .sys-kpi::after {
+  left: 0;
+  right: 0;
+}
+[data-page='gmv-trend'] .home-kpi-node .action-node-fan {
+  z-index: 5;
+  top: 0;
+  right: var(--space-8);
+}
+[data-page='gmv-trend'] .home-kpi-node .sys-kpi-label {
+  padding-right: var(--space-32);
+}
+[data-page='gmv-trend'] .cash-flow-summary strong {
+  font-size: var(--fs-h1);
+}
+[data-page='gmv-trend'] .home-source-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-8);
+}
+[data-page='gmv-trend'] .home-source-context {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-8);
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+}
+[data-page='gmv-trend'] .home-source-context span {
+  color: var(--text-3);
+}
+.home-income-chart[data-charts] {
+  --primary-green-500: var(--positive);
+  --primary-green-200: var(--positive-soft);
+  --surface-subdued: var(--line);
+  --surface-white: var(--surface);
+  --border-soft: var(--line);
+  --fg-loud: var(--text-1);
+  --fg-normal: var(--text-2);
+  padding: 0;
+  gap: var(--space-8);
+  background: transparent;
+  box-shadow: none;
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+  font-family: var(--font-family-body);
+  font-variant-numeric: tabular-nums;
+}
+.home-income-chart[data-tone='negative'] {
+  --primary-green-500: var(--negative);
+  --primary-green-200: var(--negative-soft);
+}
+.home-income-chart[data-tone='residual'],
+.home-income-chart[data-tone='neutral'] {
+  --primary-green-500: var(--residual);
+  --primary-green-200: var(--surface-sunken);
+}
+.home-income-chart[data-charts] > div:first-child,
+.home-income-chart [data-slot='monthly-income-chart-insight'],
+.home-income-chart [data-slot='monthly-income-chart-heading'],
+.home-income-chart [data-slot='monthly-income-chart-divider'] {
+  display: none;
+}
+.home-income-chart [data-slot='monthly-income-chart-gauge'] {
+  margin-top: var(--space-4);
+}
+.home-income-chart .income-caption-label {
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  line-height: 1.2;
+}
+.home-income-chart [data-slot='monthly-income-chart-caption'] {
+  margin: 0;
+  font-family: inherit;
+  font-size: var(--fs-meta);
+  line-height: 1.2;
+  color: var(--text-2);
+}
+.home-income-chart p[data-slot='monthly-income-chart-caption']:first-of-type {
+  font-size: var(--fs-h1);
+  font-weight: 500;
+  color: var(--text-1);
+}
+.home-income-chart [data-slot='monthly-income-chart-caption'] span {
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+}
+.home-income-chart [role='group'] {
+  gap: var(--space-4);
+}
+.home-income-chart [data-slot='monthly-income-chart-source'] {
+  padding: var(--space-4) 0;
+  gap: var(--space-4);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  border-radius: var(--radius-element);
+  opacity: 1;
+  font-family: inherit;
+}
+.home-income-chart [data-slot='monthly-income-chart-source']:is(:hover, [data-active='true']) {
+  background: var(--selected);
+  box-shadow: none;
+}
+.home-income-chart [data-slot='monthly-income-chart-source']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  box-shadow: none;
+}
+.home-income-chart [data-slot='monthly-income-chart-source'] span {
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.home-income-chart [data-slot='monthly-income-chart-row'][data-kind='residual'] {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-4);
+}
+.home-income-chart
+  [data-slot='monthly-income-chart-row'][data-direction='positive']
+  [data-slot='monthly-income-chart-amount'] {
+  color: var(--positive);
+}
+.home-income-chart
+  [data-slot='monthly-income-chart-row'][data-direction='negative']
+  [data-slot='monthly-income-chart-amount'] {
+  color: var(--negative);
+}
+.home-income-chart
+  [data-slot='monthly-income-chart-row'][data-kind='residual']
+  [data-slot='monthly-income-chart-amount'] {
+  color: var(--text-2);
+}
+.income-source-reading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+.income-source-reading .sys-diverging b {
+  display: none;
+}
+.income-source-reading .sys-diverging-track {
+  width: 80px;
+  flex-basis: 80px;
+}
+.income-source-reading [data-slot='monthly-income-chart-amount'] {
+  min-width: 64px;
+  text-align: right;
+}
+[data-page='gmv-trend'] .home-source-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin-top: var(--space-12);
+  font-size: var(--fs-meta);
+}
+.home-source-links a {
+  display: inline-flex;
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-element);
+  background: var(--selected);
+  color: var(--text-1);
+}
+.home-source-links .home-primary-link {
+  background: var(--accent);
+  color: var(--surface);
+}
+[data-page='gmv-trend'] .v62-calendar-diagnosis {
+  margin-top: var(--space-12);
+  padding-top: var(--space-12);
+}
+[data-page='gmv-trend'] .v62-day-actions .v62-calendar-actions {
+  max-height: none;
+  overflow: visible;
+  gap: 0;
+  margin: 0;
+}
+[data-page='gmv-trend'] .v62-calendar-actions button {
+  padding: var(--space-12) 0;
+  width: 100%;
+  font-size: var(--fs-meta);
+}
+[data-page='gmv-trend'] .v62-calendar-actions button > span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+[data-page='gmv-trend'] .v62-calendar-actions button > small {
+  display: block;
+  margin-top: var(--space-4);
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+.home-expand-actions {
+  background: transparent;
+  color: var(--accent);
+  border: 0;
+  border-radius: var(--radius-element);
+  padding: var(--space-8) 0;
+  font: inherit;
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+[data-page='gmv-trend'] .gmv-calendar .sys-panel-header {
+  display: block;
+}
+[data-page='gmv-trend'] .gmv-heatmap .gmv-calendar-grid button[data-date] {
+  width: 100%;
+  min-height: 0;
+  height: 24px;
+  padding: 0;
+  border-radius: var(--radius-element);
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: var(--cell-color, var(--surface-sunken));
+  border: 0;
+  box-shadow: none;
+  overflow: hidden;
+}
+[data-page='gmv-trend'] .gmv-heatmap .gmv-calendar-grid button[data-date]:hover {
+  filter: brightness(0.97);
+}
+[data-page='gmv-trend'] .gmv-heatmap .gmv-calendar-grid button[data-date][data-selected='true'] {
+  box-shadow: inset 0 -2px var(--accent);
+}
+[data-page='gmv-trend'] .gmv-heatmap .gmv-calendar-grid button[data-date]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.gmv-anomaly-ring {
+  display: inline-block;
+  position: static;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--negative);
+  flex: none;
+}
+[data-page='gmv-trend'] .gmv-calendar footer {
+  gap: var(--space-12);
+}
+[data-page='gmv-trend'] .home-attribution .sys-skeleton {
+  padding: var(--space-16) 0;
+}
+@media (max-width: 1200px) {
+  [data-page='gmv-trend'] .sys-page-tools {
+    gap: var(--space-8);
+  }
+  [data-page='gmv-trend'] .sys-kpi-baseline {
+    font-size: var(--fs-meta);
+  }
+}
+.home-income-chart .income-expand-sources {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-element);
+  padding: var(--space-4) 0;
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+.home-income-chart .income-expand-sources:hover {
+  background: var(--selected);
+}
+[data-page='gmv-trend'] .v62-calendar-diagnosis .bencho-document-stack:not([data-expanded='true']) {
+  height: 52px;
+}
+[data-page='gmv-trend'] .v62-calendar-diagnosis .bencho-document-cover {
+  height: 48px;
+  padding: var(--space-8) var(--space-12);
+}
+[data-page='gmv-trend'] .v62-calendar-diagnosis .v62-week-report-button {
+  min-height: 24px;
+  height: 24px;
+  padding: 0;
+}
+[data-page='gmv-trend'] .daily-calendar-card .sys-panel-header button {
+  width: auto;
+}
+[data-page='gmv-trend'] .daily-calendar-card .sys-panel-header button[aria-describedby] {
+  width: 20px;
+}
+/* The two columns flow independently: extra attribution rows never create an empty chart gutter. */
+[data-page='gmv-trend'] .v62-home-main {
+  display: flex;
+  flex-direction: column;
+  grid-column: 1;
+  min-width: 0;
+}
+[data-page='gmv-trend'] .v62-home-rail {
+  display: flex;
+  flex-direction: column;
+  grid-column: 2;
+  border-left: 1px solid var(--line);
+  min-width: 0;
+}
+[data-page='gmv-trend'] .v62-home-main .v62-trend-panel {
+  align-self: auto;
+}
+[data-page='gmv-trend'] .v62-home-rail .daily-bento-anomaly {
+  min-height: 0;
+  border-left: 0;
+}
+[data-page='gmv-trend'] .home-calendar-panel {
+  padding: 0;
+}
+[data-page='gmv-trend'] .v62-home-rail .v62-day-actions {
+  border-left: 0;
+}
+[data-page='gmv-trend'] .home-calendar-panel .sys-panel-header button {
+  width: auto;
+}
+[data-page='gmv-trend'] .home-calendar-panel .sys-panel-header button:not([role='radio']) {
+  width: 20px;
+}
+@media (max-width: 850px) {
+  [data-page='gmv-trend'] .v62-home-main,
+  [data-page='gmv-trend'] .v62-home-rail {
+    grid-column: 1;
+  }
+  [data-page='gmv-trend'] .v62-home-rail {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+[data-page='gmv-trend'] .daily-source-error {
+  grid-column: 1 / -1;
+}
+
+/* Compact heatmap: weekday rows, natural-week columns, one cell per observed day. */
+[data-page='gmv-trend'] .gmv-heatmap-body {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: var(--space-8);
+  margin: var(--space-16) 0;
+}
+[data-page='gmv-trend'] .gmv-heatmap-weekdays {
+  display: grid;
+  grid-column: 1;
+  grid-row: 1;
+  grid-template-columns: 1fr;
+  grid-template-rows: repeat(7, 32px);
+  gap: 6px;
+  text-align: left;
+  align-items: center;
+}
+[data-page='gmv-trend'] .gmv-heatmap .gmv-calendar-grid {
+  grid-column: 2;
+  grid-row: 1;
+  grid-template-columns: repeat(var(--gmv-weeks), minmax(0, 1fr));
+  grid-template-rows: repeat(7, 32px);
+  gap: 6px;
+}
+[data-page='gmv-trend'] .gmv-heatmap .gmv-calendar-grid button[data-date] {
+  width: 100%;
+  height: 32px;
+  border-radius: var(--radius-cell);
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--fs-meta);
+}
+[data-page='gmv-trend'] .gmv-heatmap .gmv-date-label {
+  font-size: var(--fs-meta);
+  font-weight: 400;
+}
+[data-page='gmv-trend'] .gmv-heatmap .gmv-calendar-grid .gmv-anomaly-ring {
+  position: absolute;
+  right: var(--space-4);
+  top: var(--space-4);
+}
+.gmv-heatmap-weeks {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(var(--gmv-weeks), minmax(0, 1fr));
+  gap: 6px;
+  text-align: center;
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+}
+html[data-astryx-theme='pollo-v62'] .astryx-tooltip:has(.gmv-day-preview) {
+  max-width: min(260px, calc(100vw - 32px));
+  padding: var(--space-12);
+  background: var(--surface);
+  color: var(--text-1);
+  border: 0;
+  box-shadow: var(--shadow-floating);
+}
+.gmv-day-preview {
+  width: 220px;
+  max-width: 100%;
+  display: grid;
+  gap: var(--space-8);
+  font-family: var(--font-family-body);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  white-space: normal;
+}
+.gmv-day-preview header,
+.gmv-day-preview > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+.gmv-day-preview header > strong {
+  font-size: var(--fs-body);
+}
+.gmv-day-preview > div > span {
+  color: var(--text-2);
+}
+.gmv-day-preview [data-direction='positive'],
+.gmv-day-preview [data-direction='positive'] > span {
+  color: var(--positive);
+}
+.gmv-day-preview [data-direction='negative'],
+.gmv-day-preview [data-direction='negative'] > span {
+  color: var(--negative);
+}
+.gmv-preview-anomaly {
+  color: var(--negative);
+}
+.gmv-day-preview footer {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-8);
+  color: var(--text-2);
+}
+
+.revenue-expanded-dialog {
+  --accent: var(--primary);
+  --v62-accent: var(--primary);
+  width: min(1000px, calc(100vw - 48px));
+  max-width: 1000px;
+  padding: var(--space-24);
+  border: 0;
+  background: var(--surface);
+  color: var(--text-1);
+  font-family: var(--font-family-body);
+}
+.revenue-expanded-dialog > .v62-trend-panel {
+  padding: var(--space-8) 0 0;
+}
+.revenue-expanded-dialog .sys-panel-header {
+  padding-right: var(--space-24);
+}
+.revenue-expanded-dialog .v62-panel-tools {
+  flex-wrap: wrap;
+}
+
+/* A single sheet: trend with sources, then calendar with daily activity. */
+[data-page='gmv-trend'] .v62-home-sheet.daily-rail {
+  align-items: stretch;
+  background: var(--surface);
+  overflow: clip;
+  gap: 0;
+  border-radius: var(--radius-card);
+}
+[data-page='gmv-trend'] .v62-home-main,
+[data-page='gmv-trend'] .v62-home-rail {
+  display: contents;
+}
+[data-page='gmv-trend'] .v62-home-main > .home-trend-stack {
+  grid-column: 1;
+  grid-row: 3 / span 2;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: subgrid;
+}
+[data-page='gmv-trend'] .home-trend-stack > .v62-trend-panel {
+  border-bottom: 0;
+  padding-bottom: var(--space-12);
+}
+.home-composition-state {
+  padding: var(--space-16) var(--space-24);
+  border-top: 1px solid var(--line);
+}
+[data-page='gmv-trend'] .v62-home-rail .daily-bento-anomaly {
+  grid-column: 2;
+  grid-row: 3 / span 2;
+  display: grid;
+  grid-template-rows: subgrid;
+  padding: 0;
+  border-left: 1px solid var(--line);
+  min-height: 0;
+}
+[data-page='gmv-trend'] .home-signals-body {
+  padding: var(--space-24) var(--space-16) var(--space-12);
+  min-width: 0;
+}
+[data-page='gmv-trend'] .v62-home-main .home-calendar-panel {
+  grid-column: 1;
+  grid-row: 5;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+[data-page='gmv-trend'] .home-calendar-panel .gmv-calendar {
+  padding: var(--space-24);
+}
+[data-page='gmv-trend'] .v62-home-rail .v62-day-actions {
+  grid-column: 2;
+  grid-row: 5;
+  border-left: 1px solid var(--line);
+  border-top: 0;
+  min-width: 0;
+}
+[data-page='gmv-trend'] .v62-day-actions .v62-calendar-diagnosis {
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: var(--space-12);
+  border-top: 0;
+  border-bottom: 1px solid var(--line);
+}
+[data-page='gmv-trend'] .home-kpis .sys-kpi-strip {
+  padding: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+[data-page='gmv-trend'] .home-kpis .home-kpi-node {
+  padding: var(--space-16) var(--space-24) 0;
+  min-width: 0;
+  box-sizing: border-box;
+}
+[data-page='gmv-trend'] .home-kpi-node .sys-kpi-label {
+  color: var(--text-1);
+  font-size: var(--fs-panel);
+  font-weight: 550;
+  padding-right: var(--space-24);
+  gap: var(--space-8);
+}
+[data-page='gmv-trend'] .sys-kpi-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  color: var(--surface);
+  background: var(--accent);
+  border-radius: var(--radius-element);
+}
+[data-page='gmv-trend'] .home-kpi-node:nth-child(2) .sys-kpi-icon {
+  background: var(--color-data-blue-4);
+}
+[data-page='gmv-trend'] .home-kpi-node:nth-child(3) .sys-kpi-icon {
+  background: var(--positive);
+}
+[data-page='gmv-trend'] .home-kpi-node .sys-kpi-value {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-12) 0 var(--space-16);
+  margin: 0;
+}
+[data-page='gmv-trend'] .home-kpi-node .sys-kpi-baseline {
+  border-top: 1px dashed var(--line);
+  padding: var(--space-12) 0;
+  margin: 0;
+}
+[data-page='gmv-trend'] .home-kpi-node .action-node-fan {
+  top: var(--space-8);
+  right: var(--space-8);
+}
+@media (max-width: 850px) {
+  [data-page='gmv-trend'] .v62-home-main > .home-trend-stack,
+  [data-page='gmv-trend'] .v62-home-rail .daily-bento-anomaly,
+  [data-page='gmv-trend'] .v62-home-main .home-calendar-panel,
+  [data-page='gmv-trend'] .v62-home-rail .v62-day-actions {
+    grid-column: 1;
+    grid-row: auto;
+    border-left: 0;
+  }
+  [data-page='gmv-trend'] .v62-home-main > .home-trend-stack,
+  [data-page='gmv-trend'] .v62-home-rail .daily-bento-anomaly {
+    display: block;
+  }
+}
+[data-page='gmv-trend'] .v62-day-actions header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-8);
+}
+.home-activity-date {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  background: var(--selected);
+  border-radius: var(--radius-element);
+  padding: var(--space-4) var(--space-8);
+  white-space: nowrap;
+}
+.home-activity-date .workbench-icon {
+  width: 18px;
+  height: 18px;
+  flex-basis: 18px;
+}
+[data-page='gmv-trend'] .v62-home-sheet > :is(.sys-page-header, .home-kpis) {
+  background: var(--surface);
+}
+
+[data-page='gmv-trend'] .home-kpi-node .sys-kpi::after {
+  bottom: 0;
+}
+[data-page='gmv-trend'] .home-kpis .home-kpi-node:last-child {
+  border-right: 1px solid transparent;
+}
+[data-page='gmv-trend'] .v62-calendar-actions button {
+  padding-block: var(--space-8);
+}
+
+[data-page='gmv-trend'] .action-node-trigger {
+  position: absolute;
+  top: var(--space-16);
+  right: var(--space-16);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-element);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  z-index: 2;
+}
+[data-page='gmv-trend'] .home-kpi-node .action-node-fan {
+  top: var(--space-16);
+  right: calc(var(--space-16) + 32px);
+}
+[data-page='gmv-trend'] .action-node-tooltip {
+  width: max-content;
+  max-width: 200px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+[data-page='gmv-trend'] .home-kpi-node .sys-kpi-value {
+  flex-wrap: wrap;
+}
+[data-page='gmv-trend'] .home-kpi-node:nth-child(4) .sys-kpi-icon {
+  background: var(--color-data-blue-4);
+}
+[data-page='gmv-trend'] .home-kpi-node .sys-kpi-value strong {
+  font-size: var(--fs-kpi);
+}
+[data-page='gmv-trend'] .home-kpis .home-kpi-node {
+  padding-inline: var(--space-16);
+}
+
+.home-detail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+[data-page='gmv-trend'] .daily-bento-anomaly > .v62-calendar-diagnosis {
+  margin: 0;
+  padding: var(--space-16);
+  border-top: 1px solid var(--line);
+}
+[data-page='gmv-trend'] .v62-day-actions {
+  min-height: 0;
+}

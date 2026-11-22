@@ -1,5 +1,5 @@
 import type { ProductActionSource } from '@shared/product-actions';
-import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
+import { apiRequest } from '@/lib/pollocloud';
 import { createRequestCache } from './request-cache';
 import { getDemoAttributions, getDemoCoverage, getDemoOverview, STATIC_DEMO_MODE } from '@/lib/demo-data';
 import type {
@@ -32,7 +32,7 @@ function readDashboard<T>(url: string): Promise<{ data: T }> {
   const params = new URLSearchParams(query);
   params.sort();
   const key = `${path}?${params}`;
-  return dashboardReads.read(key, () => axiosForBackend({ url, method: 'GET' }));
+  return dashboardReads.read(key, () => apiRequest<T>(url));
 }
 
 export async function getAdsOverview(params: {
@@ -51,6 +51,7 @@ export async function getAdsOverview(params: {
 
 export async function getCreativeOverview(params: {
   platform: DashboardPlatform;
+  deviceType?: AppDeviceType;
   startDate: string;
   endDate: string;
   baselinePeriod: string;
@@ -77,6 +78,7 @@ export async function getChainFunnel(params: {
 }
 
 export async function getPaymentTrend(params: {platform:DashboardPlatform;deviceType?:AppDeviceType;analysisPeriod:string;attributionType:GmvAttributionType;granularity:'day'|'week'|'month'|'year';income:string;groupBy?:string;startDate?:string;endDate?:string;cacheBust?:number}):Promise<PaymentTrendResponse> {
+  if(STATIC_DEMO_MODE) return {series:[],granularity:params.granularity,startDate:params.startDate||params.analysisPeriod,endDate:params.endDate||params.analysisPeriod,points:[]};
   const response=await readDashboard<PaymentTrendResponse>(`/api/dashboard/payment-trend${buildQueryString(params)}`);
   return response.data;
 }
@@ -101,6 +103,7 @@ export async function getPaymentAnalysis(params: {
   attributionType: GmvAttributionType;
   cacheBust?: number;
 }): Promise<PaymentAnalysisResponse> {
+  if(STATIC_DEMO_MODE) return {attributionType:params.attributionType,source:'ads_v1',availableAttributionTypes:['NONE','CREATION_MODE','MODEL','ACTUAL_MODEL'],comparison:null,revenues:[],costs:[],costAvailable:false,registrationStatus:'source_missing'};
   const response = await readDashboard<PaymentAnalysisResponse>(`/api/dashboard/payment-analysis${buildQueryString(params)}`);
   return response.data as PaymentAnalysisResponse;
 }
@@ -111,13 +114,15 @@ export async function getGmvCoverage(): Promise<DashboardGmvCoverageResponse> {
   return response.data as DashboardGmvCoverageResponse;
 }
 
-export async function getGmvAnomalies(): Promise<DashboardGmvAnomalyResponse> {
-  if (STATIC_DEMO_MODE) return { latestWeek: '', latestDay: '', method: 'daily_and_weekly_rolling_p95_p05_min_10pct', alerts: [] };
-  const response = await readDashboard('/api/dashboard/gmv-anomalies');
+export async function getGmvAnomalies(revision?: string, asOfDate?: string, platform?: DashboardPlatform): Promise<DashboardGmvAnomalyResponse> {
+  if (STATIC_DEMO_MODE) return { latestWeek: '2026-10-03', latestDay: asOfDate || '2026-10-09', monitoredPlatforms: ['all','web','app'], anomalyDates: [], method: 'daily_and_weekly_rolling_p95_p05_min_10pct', alerts: [] };
+  const response = await readDashboard(`/api/dashboard/gmv-anomalies${buildQueryString({ cacheBust: revision, asOfDate, platform })}`);
   return response.data as DashboardGmvAnomalyResponse;
 }
 
 export async function getDashboardOverview(params: {
+  view?: 'cards';
+  includeRenewal?: 'true';
   platform: DashboardPlatform;
   deviceType?: AppDeviceType;
   granularity: Granularity;
@@ -135,6 +140,7 @@ export async function getDashboardOverview(params: {
 }
 
 export async function getDashboardAttributions(params: {
+  view?: 'summary';
   platform: DashboardPlatform;
   deviceType?: AppDeviceType;
   granularity: Granularity;
@@ -171,19 +177,17 @@ export async function getWorkbookPreview(params: {
   if (STATIC_DEMO_MODE) {
     return { sheet: params.sheet, fields: [], items: [], total: 0, hasMore: false };
   }
-  const response = await axiosForBackend({
-    url: `/api/workbook-preview${buildQueryString({
+  const response = await apiRequest<WorkbookPreviewResponse>(`/api/workbook-preview${buildQueryString({
       sheet: params.sheet,
       platform: params.platform,
       offset: params.offset ?? 0,
       pageSize: params.pageSize ?? 50,
-    })}`,
-    method: 'GET',
-  });
+    })}`);
   return response.data as WorkbookPreviewResponse;
 }
 
 export async function getProductActions(): Promise<ProductActionSource> {
+  if (STATIC_DEMO_MODE) return { actions: [], available: true, readAt: '2026-10-09T08:25:04.000Z' };
   return (await readDashboard<ProductActionSource>('/api/dashboard/product-actions')).data;
 }
 

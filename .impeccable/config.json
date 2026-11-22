@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-font",
+        "value": "sfmono-regular",
+        "createdAt": "2026-11-22T05:31:53.613Z",
+        "reason": "WP8 独立公式块使用现有等宽字体回退，属于公式记法；正文继续使用 Inter。"
+      }
+    ]
+  }
+}

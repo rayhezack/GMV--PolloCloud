@@ -1,10 +1,5 @@
-# Local analytical exports and visual review artifacts are not application source.
+# Source uploads contain application code; review evidence stays local.
 /archives/
-/.local-data/
+/design-review/
 /.impeccable/review/
-/*.csv
-/*.xlsx
-/*.sql
-/gmv-creation-mode-feishu-doc.md
-/middle-table-exploration-20261020.md
-/scripts/backfill-chain-enriched.py
+/design-assets/

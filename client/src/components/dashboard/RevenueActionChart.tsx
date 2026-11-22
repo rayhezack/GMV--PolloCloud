@@ -1,4 +1,5 @@
 import { useId, useMemo, useState, type CSSProperties } from 'react';
+import { useLocation } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { WalletCards, BadgePercent, UserRoundPlus, Workflow, RotateCw, Info, Music2, NotebookPen, Plus } from 'lucide-react';
 import { tightLineTicks } from '@/lib/chart-series';
@@ -6,6 +7,7 @@ import { CashBalanceChart } from '@/components/cash-balance-chart';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { revenueActionEvents, type RevenueMetric, type ProductActionSource } from '@shared/product-actions';
+import type { RevenueGrain, RevenueTrendBucket } from '@shared/revenue-trend';
 import type { OverviewTrendPoint } from '@shared/api.interface';
 import './revenue-action-chart.css';
 
@@ -29,12 +31,16 @@ export function RevenueActionInfo({title, source, period}: {title: string; sourc
   </Popover>;
 }
 
-export function RevenueActionChart({ rows, visibleRows, metric, color, title, platform, source, focusPeriod }: {
+export function RevenueActionChart({ rows, visibleRows, metric, color, title, platform, source, focusPeriod, plotHeight = 155, grain = 'day', buckets = [] }: {
   rows: OverviewTrendPoint[]; visibleRows: OverviewTrendPoint[]; metric: RevenueMetric;
   color: string; title: string; platform: string; source: ProductActionSource | null;
   focusPeriod?: string | null;
+  plotHeight?: number;
+  grain?: RevenueGrain;
+  buckets?: RevenueTrendBucket[];
 }) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const { key: navigationKey } = useLocation();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [expandedAction, setExpandedAction] = useState<string | null>(null);
   const detailId = useId();
@@ -64,17 +70,30 @@ export function RevenueActionChart({ rows, visibleRows, metric, color, title, pl
   }, [source, platform]);
   const selectedActions = [...(actionsByDate.get(selectedDate ?? '')?.values() ?? [])];
   return <div className="revenue-action-chart" style={{'--revenue-line': color} as CSSProperties}>
-    <CashBalanceChart chartOnly eventTimeline plotHeight={155} title={`${title} 日趋势`} data={data} range={range} ticks={ticks} summary={[]}
+    <CashBalanceChart chartOnly eventTimeline plotHeight={plotHeight} title={`${title} ${{day: '日趋势', week: '业务周日均', month: '月份日均'}[grain]}`} data={data} range={range} ticks={ticks} summary={[]}
       focusTime={focusPeriod ? timeOf(focusPeriod) : undefined}
+      focusKey={focusPeriod ? navigationKey : undefined}
       transactions={[]} index={null} locale="en-US" currency="USD"
       tooltipHint={point => {
+        if (grain !== 'day') {
+          const bucket = buckets.find(row => timeOf(row.period) === point.time);
+          return bucket ? `${bucket.days} 天日均${bucket.partial ? ' · 非完整周期' : ''}` : '';
+        }
+        if (focusPeriod && point.time === timeOf(focusPeriod)) return '异动日';
         if (!source) return '正在读取产品动作…';
         if (!source.available) return '产品动作暂不可用';
         const count = actionsByDate.get(new Date(point.time).toISOString().slice(0, 10))?.size ?? 0;
         return count ? `产品动作 · ${count} 条，点击查看` : '当日暂无产品动作';
       }}
-      formatTime={(time, context) => context === 'axis' ? new Date(time).toISOString().slice(5, 10).replace('-', '/') : new Date(time).toISOString().slice(0, 10)}
-      onIndexChange={(_, point) => {
+      formatTime={(time, context) => {
+        const date = new Date(time).toISOString().slice(0, 10);
+        if (grain !== 'day') {
+          if (context === 'axis') return grain === 'month' ? date.slice(0, 7).replace('-', '/') : date.slice(5).replace('-', '/');
+          return buckets.find(row => row.period === date)?.coverage ?? date;
+        }
+        return context === 'axis' ? date.slice(5).replace('-', '/') : date;
+      }}
+      onIndexChange={grain !== 'day' ? undefined : (_, point) => {
         if (!point) return;
         setExpandedAction(null);
         setSelectedDate(new Date(point.time).toISOString().slice(0, 10));

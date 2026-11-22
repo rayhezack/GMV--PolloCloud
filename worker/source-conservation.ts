@@ -10,6 +10,7 @@ const amount = (row: Row, field: string) => {
 // Keep a much smaller tolerance than one cent so binary floating-point noise does
 // not reject equal amounts while any business-visible cent drift still fails.
 const MONEY_CONSERVATION_EPSILON_USD = 1e-9;
+const cents = (value: number) => Math.round(value * 100);
 
 /** A dimension may only partition the population on which it is defined. */
 export function assertChainConservation(rows: Row[]) {

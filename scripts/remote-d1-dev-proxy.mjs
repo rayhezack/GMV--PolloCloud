@@ -1,86 +1,8 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import path from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { localDatabase } from './local-d1.mjs';
 
-const execFileAsync = promisify(execFile);
-const APP_NAME = 'pollo-ai';
 const OWNER_ID = 'ou_e74ecf33d6000a25a1193eec73cb1ac9';
-
-function sqlValue(value) {
-  if (value == null) return 'NULL';
-  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
-  return `'${String(value).replaceAll("'", "''")}'`;
-}
-
-function bindSql(sql, values) {
-  let index = 0;
-  let quoted = false;
-  let result = '';
-  for (let cursor = 0; cursor < sql.length; cursor += 1) {
-    const char = sql[cursor];
-    if (char === "'") {
-      if (quoted && sql[cursor + 1] === "'") {
-        result += "''";
-        cursor += 1;
-        continue;
-      }
-      quoted = !quoted;
-      result += char;
-      continue;
-    }
-    if (char === '?' && !quoted) {
-      if (index >= values.length) throw new Error('D1 查询参数数量不足');
-      result += sqlValue(values[index]);
-      index += 1;
-      continue;
-    }
-    result += char;
-  }
-  if (index !== values.length) throw new Error('D1 查询参数数量过多');
-  return result;
-}
-
-async function executeRemoteSql(sql) {
-  const { stdout } = await execFileAsync(
-    'pollocloud',
-    ['db', 'execute', '--name', APP_NAME, '--command', sql, '--json'],
-    { maxBuffer: 128 * 1024 * 1024, timeout: 120_000, env: { ...process.env, NODE_USE_ENV_PROXY: '1' } },
-  );
-  const jsonStart = stdout.indexOf('[');
-  if (jsonStart < 0) throw new Error('远程 D1 返回格式异常');
-  const payload = JSON.parse(stdout.slice(jsonStart))[0];
-  if (!payload.success) throw new Error('远程 D1 查询失败');
-  return payload.results ?? [];
-}
-
-function remoteDatabase() {
-  const prepare = (sql) => {
-    let boundSql = sql;
-    return {
-      bind(...values) {
-        boundSql = bindSql(sql, values);
-        return this;
-      },
-      async all() {
-        return { results: await executeRemoteSql(boundSql) };
-      },
-      async first() {
-        // Development uses the Worker's memory cache. This read-only proxy
-        // cannot populate the shared response cache, so don't pay a remote
-        // round trip for a cache entry produced by a different code version.
-        if (/\bFROM\s+dashboard_response_cache\b/i.test(boundSql)) return null;
-        const results = await executeRemoteSql(boundSql);
-        return results[0] ?? null;
-      },
-      async run() {
-        throw new Error('本地开发代理仅允许读取远程 D1');
-      },
-    };
-  };
-  return { prepare };
-}
 
 async function writeResponse(nodeResponse, response) {
   nodeResponse.statusCode = response.status;
@@ -91,7 +13,8 @@ async function writeResponse(nodeResponse, response) {
 export function remoteD1DevProxy() {
   const snapshotPath = path.resolve('.local-data/dashboard.sqlite');
   const manifestPath = path.resolve('.local-data/manifest.json');
-  const local = process.env.POLLO_REMOTE_DATA !== '1' && existsSync(snapshotPath) && existsSync(manifestPath);
+  const demo = process.env.VITE_DATA_MODE === 'demo';
+  const local = !demo && existsSync(snapshotPath) && existsSync(manifestPath);
   const window = local ? JSON.parse(readFileSync(manifestPath, 'utf8')) : null;
   return {
     name: 'remote-d1-dev-proxy',
@@ -102,7 +25,7 @@ export function remoteD1DevProxy() {
       } };
     },
     configureServer(server) {
-      const database = local ? localDatabase(snapshotPath) : remoteDatabase();
+      const database = local ? localDatabase(snapshotPath) : null;
       if (local) {
         server.config.logger.info(`本地只读数据：${window.startDate} ~ ${window.endDate}`);
         server.httpServer?.once('close', () => database.close());
@@ -127,6 +50,12 @@ export function remoteD1DevProxy() {
         }
         if (!url.pathname.startsWith('/api/')) {
           next();
+          return;
+        }
+        if (!database) {
+          response.statusCode = 503;
+          response.setHeader('content-type', 'application/json');
+          response.end(JSON.stringify({ error: '本地快照不可用；请使用 demo 模式。远程查询已禁用。' }));
           return;
         }
         if (request.method !== 'GET') {

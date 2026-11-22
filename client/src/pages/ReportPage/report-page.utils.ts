@@ -1,17 +1,13 @@
 import type { Platform, ReportGenerationRequest } from '@shared/api.interface';
 import { LOCAL_DATA_WINDOW } from '@/lib/local-data-window';
-import {
-  getBusinessWeekStart,
-  getLatestCompleteFriday,
-  parseDateString,
-  toDateString,
-} from '@shared/business-week';
+import { getBusinessWeekStart, getLatestCompleteFriday, parseDateString, toDateString } from '@shared/business-week';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const latestAvailableDate = () => LOCAL_DATA_WINDOW?.endDate ?? toDateString(new Date(Date.now() - DAY_MS));
-const latestCompleteFriday = () => getLatestCompleteFriday(
-  LOCAL_DATA_WINDOW ? new Date(parseDateString(LOCAL_DATA_WINDOW.endDate).getTime() + DAY_MS) : new Date(),
-);
+const latestCompleteFriday = () =>
+  getLatestCompleteFriday(
+    LOCAL_DATA_WINDOW ? new Date(parseDateString(LOCAL_DATA_WINDOW.endDate).getTime() + DAY_MS) : new Date(),
+  );
 const BEIJING_TIME_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
   timeZone: 'Asia/Shanghai',
   year: 'numeric',
@@ -22,9 +18,7 @@ const BEIJING_TIME_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
   hourCycle: 'h23',
 });
 
-export function buildDefaultRequest(
-  platform: Platform,
-): ReportGenerationRequest {
+export function buildDefaultRequest(platform: Platform): ReportGenerationRequest {
   const latestCompleteEnd = latestCompleteFriday();
   const latestAvailableEnd = latestAvailableDate();
   const latestAvailableWeekStart = getBusinessWeekStart(latestAvailableEnd);
@@ -32,9 +26,7 @@ export function buildDefaultRequest(
   const isIncomplete = latestAvailableWeekStart > latestCompleteWeekStart;
   const end = isIncomplete ? latestAvailableEnd : latestCompleteEnd;
   const analysisStart = isIncomplete ? latestAvailableWeekStart : latestCompleteWeekStart;
-  const start = toDateString(
-    new Date(parseDateString(analysisStart).getTime() - 7 * DAY_MS),
-  );
+  const start = toDateString(new Date(parseDateString(analysisStart).getTime() - 7 * DAY_MS));
   return {
     platform,
     granularity: 'week',
@@ -56,16 +48,11 @@ export function formatGeneratedAt(value: string): string {
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
-export function getReportPeriodKey(
-  periodStart: string,
-  periodEnd: string,
-): string {
+export function getReportPeriodKey(periodStart: string, periodEnd: string): string {
   return `${periodStart}__${periodEnd}`;
 }
 
-export function parseReportPeriodKey(
-  value: string | null,
-): { periodStart: string; periodEnd: string } | null {
+export function parseReportPeriodKey(value: string | null): { periodStart: string; periodEnd: string } | null {
   if (!value) return null;
   const [periodStart, periodEnd] = value.split('__');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(periodStart ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(periodEnd ?? '')) return null;
@@ -93,24 +80,27 @@ export function reportWeekOptions(history: Array<{ periodStart: string; periodEn
     const periodEnd = toDateString(latestAvailable);
     weeks.set(periodStart, { periodStart, periodEnd });
   }
-  for (let end = latestComplete; end.getFullYear() === latestComplete.getFullYear(); end = new Date(end.getTime() - 7 * DAY_MS)) {
+  for (
+    let end = latestComplete;
+    end.getFullYear() === latestComplete.getFullYear();
+    end = new Date(end.getTime() - 7 * DAY_MS)
+  ) {
     const periodEnd = toDateString(end);
     const periodStart = toDateString(new Date(end.getTime() - 13 * DAY_MS));
     if (periodStart < `${latestComplete.getFullYear()}-01-01`) continue;
     weeks.set(periodStart, { periodStart, periodEnd });
   }
   return [...weeks.values()]
-    .filter((week) => !LOCAL_DATA_WINDOW || (week.periodEnd >= LOCAL_DATA_WINDOW.startDate && week.periodEnd <= LOCAL_DATA_WINDOW.endDate))
+    .filter(
+      (week) =>
+        !LOCAL_DATA_WINDOW ||
+        (week.periodEnd >= LOCAL_DATA_WINDOW.startDate && week.periodEnd <= LOCAL_DATA_WINDOW.endDate),
+    )
     .sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
 }
 
-export function formatAnalysisWeekLabel(
-  periodStart: string,
-  periodEnd: string,
-): string {
+export function formatAnalysisWeekLabel(periodStart: string, periodEnd: string): string {
   if (!periodEnd) return `${periodStart} ~ ${periodEnd}`;
-  const analysisStart = toDateString(
-    new Date(parseDateString(periodStart).getTime() + 7 * DAY_MS),
-  );
+  const analysisStart = toDateString(new Date(parseDateString(periodStart).getTime() + 7 * DAY_MS));
   return `${analysisStart} ~ ${periodEnd}`;
 }

@@ -1,3 +1,4 @@
+import { availableWeek } from '@shared/comparison-display';
 import { useEffect, useId, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { CalendarRange, ChevronLeft, ChevronRight, Check } from 'lucide-react';
@@ -5,7 +6,8 @@ import { cn } from '@/lib/utils';
 const endOfWeek = (date: string) => new Date(Date.parse(date+'T00:00:00Z')+6*86400000).toISOString().slice(0,10);
 const formatShortWeekRange = (date: string) => `${date.slice(5).replace('-', '/')} - ${endOfWeek(date).slice(5).replace('-', '/')}`;
 const formatWeekRange = (date: string) => `${date} ~ ${endOfWeek(date).slice(5)}`;
-export function WeekComparisonPicker({baselineWeek,analysisWeek,availableWeeks,onWeekChange,className='',triggerText}:{baselineWeek:string;analysisWeek:string;availableWeeks:string[];onWeekChange:(value:{baselineWeek?:string;analysisWeek?:string})=>void;className?:string;triggerText?:string}) {
+export function WeekComparisonPicker({baselineWeek,analysisWeek,availableWeeks,onWeekChange,className='',triggerText,ordered=false,availableEnd}:{baselineWeek:string;analysisWeek:string;availableWeeks:string[];onWeekChange:(value:{baselineWeek?:string;analysisWeek?:string})=>void;className?:string;triggerText?:string;ordered?:boolean;availableEnd?:string}) {
+  const analysisDisplay=availableWeek(analysisWeek,availableEnd);
   const [weekOpen,setWeekOpen]=useState(false);
   const [weekPickerMode,setWeekPickerMode]=useState<'baseline'|'analysis'|null>(null);
   const [weekMenuFocused,setWeekMenuFocused]=useState<string|null>(null);
@@ -22,11 +24,11 @@ export function WeekComparisonPicker({baselineWeek,analysisWeek,availableWeeks,o
   },[weekOpen]);
   return (
         <div ref={controlsRef} className={`icon-control-wrap ${className}`} >
-          <button type="button" className="icon-control week-control-trigger" aria-expanded={weekOpen} aria-label={`业务周筛选：基准周 ${formatShortWeekRange(baselineWeek)}，分析周 ${formatShortWeekRange(analysisWeek)}`} onClick={() => setWeekOpen((open) => !open)}>
-            {triggerText ? <span>{triggerText}</span> : <><CalendarRange size={17} />
+          <button type="button" className="icon-control week-control-trigger" aria-expanded={weekOpen} aria-label={`业务周筛选：基准周 ${formatShortWeekRange(baselineWeek)}，分析周 ${analysisDisplay.label}${analysisDisplay.partial?`，${analysisDisplay.days}/7 天`:""}`} onClick={() => setWeekOpen((open) => !open)}>
+            {triggerText ? <><span>{triggerText}</span>{analysisDisplay.partial&&<small className="week-partial-badge">{analysisDisplay.days}/7 天</small>}</> : <><CalendarRange size={17} />
             <span className="week-control-summary" aria-hidden="true">
               <span><em>基准</em>{formatShortWeekRange(baselineWeek)}</span>
-              <span><em>分析</em>{formatShortWeekRange(analysisWeek)}</span>
+              <span><em>分析</em>{analysisDisplay.label}{analysisDisplay.partial&&<small className="week-partial-badge">{analysisDisplay.days}/7 天</small>}</span>
             </span>
             </>}
             {!weekOpen && <span className="icon-control-tooltip" aria-hidden="true">业务周</span>}
@@ -44,7 +46,7 @@ export function WeekComparisonPicker({baselineWeek,analysisWeek,availableWeeks,o
                   <div className="week-menu-options" role="listbox" aria-label={weekPickerMode === 'baseline' ? '基准周选项' : '分析周选项'}>
                     {availableWeeks.slice().reverse().map((week) => {
                       const selected = week === (weekPickerMode === 'baseline' ? baselineWeek : analysisWeek);
-                      const disabled = week === (weekPickerMode === 'baseline' ? analysisWeek : baselineWeek);
+                      const disabled = week === (weekPickerMode === 'baseline' ? analysisWeek : baselineWeek) || (ordered && (weekPickerMode === 'baseline' ? week >= analysisWeek : week <= baselineWeek));
                       const distance = weekMenuFocused ? Math.min(Math.abs(availableWeeks.indexOf(week) - availableWeeks.indexOf(weekMenuFocused)), 3) : 0;
                       return (
                         <button

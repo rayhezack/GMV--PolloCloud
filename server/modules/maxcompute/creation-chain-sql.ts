@@ -15,7 +15,7 @@ SELECT stat_date AS period,
   creation_task_cnt, valid_creation_task_cnt, creation_user_cnt, success_task_cnt, success_output_cnt,
   adopted_task_cnt, adopted_output_cnt,
   d3_creation_user_cnt, d7_creation_user_cnt, d30_creation_user_cnt,
-  gmv_usd, etl_time,
+  gmv_usd, CAST(etl_time AS STRING) AS etl_time,
   COUNT(*) OVER() AS source_row_count
 FROM mc_prd.ads_pollo_creation_function_chain_daily_dip
 WHERE p_date = '${partition}'

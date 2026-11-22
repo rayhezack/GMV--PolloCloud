@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import type { LucideIcon } from 'lucide-react';
+import { MoreHorizontal, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /* ── Action node ───────────────────────────────────────────
@@ -33,6 +33,7 @@ export function ActionNode({
   rangeLabel = '选择趋势范围',
   className,
   ariaLabel = '更多操作',
+  showTrigger = false,
 }: {
   children: ReactNode;
   actions: ActionNodeAction[];
@@ -43,12 +44,13 @@ export function ActionNode({
   rangeLabel?: string;
   className?: string;
   ariaLabel?: string;
+  showTrigger?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [rangeOpen, setRangeOpen] = useState(false);
   const nodeRef = useRef<HTMLDivElement | null>(null);
   const fanRef = useRef<HTMLDivElement | null>(null);
-  const visibleActions = actions.slice(0, 5);
+  const visibleActions = actions.filter((action) => action.id !== 'export').slice(0, 5);
   useEffect(() => {
     if (!open && !rangeOpen) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
@@ -67,11 +69,18 @@ export function ActionNode({
       className={cn('action-node', className)}
       data-open={open || undefined}
       onPointerMove={(event) => {
+        if (showTrigger) return;
         if (event.target instanceof Element && event.target.closest('.action-node-range')) return;
         const bounds = event.currentTarget.getBoundingClientRect();
         const inCorner = event.clientX >= bounds.right - 88 && event.clientY <= bounds.top + 76;
         const fan = fanRef.current?.getBoundingClientRect();
-        const inFan = open && fan && event.clientX >= fan.left - 8 && event.clientX <= fan.right + 8 && event.clientY >= fan.top - 8 && event.clientY <= fan.bottom + 12;
+        const inFan =
+          open &&
+          fan &&
+          event.clientX >= fan.left - 8 &&
+          event.clientX <= fan.right + 8 &&
+          event.clientY >= fan.top - 8 &&
+          event.clientY <= fan.bottom + 12;
         if (inCorner || inFan) {
           setOpen(true);
         } else {
@@ -79,13 +88,34 @@ export function ActionNode({
           setRangeOpen(false);
         }
       }}
-      onFocusCapture={() => setOpen(true)}
+      onFocusCapture={() => {
+        if (!showTrigger) setOpen(true);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          setOpen(false);
+          setRangeOpen(false);
+          if (showTrigger) nodeRef.current?.querySelector<HTMLButtonElement>('.action-node-trigger')?.focus();
+        }
+      }}
       onPointerLeave={() => {
+        if (showTrigger) return;
         setOpen(false);
         setRangeOpen(false);
       }}
     >
       <div className="action-node-content">{children}</div>
+      {showTrigger && (
+        <button
+          type="button"
+          className="action-node-trigger"
+          aria-label={ariaLabel}
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <MoreHorizontal size={17} />
+        </button>
+      )}
       <div ref={fanRef} className="action-node-fan" aria-label={ariaLabel}>
         {visibleActions.map((action, index) => {
           const Icon = action.Icon;
@@ -93,7 +123,9 @@ export function ActionNode({
             <>
               <Icon size={15} strokeWidth={2} />
               <span className="sr-only">{action.label}</span>
-              <span className="action-node-tooltip" role="tooltip">{action.label}</span>
+              <span className="action-node-tooltip" role="tooltip">
+                {action.label}
+              </span>
             </>
           );
           const props = {

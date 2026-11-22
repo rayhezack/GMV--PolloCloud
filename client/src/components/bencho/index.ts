@@ -13,3 +13,5 @@ export { StackedBars } from './StackedBars';
 export type { StackedBarsDatum } from './StackedBars';
 export { ToastStack, pushToast } from './ToastStack';
 export type { ToastStackItem, ToastStackKind } from './ToastStack';
+
+export { DocumentStack, type StackDocument } from './DocumentStack';

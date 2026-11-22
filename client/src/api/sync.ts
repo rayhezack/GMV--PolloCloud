@@ -26,6 +26,13 @@ export async function resumeSyncRun(runId: string): Promise<SyncRunStatus> {
   return response.data as SyncRunStatus;
 }
 
+export async function cancelSyncRun(runId: string): Promise<SyncRunStatus> {
+  const response = await apiRequest<SyncRunStatus>('/api/sync-runs/cancel', {
+    method: 'POST', body: JSON.stringify({ runId }),
+  });
+  return response.data as SyncRunStatus;
+}
+
 export async function createSyncRun(
   req: SyncRunRequest,
 ): Promise<SyncRunResponse> {
@@ -58,10 +65,12 @@ export async function retrySyncRun(runId: string): Promise<SyncRunStatus> {
   return response.data as SyncRunStatus;
 }
 
-export async function getLatestSyncRun(): Promise<SyncRunStatus | null> {
-  if (STATIC_DEMO_MODE) return getDemoSyncRun();
-  const response = await apiRequest<SyncRunStatus | null>('/api/sync-runs/latest');
-  return response.data as SyncRunStatus | null;
+let latestSyncRequest: Promise<SyncRunStatus | null> | undefined;
+export function getLatestSyncRun(): Promise<SyncRunStatus | null> {
+  if (STATIC_DEMO_MODE) return Promise.resolve(getDemoSyncRun());
+  return latestSyncRequest ??= apiRequest<SyncRunStatus | null>('/api/sync-runs/latest')
+    .then(response => response.data)
+    .finally(() => { latestSyncRequest = undefined; });
 }
 
 export async function getLatestWeekSyncPlan(): Promise<LatestWeekSyncPlan> {

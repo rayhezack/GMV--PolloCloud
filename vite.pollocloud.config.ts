@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { realpathSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { remoteD1DevProxy } from './scripts/remote-d1-dev-proxy.mjs';
@@ -25,6 +26,7 @@ export default defineConfig(({ mode }) => ({
       '@shared': path.resolve(__dirname, 'shared'),
     },
   },
+  server: { headers: { 'Content-Security-Policy': "default-src 'self'; connect-src 'self' ws://127.0.0.1:*; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; frame-src 'self'" }, fs: { allow: [path.resolve(__dirname), realpathSync(path.resolve(__dirname, 'node_modules')), realpathSync(path.resolve(__dirname, 'node_modules/@fontsource-variable/inter'))] } },
   build: {
     outDir: path.resolve(__dirname, 'dist'),
     emptyOutDir: true,

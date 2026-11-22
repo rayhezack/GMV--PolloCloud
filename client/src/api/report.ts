@@ -37,13 +37,19 @@ export async function generateReport(
   return response.data as ReportGenerationStatus;
 }
 
-export async function getLatestReport(
+const latestReportRequests = new Map<string, Promise<ReportSummary | null>>();
+export function getLatestReport(
   platform?: Platform,
 ): Promise<ReportSummary | null> {
-  if (STATIC_DEMO_MODE) return null;
+  if (STATIC_DEMO_MODE) return Promise.resolve(null);
   const query = platform ? `?platform=${platform}` : '';
-  const response = await apiRequest<ReportSummary | null>(`/api/report-latest${query}`);
-  return (response.data ?? null) as ReportSummary | null;
+  const pending = latestReportRequests.get(query);
+  if (pending) return pending;
+  const request = apiRequest<ReportSummary | null>(`/api/report-latest${query}`)
+    .then(response => response.data ?? null)
+    .finally(() => { latestReportRequests.delete(query); });
+  latestReportRequests.set(query, request);
+  return request;
 }
 
 export async function getLatestReportGeneration(

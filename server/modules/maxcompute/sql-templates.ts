@@ -23,9 +23,9 @@ function buildEventPlatformCondition(platform: string): string {
 }
 
 function buildCreationPlatformCondition(platform: string): string {
-  if (platform === 'web') return "app_platform = 'web'";
+  if (platform === 'web') return "UPPER(COALESCE(task_platform_group, '')) = 'WEB'";
   if (platform === 'all') return '1 = 1';
-  return "app_platform IN ('android', 'ios')";
+  return "UPPER(COALESCE(task_platform_group, '')) = 'APP'";
 }
 
 function buildRenewalPlatformCondition(platform: string): string {
@@ -131,43 +131,48 @@ active_user_day AS (
         CAST(uid AS STRING)
 ),
 
+creation_tasks AS (
+    SELECT
+        CAST(user_id AS STRING) AS user_id,
+        CAST(created_time AS DATE) AS create_date,
+        COUNT(DISTINCT record_id) AS creation_task_cnt
+    FROM mc_prd.dwd_pollo_creation_task_dip
+    WHERE p_date BETWEEN TO_CHAR(
+            DATEADD(CAST(TO_DATE('${startKey}', 'yyyymmdd') AS DATETIME), -30, 'dd'),
+            'yyyymmdd'
+        ) AND '${endKey}'
+      AND is_valid_task = 1
+      AND user_id IS NOT NULL
+      AND created_time IS NOT NULL
+      AND ${creationPlatformCondition}
+    GROUP BY
+        CAST(user_id AS STRING),
+        CAST(created_time AS DATE)
+),
+
 user_creation AS (
     SELECT
         user_id,
-        CAST(created_date AS DATE) AS create_date,
-        COUNT(DISTINCT id) AS creation_task_cnt
-    FROM mc_prd.dwd_video_pollo_video_generate_record_dfp
-    WHERE p_date = MAX_PT('mc_prd.dwd_video_pollo_video_generate_record_dfp')
-      AND ${creationPlatformCondition}
-      AND CAST(created_date AS DATE) >= CAST(TO_DATE('${startKey}', 'yyyymmdd') AS DATE)
-      AND CAST(created_date AS DATE) < DATE_ADD(
+        create_date,
+        creation_task_cnt
+    FROM creation_tasks
+    WHERE create_date >= CAST(TO_DATE('${startKey}', 'yyyymmdd') AS DATE)
+      AND create_date < DATE_ADD(
             CAST(TO_DATE('${endKey}', 'yyyymmdd') AS DATE),
             1
         )
-    GROUP BY
-        user_id,
-        CAST(created_date AS DATE)
 ),
 
 user_creation_hist AS (
     SELECT
         user_id,
-        CAST(created_date AS DATE) AS create_date,
-        COUNT(DISTINCT id) AS creation_task_cnt
-    FROM mc_prd.dwd_video_pollo_video_generate_record_dfp
-    WHERE p_date = MAX_PT('mc_prd.dwd_video_pollo_video_generate_record_dfp')
-      AND ${creationPlatformCondition}
-      AND CAST(created_date AS DATE) >= DATE_ADD(
-            CAST(TO_DATE('${startKey}', 'yyyymmdd') AS DATE),
-            -30
-        )
-      AND CAST(created_date AS DATE) < DATE_ADD(
+        create_date,
+        creation_task_cnt
+    FROM creation_tasks
+    WHERE create_date < DATE_ADD(
             CAST(TO_DATE('${endKey}', 'yyyymmdd') AS DATE),
             1
         )
-    GROUP BY
-        user_id,
-        CAST(created_date AS DATE)
 ),
 
 active_user_week AS (
@@ -286,7 +291,7 @@ SELECT
     creation_uv,
     creation_task_cnt,
     creation_uv * 1.0000 / NULLIF(active_uv, 0) AS creation_penetration_rate,
-    creation_task_cnt * 1.0000 / NULLIF(active_uv, 0) AS avg_creation_task_cnt_per_creator,
+    creation_task_cnt * 1.0000 / NULLIF(creation_uv, 0) AS avg_creation_task_cnt_per_creator,
     COUNT(*) OVER() AS source_row_count
 FROM daily_metric
 ORDER BY

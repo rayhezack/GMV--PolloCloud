@@ -72,3 +72,16 @@ pnpm-lock.yaml
 archives/middle-table-20261104/
 archives/ads-backfill-*.jsonl
 archives/ads-backfill-batch.sql
+
+# Isolated local design dependencies
+.v62-deps/
+node_modules.baseline-link
+
+# Local review evidence and warehouse exports (not application source).
+/archives/
+/design-review/
+/.impeccable/review/
+/.pollocloud/
+# Unshipped exploratory refresh-policy drafts.
+/worker/source-refresh-dates.ts
+/worker/source-refresh-dates.test.mjs

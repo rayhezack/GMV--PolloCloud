@@ -158,6 +158,7 @@ export interface AdsAggregate {
 }
 
 export interface AdsTrendPoint {
+  ltvByHorizon?: Partial<Record<"D0" | "D14" | "D30" | "D60" | "D90" | "D180", number | null>>;
   roasByHorizon?: Record<"D0" | "D7" | "D30", number | null>;
   period: string;
   costUsd: number;
@@ -194,6 +195,7 @@ export interface AdsCountryDetail {
 }
 
 export interface AdsOverviewResponse {
+  channelDaily?: Array<{ key: string; label: string; trend: AdsTrendPoint[] }>;
   observedThrough?: string;
   comparisonDates?: { analysis: string[]; baseline: string[] };
   ready: boolean;
@@ -339,6 +341,9 @@ export interface OverviewTrendPoint {
   totalGmv: number;
   activeGmv: number;
   renewalGmv: number;
+  totalOrders?: number | null;
+  activeOrders?: number | null;
+  renewUserCnt?: number;
   expireUserCnt: number;
   renewalRate: number;
   renewalAov: number;

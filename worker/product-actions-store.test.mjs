@@ -104,20 +104,20 @@ test('fresh warehouse is unavailable; a verified empty Base is a valid empty sna
 });
 
 
-test('scheduled snapshots start at 09:10 Shanghai, replace early snapshots, and retry failures', async () => {
+test('scheduled snapshots start at 09:20 Shanghai, replace early snapshots, and retry failures', async () => {
   const { db } = database();
   const at = time => Date.parse(`2099-11-09T${time}+08:00`);
   let calls = 0;
   const reader = async () => { calls++; return page([record('morning')]); };
-  assert.equal((await syncProductActions(db, reader, { scheduled: true, now: at('09:09:59') })).reason, 'before-daily-update');
+  assert.equal((await syncProductActions(db, reader, { scheduled: true, now: at('09:19:59') })).reason, 'before-daily-update');
   assert.equal(calls, 0);
   await syncProductActions(db, async () => page([record('old-midnight')]), { now: at('00:02:00') });
-  await assert.rejects(syncProductActions(db, async () => { throw new Error('Base unavailable'); }, { scheduled: true, now: at('09:10:00') }));
+  await assert.rejects(syncProductActions(db, async () => { throw new Error('Base unavailable'); }, { scheduled: true, now: at('09:20:00') }));
   assert.equal((await readProductActions(db)).records[0].id, 'old-midnight');
-  assert.equal((await syncProductActions(db, reader, { scheduled: true, now: at('09:15:00') })).status, 'success');
+  assert.equal((await syncProductActions(db, reader, { scheduled: true, now: at('09:25:00') })).status, 'success');
   assert.equal((await readProductActions(db)).records[0].id, 'morning');
-  assert.equal((await syncProductActions(db, reader, { scheduled: true, now: at('09:20:00') })).status, 'skipped');
+  assert.equal((await syncProductActions(db, reader, { scheduled: true, now: at('09:30:00') })).status, 'skipped');
   assert.equal(calls, 1);
-  assert.equal((await syncProductActions(db, reader, { scheduled: true, now: Date.parse('2099-11-10T09:10:00+08:00') })).status, 'success');
+  assert.equal((await syncProductActions(db, reader, { scheduled: true, now: Date.parse('2099-11-10T09:20:00+08:00') })).status, 'success');
   assert.equal(calls, 2);
 });

@@ -1,0 +1,43 @@
+{
+  "name": "pollo-v62",
+  "like": "neutral",
+  "mode": "light-only",
+  "settings": [
+    {
+      "thing": "font",
+      "value": "\"Inter Variable\", Inter, \"PingFang SC\", -apple-system, sans-serif",
+      "source": "dial"
+    },
+    {
+      "thing": "text-size",
+      "value": "14",
+      "source": "dial"
+    },
+    {
+      "thing": "spacing",
+      "value": "compact",
+      "source": "dial"
+    },
+    {
+      "thing": "surfaces",
+      "value": "flat",
+      "source": "dial"
+    },
+    {
+      "thing": "--color-accent",
+      "value": "#533afd",
+      "source": "token"
+    },
+    {
+      "thing": "--color-text-primary",
+      "value": "#0d253d",
+      "source": "token"
+    },
+    {
+      "thing": "--color-text-secondary",
+      "value": "#64748d",
+      "source": "token"
+    }
+  ],
+  "lifted": []
+}

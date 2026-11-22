@@ -1,12 +1,7 @@
 import { openBackgroundTask } from '@/lib/background-task';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import {
-  Loader2,
-  LockKeyhole,
-  RefreshCw,
-  ShieldCheck,
-} from 'lucide-react';
+import { Loader2, LockKeyhole, RefreshCw, ShieldCheck } from 'lucide-react';
 import {
   Dialog,
   DialogClose,
@@ -18,7 +13,7 @@ import {
   DialogTrigger,
 } from '@client/src/components/ui/dialog';
 import DashboardDatePicker from '@/components/dashboard/DashboardDatePicker';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Selector } from '@astryxdesign/core/Selector';
 import { Badge } from '@client/src/components/ui/badge';
 import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
 import { canManagePollocloudApp } from '@/lib/pollocloud';
@@ -49,10 +44,8 @@ const DATASET_LABELS: Record<SyncDataset, string> = {
 };
 
 const POLL_INTERVAL_MS = 2000;
-const SYNC_SURFACE_CLASS =
-  'rounded-3xl bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.04)] md:p-8';
-const SYNC_PILL_CLASS =
-  'rounded-full border border-gray-200 bg-white text-gray-700 shadow-none transition-colors hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-blue-600';
+const SYNC_SURFACE_CLASS = 'data-sync-panel';
+const SYNC_PILL_CLASS = 'v62-button';
 
 const SHEET_LABELS: Record<WorkbookSheet, string> = {
   run_log: '运行日志',
@@ -82,8 +75,9 @@ function statusFromResponse(response: SyncRunResponse): SyncRunStatus {
     rowsSynced: response.rowsSynced,
     errorMessage: response.errorMessage,
     startedAt: new Date().toISOString(),
-    finishedAt:
-      ['running', 'queued', 'pausing', 'paused'].includes(response.status) ? undefined : new Date().toISOString(),
+    finishedAt: ['running', 'queued', 'pausing', 'paused'].includes(response.status)
+      ? undefined
+      : new Date().toISOString(),
     skipped: response.skipped,
   };
 }
@@ -151,7 +145,10 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
     pollRef.current = setInterval(() => {
       getLatestSyncRun()
         .then((latest: SyncRunStatus | null) => {
-          if (latest) { setStatus(latest); trackSync(latest); }
+          if (latest) {
+            setStatus(latest);
+            trackSync(latest);
+          }
           if (latest && !['running', 'queued', 'pausing'].includes(latest.status)) {
             stopPolling();
             setSyncing(false);
@@ -179,11 +176,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
         if (planResult.status === 'fulfilled') {
           setPlan(planResult.value);
         } else {
-          setErrorMsg(
-            planResult.reason instanceof Error
-              ? planResult.reason.message
-              : '同步计划检查失败',
-          );
+          setErrorMsg(planResult.reason instanceof Error ? planResult.reason.message : '同步计划检查失败');
         }
       })
       .finally(() => {
@@ -220,9 +213,7 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
       stopPolling();
       const latest = await getLatestSyncRun().catch(() => null);
       const finalStatus: SyncRunStatus =
-        latest && latest.runId === response.runId
-          ? latest
-          : statusFromResponse(response);
+        latest && latest.runId === response.runId ? latest : statusFromResponse(response);
       setStatus(finalStatus);
       trackSync(finalStatus);
       await refreshPlan();
@@ -264,13 +255,18 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
       setStatus(next);
       trackSync(next);
       setSyncing(['queued', 'running', 'pausing'].includes(next.status));
-      if (next.status === 'paused') stopPolling(); else startPolling();
-    } catch (error) { setErrorMsg(getErrorMessage(error)); }
-    finally { setControlling(false); }
+      if (next.status === 'paused') stopPolling();
+      else startPolling();
+    } catch (error) {
+      setErrorMsg(getErrorMessage(error));
+    } finally {
+      setControlling(false);
+    }
   };
 
   const cancelSync = async () => {
-    if (!status || controlling || !window.confirm('取消后不会继续未完成步骤，已完成数据会保留。确定取消同步吗？')) return;
+    if (!status || controlling || !window.confirm('取消后不会继续未完成步骤，已完成数据会保留。确定取消同步吗？'))
+      return;
     setControlling(true);
     setErrorMsg('');
     try {
@@ -280,77 +276,95 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
       setSyncing(false);
       stopPolling();
       await refreshPlan();
-    } catch (error) { setErrorMsg(getErrorMessage(error)); }
-    finally { setControlling(false); }
+    } catch (error) {
+      setErrorMsg(getErrorMessage(error));
+    } finally {
+      setControlling(false);
+    }
   };
 
   const running =
     syncing || ['queued', 'running', 'pausing', 'paused'].includes(status?.status ?? '') || Boolean(plan?.running);
   const isAdmin = canManagePollocloudApp(user);
-  const canSync = isAdmin && (mode === 'date_range' ? rangeValid : Boolean(plan?.canSync)) && !running && !accessLoading && (mode === 'date_range' || !planLoading);
-  const planStatusLabel = mode === 'date_range' ? '覆盖已有 · 补齐缺失' : planLoading
-    ? '检查中'
-    : plan?.alreadySynced
-      ? '基础数据已更新'
-      : plan
-        ? `待补 ${plan.missingItems.length} 项`
-        : '检查失败';
+  const canSync =
+    isAdmin &&
+    (mode === 'date_range' ? rangeValid : Boolean(plan?.canSync)) &&
+    !running &&
+    !accessLoading &&
+    (mode === 'date_range' || !planLoading);
+  const planStatusLabel =
+    mode === 'date_range'
+      ? '覆盖已有 · 补齐缺失'
+      : planLoading
+        ? '检查中'
+        : plan?.alreadySynced
+          ? '基础数据已更新'
+          : plan
+            ? `待补 ${plan.missingItems.length} 项`
+            : '检查失败';
 
   return (
     <section data-ai-section-type="card-stat" className={SYNC_SURFACE_CLASS}>
-      <div className="flex flex-wrap items-end gap-4">
+      <div className="sync-control-row">
         <div className="flex flex-col gap-1.5">
           <span className="text-xs text-muted-foreground">同步模式</span>
-          <Select value={mode} onValueChange={value => setMode(value as 'latest_day' | 'date_range')} disabled={running}>
-            <SelectTrigger size="sm" aria-label="同步模式" className={`${SYNC_PILL_CLASS} min-w-[164px]`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="latest_day">最新可用日期</SelectItem>
-              <SelectItem value="date_range">指定日期回刷</SelectItem>
-            </SelectContent>
-          </Select>
+          <Selector
+            label="同步模式"
+            isLabelHidden
+            variant="ghost"
+            size="sm"
+            value={mode}
+            onChange={(value) => setMode(value as 'latest_day' | 'date_range')}
+            isDisabled={running}
+            options={[
+              { value: 'latest_day', label: '最新可用日期' },
+              { value: 'date_range', label: '指定日期回刷' },
+            ]}
+          />
         </div>
         <div className="flex flex-col gap-1.5">
           <span className="text-xs text-muted-foreground">{mode === 'date_range' ? '回刷日期' : '同步日期'}</span>
           {mode === 'date_range' ? (
             <div className={running ? 'pointer-events-none opacity-50' : ''}>
-              <DashboardDatePicker date={date} onDateChange={setDate} onValidityChange={setRangeValid} isDisabled={running} maxDate={yesterday} />
+              <DashboardDatePicker
+                date={date}
+                onDateChange={setDate}
+                onValidityChange={setRangeValid}
+                isDisabled={running}
+                maxDate={yesterday}
+              />
             </div>
           ) : (
-            <div className="flex h-8 min-w-[214px] items-center rounded-full border border-gray-200 bg-white px-3 font-mono text-sm text-muted-foreground">
-              {plan ? `${plan.startDate} ~ ${plan.endDate}` : '-'}
+            <div className="sync-date-value">
+              {plan ? plan.startDate === plan.endDate ? plan.endDate : `${plan.startDate} – ${plan.endDate}` : '—'}
             </div>
           )}
         </div>
-        {mode === 'date_range' && <div className="flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground">回刷数据集</span>
-          <Select value={dataset} onValueChange={value => setDataset(value as SyncDataset)} disabled={running}>
-            <SelectTrigger size="sm" aria-label="回刷数据集" className={`${SYNC_PILL_CLASS} min-w-[150px]`}><SelectValue /></SelectTrigger>
-            <SelectContent>{(Object.entries(DATASET_LABELS) as Array<[SyncDataset, string]>).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>}
-        <div className="flex flex-1 flex-col gap-1.5">
+        {mode === 'date_range' && (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs text-muted-foreground">回刷数据集</span>
+            <Selector
+              label="回刷数据集"
+              isLabelHidden
+              variant="ghost"
+              size="sm"
+              value={dataset}
+              onChange={(value) => setDataset(value as SyncDataset)}
+              isDisabled={running}
+              options={Object.entries(DATASET_LABELS).map(([value, label]) => ({ value, label }))}
+            />
+          </div>
+        )}
+        <div className="flex flex-col gap-1.5">
           <span className="text-xs text-muted-foreground">更新预检</span>
           <div className="flex h-8 items-center gap-2 text-sm text-foreground">
             <Badge variant="outline" className="rounded-full bg-gray-50">
               {planStatusLabel}
             </Badge>
-            <Badge
-              variant="outline"
-              className="rounded-full bg-gray-50 text-muted-foreground"
-            >
-              {accessLoading ? (
-                <Loader2 className="size-3 animate-spin" />
-              ) : isAdmin ? (
-                <ShieldCheck className="size-3 text-primary" />
-              ) : (
-                <LockKeyhole className="size-3" />
-              )}
-              {accessLoading ? '检查权限' : isAdmin ? '管理员' : '只读'}
-            </Badge>
+
           </div>
         </div>
+        <div className="sync-control-actions">
         <Button
           variant="outline"
           size="sm"
@@ -360,123 +374,198 @@ const SyncControlBar = ({ onSyncSettled }: { onSyncSettled?: () => void }) => {
             void refreshPlan();
           }}
         >
-          <RefreshCw
-            className={`size-3.5 ${planLoading ? 'animate-spin' : ''}`}
-          />
+          <RefreshCw className={`size-3.5 ${planLoading ? 'animate-spin' : ''}`} />
           检查
         </Button>
-        {isAdmin && status && <Button variant="ghost" size="sm" className="h-8 rounded-full px-4" onClick={() => { trackSync(status); openBackgroundTask(status.runId); }}>查看任务</Button>}
+        {isAdmin && status && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 rounded-full px-4"
+            onClick={() => {
+              trackSync(status);
+              openBackgroundTask(status.runId);
+            }}
+          >
+            查看任务
+          </Button>
+        )}
         {isAdmin && status && ['queued', 'running', 'pausing', 'paused'].includes(status.status) ? (
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className={`${SYNC_PILL_CLASS} h-8 px-4`} disabled={controlling || status.status === 'pausing'} onClick={() => void controlSync()}>
-              {status.status === 'pausing' ? '正在暂停…' : controlling ? '处理中…' : status.status === 'paused' ? '继续同步' : '暂停同步'}
-            </Button>
-            <Button variant="ghost" size="sm" className="h-8 rounded-full px-3 text-muted-foreground" disabled={controlling} onClick={() => void cancelSync()}>取消同步</Button>
-          </div>
-        ) : <Dialog>
-          <DialogTrigger asChild>
             <Button
-              data-ai-section-type="button"
+              variant="outline"
               size="sm"
-              className="h-8 rounded-full px-4 focus-visible:ring-2 focus-visible:ring-blue-600"
-              disabled={!canSync}
-              title={isAdmin ? undefined : '仅管理员可以同步数据'}
+              className={`${SYNC_PILL_CLASS} h-8 px-4`}
+              disabled={controlling || status.status === 'pausing'}
+              onClick={() => void controlSync()}
             >
-              {running || accessLoading ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : !isAdmin ? (
-                <LockKeyhole className="size-3.5" />
-              ) : (
-                <RefreshCw className="size-3.5" />
-              )}
-              {running
-                ? '同步中'
-                : accessLoading
-                  ? '检查权限'
-                  : isAdmin
-                    ? mode === 'date_range' ? '回刷所选日期' : '同步最新日期'
-                    : '仅管理员可同步'}
+              {status.status === 'pausing'
+                ? '正在暂停…'
+                : controlling
+                  ? '处理中…'
+                  : status.status === 'paused'
+                    ? '继续同步'
+                    : '暂停同步'}
             </Button>
-          </DialogTrigger>
-          <DialogContent className="sync-confirm-dialog" showCloseButton={false}>
-            <DialogHeader className="sync-confirm-header">
-              <DialogTitle>{mode === 'date_range' ? '确认回刷所选日期' : '确认拉取最新数据'}</DialogTitle>
-              <DialogDescription className="sync-confirm-description">
-                按天查询并校验后更新：已有数据覆盖、缺失数据新增。查询或校验失败时保留该日原数据。
-              </DialogDescription>
-            </DialogHeader>
-            <div className="sync-confirm-summary">
-              <div className="sync-confirm-meta-row">
-                <span>当前已有数据至</span>
-                <strong>
-                  {plan?.latestStoredDate ?? '暂无可用日期'}
-                </strong>
-              </div>
-              <div className="sync-confirm-meta-row">
-                <span>本次拉取日期</span>
-                <strong>
-                  {mode === 'date_range' ? date : plan ? `${plan.startDate} ~ ${plan.endDate}` : '-'}
-                </strong>
-              </div>
-              <div className="sync-confirm-meta-row">
-                <span>更新范围</span>
-                <strong>
-                  全部端数据
-                </strong>
-              </div>
-              <div className="sync-confirm-updates">
-                <div className="sync-confirm-updates-label">本次待更新</div>
-                <div className="sync-confirm-tags">
-                  {mode === 'date_range' ? <Badge variant="outline" className="sync-confirm-tag">{DATASET_LABELS[dataset]}</Badge> : plan?.missingItems.slice(0, 8).map((item) => (
-                    <Badge
-                      key={`${item.platform}-${item.sheet}`}
-                      variant="outline"
-                      className="sync-confirm-tag"
-                    >
-                      {item.platform} · {SHEET_LABELS[item.sheet]}
-                    </Badge>
-                  ))}
-                  {mode !== 'date_range' && plan && plan.missingItems.length > 8 ? (
-                    <Badge variant="outline" className="sync-confirm-tag">
-                      +{plan.missingItems.length - 8}
-                    </Badge>
-                  ) : null}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 rounded-full px-3 text-muted-foreground"
+              disabled={controlling}
+              onClick={() => void cancelSync()}
+            >
+              取消同步
+            </Button>
+          </div>
+        ) : !isAdmin && !accessLoading ? (
+          <span className="sync-readonly"><LockKeyhole size={14} />仅管理员可同步</span>
+        ) : (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button
+                data-ai-section-type="button"
+                size="sm"
+                className="h-8 rounded-full px-4 focus-visible:ring-2 focus-visible:ring-blue-600"
+                disabled={!canSync}
+                title={isAdmin ? undefined : '仅管理员可以同步数据'}
+              >
+                {running || accessLoading ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : !isAdmin ? (
+                  <LockKeyhole className="size-3.5" />
+                ) : (
+                  <RefreshCw className="size-3.5" />
+                )}
+                {running
+                  ? '同步中'
+                  : accessLoading
+                    ? '检查权限'
+                    : isAdmin
+                      ? mode === 'date_range'
+                        ? '回刷所选日期'
+                        : '同步最新日期'
+                      : '仅管理员可同步'}
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sync-confirm-dialog" showCloseButton={false}>
+              <DialogHeader className="sync-confirm-header">
+                <DialogTitle>{mode === 'date_range' ? '确认回刷所选日期' : '确认拉取最新数据'}</DialogTitle>
+                <DialogDescription className="sync-confirm-description">
+                  按天查询并校验后更新：已有数据覆盖、缺失数据新增。查询或校验失败时保留该日原数据。
+                </DialogDescription>
+              </DialogHeader>
+              <div className="sync-confirm-summary">
+                <div className="sync-confirm-meta-row">
+                  <span>当前已有数据至</span>
+                  <strong>{plan?.latestStoredDate ?? '暂无可用日期'}</strong>
+                </div>
+                <div className="sync-confirm-meta-row">
+                  <span>本次拉取日期</span>
+                  <strong>{mode === 'date_range' ? date : plan ? `${plan.startDate} ~ ${plan.endDate}` : '-'}</strong>
+                </div>
+                <div className="sync-confirm-meta-row">
+                  <span>更新范围</span>
+                  <strong>全部端数据</strong>
+                </div>
+                <div className="sync-confirm-updates">
+                  <div className="sync-confirm-updates-label">本次待更新</div>
+                  <div className="sync-confirm-tags">
+                    {mode === 'date_range' ? (
+                      <Badge variant="outline" className="sync-confirm-tag">
+                        {DATASET_LABELS[dataset]}
+                      </Badge>
+                    ) : (
+                      plan?.missingItems.slice(0, 8).map((item) => (
+                        <Badge key={`${item.platform}-${item.sheet}`} variant="outline" className="sync-confirm-tag">
+                          {item.platform} · {SHEET_LABELS[item.sheet]}
+                        </Badge>
+                      ))
+                    )}
+                    {mode !== 'date_range' && plan && plan.missingItems.length > 8 ? (
+                      <Badge variant="outline" className="sync-confirm-tag">
+                        +{plan.missingItems.length - 8}
+                      </Badge>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-            </div>
-            <DialogFooter className="sync-confirm-footer">
-              <DialogClose asChild>
-                <button type="button" className="sync-confirm-cancel">取消</button>
-              </DialogClose>
-              <DialogClose asChild>
-                <button
-                  type="button"
-                  disabled={!canSync}
-                  className="sync-confirm-action"
-                  onClick={() => {
-                    void handleSync();
-                  }}
-                >
-                  确认同步
-                </button>
-              </DialogClose>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>}
+              <DialogFooter className="sync-confirm-footer">
+                <DialogClose asChild>
+                  <button type="button" className="sync-confirm-cancel">
+                    取消
+                  </button>
+                </DialogClose>
+                <DialogClose asChild>
+                  <button
+                    type="button"
+                    disabled={!canSync}
+                    className="sync-confirm-action"
+                    onClick={() => {
+                      void handleSync();
+                    }}
+                  >
+                    确认同步
+                  </button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+        </div>
       </div>
-      {plan?.datasetDates && <details className="mt-3 text-xs text-muted-foreground">
-        <summary className="w-fit cursor-pointer rounded-md py-1 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">各数据集更新日期</summary>
-        <dl className="mt-2 grid gap-x-8 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">{plan.datasetDates.map(item => {
-          const missingDates = item.missingDates ?? (!item.latestDate || item.latestDate < yesterday ? [item.latestDate ?? yesterday] : []);
-          return <div key={item.dataset} className="flex items-center justify-between gap-3 border-b border-border/50 py-1.5">
-            <dt>{DATASET_LABELS[item.dataset]}</dt><dd className="tabular-nums text-right">{item.latestDate ?? '暂无数据'}{missingDates.length ? <span className="ml-2 text-foreground">缺失 {missingDates.slice(0, 3).join('、')}{missingDates.length > 3 ? ` 等 ${missingDates.length} 天` : ''}</span> : <span className="ml-2 text-primary">已更新</span>}</dd>
-          </div>;
-        })}</dl>
-      </details>}
-      {status?.status === 'pausing' && <p className="mt-3 text-xs text-muted-foreground" role="status">当前步骤完成后暂停，已完成的数据会保留。</p>}
-      {status?.status === 'paused' && <p className="mt-3 text-xs text-muted-foreground" role="status">同步已暂停，可从当前进度继续。</p>}
-      {status?.status === 'cancelled' && <p className="mt-3 text-xs text-muted-foreground" role="status">同步已取消，已完成数据已保留。</p>}
-      {errorMsg && <p className="mt-3 text-xs text-destructive" role="alert">{errorMsg}</p>}
+      {plan?.datasetDates && (
+        <details className="mt-3 text-xs text-muted-foreground">
+          <summary className="w-fit cursor-pointer rounded-md py-1 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+            各数据集更新日期
+          </summary>
+          <dl className="mt-2 grid gap-x-8 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+            {plan.datasetDates.map((item) => {
+              const missingDates =
+                item.missingDates ??
+                (!item.latestDate || item.latestDate < yesterday ? [item.latestDate ?? yesterday] : []);
+              return (
+                <div
+                  key={item.dataset}
+                  className="flex items-center justify-between gap-3 border-b border-border/50 py-1.5"
+                >
+                  <dt>{DATASET_LABELS[item.dataset]}</dt>
+                  <dd className="tabular-nums text-right">
+                    {item.latestDate ?? '暂无数据'}
+                    {missingDates.length ? (
+                      <span className="ml-2 text-foreground">
+                        缺失 {missingDates.slice(0, 3).join('、')}
+                        {missingDates.length > 3 ? ` 等 ${missingDates.length} 天` : ''}
+                      </span>
+                    ) : (
+                      <span className="ml-2 text-primary">已更新</span>
+                    )}
+                  </dd>
+                </div>
+              );
+            })}
+          </dl>
+        </details>
+      )}
+      {status?.status === 'pausing' && (
+        <p className="mt-3 text-xs text-muted-foreground" role="status">
+          当前步骤完成后暂停，已完成的数据会保留。
+        </p>
+      )}
+      {status?.status === 'paused' && (
+        <p className="mt-3 text-xs text-muted-foreground" role="status">
+          同步已暂停，可从当前进度继续。
+        </p>
+      )}
+      {status?.status === 'cancelled' && (
+        <p className="mt-3 text-xs text-muted-foreground" role="status">
+          同步已取消，已完成数据已保留。
+        </p>
+      )}
+      {errorMsg && (
+        <p className="mt-3 text-xs text-destructive" role="alert">
+          {errorMsg}
+        </p>
+      )}
     </section>
   );
 };

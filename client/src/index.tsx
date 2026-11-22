@@ -1,3 +1,6 @@
+import './layers.css';
+import "@astryxdesign/core/reset.css";
+import "@astryxdesign/core/astryx.css";
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
@@ -6,8 +9,8 @@ import { ErrorBoundary } from 'react-error-boundary';
 
 import RoutesComponent from './app.tsx';
 import './index.css';
-import { createPortal } from 'react-dom';
-import { Toaster } from '@client/src/components/ui/sonner';
+
+
 
 function resolveClientBasePath(): string {
   const appPathMatch = window.location.pathname.match(/^\/app\/[^/]+/u);
@@ -32,7 +35,6 @@ const MainApp = () => {
         )}
       >
         <RoutesComponent />
-        {createPortal(<Toaster />, document.body)}
       </ErrorBoundary>
     </BrowserRouter>
   );

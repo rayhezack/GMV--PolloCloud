@@ -1,3 +1,5 @@
+import { readDailyData } from './daily-data';
+import { comparisonParams, readChainComparison } from './chain-comparison';
 import { advanceDailyRefresh, RefreshPausedError, type RefreshBatch } from './daily-refresh';
 import { isLightSyncGroup, LIGHT_SYNC_DATASETS, runLightSyncGroup } from './light-sync';
 import { claimSourceRefresh, finishSourceRefresh } from './source-refresh-policy';
@@ -700,7 +702,7 @@ async function overviewPayRows(env: Env, params: { platform?: string; startDate:
   if (params.deviceType) { conditions.push('device_type = ?'); binds.push(params.deviceType); }
   const dimensions = 'period, week_start, platform, pay_type, attribution_type, pay_category, product_type, subscription_tier';
   return queryRows(env, `SELECT ${dimensions}, CASE WHEN COALESCE(function_name,'') <> '' THEN 'present' ELSE '' END AS function_name,
-    SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows_read WHERE ${conditions.join(' AND ')}
+    SUM(gmv_usd) AS gmv_usd, SUM(order_equivalent) AS order_equivalent, COUNT(order_equivalent) AS order_covered, COUNT(*) AS order_rows FROM pollo_da_fact_rows_read WHERE ${conditions.join(' AND ')}
     GROUP BY ${dimensions}, CASE WHEN COALESCE(function_name,'') <> '' THEN 'present' ELSE '' END ORDER BY period`, ...binds);
 }
 
@@ -963,6 +965,8 @@ function payTrend(
       .map((row) => asNumber(row.gmv_usd)));
     return {
       period,
+      totalOrders: group.every(row => asNumber(row.order_covered) === asNumber(row.order_rows)) ? sum(group.map(row => asNumber(row.order_equivalent))) / divisor : null,
+      activeOrders: activeRows.every(row => asNumber(row.order_covered) === asNumber(row.order_rows)) ? sum(activeRows.map(row => asNumber(row.order_equivalent))) / divisor : null,
       totalGmv: total / divisor,
       activeGmv: active / divisor,
       renewalGmv: renewal / divisor,
@@ -1032,7 +1036,17 @@ async function overview(env: Env, request: Request) {
     const pay = await overviewPayRows(env, { platform, startDate, endDate, deviceType });
     const days = trendPeriodDivisors(pay, granularity);
     const periods = groupByPeriod(pay, granularity);
-    return json({ trend: [], payTypeTrend: payTrend(pay.map(row => ({ ...row, period: trendPeriod(row, granularity) })), periods, days) });
+    const points = payTrend(pay.map(row => ({ ...row, period: trendPeriod(row, granularity) })), periods, days);
+    if (url.searchParams.get('includeRenewal') === 'true') {
+      const records = renewalPlatformRows(await dailyRows(env, 'renewal_daily', { platform, startDate, endDate }), platform, deviceType);
+      return json({ trend: [], payTypeTrend: points.map(point => {
+        const group = records.filter(row => trendPeriod(row, granularity) === point.period);
+        const totals = sumRenewal(group);
+        return { ...point, expireUserCnt: totals.expireUserCnt, renewUserCnt: totals.renewUserCnt,
+          renewalRate: totals.expireUserCnt > 0 ? totals.renewUserCnt / totals.expireUserCnt : null };
+      }) });
+    }
+    return json({ trend: [], payTypeTrend: points });
   }
   const funnelConditions = ['period BETWEEN ? AND ?'];
   const funnelBinds: unknown[] = [startDate, endDate];
@@ -1710,6 +1724,11 @@ function adsDailyPoint(period: string, rows: D1Row[], observedThrough: string) {
     gmvD0: aggregate.gmvD0,
     gmvD7: aggregate.gmvD7,
     roasByHorizon: aggregate.roasByHorizon,
+    ltvByHorizon: Object.fromEntries(ADS_HORIZONS.map(horizon => {
+      const field = `gmv_${horizon.toLowerCase()}`;
+      const complete = rows.length > 0 && rows.every(row => (Date.parse(observedThrough)-Date.parse(asText(row.period)))/86400000 >= Number(horizon.slice(1)) && row[field] != null);
+      return [horizon, complete && aggregate.registerUsers > 0 ? sum(rows.map(row=>asNumber(row[field])))/aggregate.registerUsers : null];
+    })),
   };
 }
 
@@ -1789,6 +1808,7 @@ async function adsOverview(env: Env, request: Request): Promise<Response> {
       source: 'pollo_da_ads_daily',
       comparison: { baselinePeriod, analysisPeriod, periodDays: currentDays, baselinePeriodDays: baselineDays, analysisPeriodDays: currentDays },
       totals: { current: adsAggregate(currentRows, asOf), baseline: adsAggregate(baselineRows, asOf) },
+      channelDaily: [...groupRows(rows, 'channel')].map(([key, entries]) => { const daily = groupRows(entries, 'period'); return {key, label: key, trend: periodKeys.map(period => adsDailyPoint(period, daily.get(period) ?? [], asOf))}; }),
       trend, channels, countries, cohortMatrix: matrixRows, countryDetails, observedThrough: asOf, comparisonDates: {analysis: [...new Set(currentRows.map(row=>asText(row.period)))], baseline: [...new Set(baselineRows.map(row=>asText(row.period)))]},
     } satisfies AdsOverviewResponse);
   } catch {
@@ -1816,6 +1836,8 @@ function creativeChainPoint(period: string, rows: D1Row[]): CreativeChainTrendPo
 async function creativeOverview(env: Env, request: Request): Promise<Response> {
   const url = new URL(request.url);
   const platform = url.searchParams.get('platform') || 'web';
+  const deviceType = url.searchParams.get('deviceType') || undefined;
+  if (deviceType && (platform !== 'app' || !['ios', 'android'].includes(deviceType))) return errorResponse('设备筛选无效');
   const startDate = url.searchParams.get('startDate') || '';
   const endDate = url.searchParams.get('endDate') || '';
   const baselinePeriod = url.searchParams.get('baselinePeriod') || '';
@@ -1823,8 +1845,8 @@ async function creativeOverview(env: Env, request: Request): Promise<Response> {
   const unavailable = (): CreativeOverviewResponse => ({ ready: false, source: 'unavailable', comparison: null, trend: [], functions: [] });
   if (!DASHBOARD_PLATFORMS.has(platform) || ![startDate, endDate, baselinePeriod, analysisPeriod].every((value) => /^\d{4}-\d{2}-\d{2}$/u.test(value))) return errorResponse('创作侧比较窗口无效');
   try {
-    const platformCondition = platform === 'all' ? " AND platform_type = '汇总'" : platform === 'web' ? ' AND platform_type = ?' : " AND platform_type IN ('IOS', 'ANDROID')";
-    const platformBind = platform === 'web' ? ['WEB'] : [];
+    const platformCondition = deviceType ? ' AND platform_type = ?' : platform === 'all' ? " AND platform_type = '汇总'" : platform === 'web' ? ' AND platform_type = ?' : " AND platform_type IN ('IOS', 'ANDROID')";
+    const platformBind = deviceType ? [deviceType.toUpperCase()] : platform === 'web' ? ['WEB'] : [];
     const validTaskColumns = await Promise.all(['overall', 'function'].map(kind => queryRows(env, `PRAGMA table_info(pollo_da_creation_${kind}_daily)`)));
     const validTasksSql = (index: number) => validTaskColumns[index].some(row => row.name === 'valid_creation_task_cnt') ? 'CASE WHEN COUNT(valid_creation_task_cnt) = COUNT(*) THEN SUM(valid_creation_task_cnt) ELSE NULL END' : 'NULL';
     const overallRows = await queryRows(env, `SELECT period, week_start, platform_type, SUM(creation_task_cnt) AS creation_task_cnt, SUM(creation_user_cnt) AS creation_user_cnt, SUM(success_task_cnt) AS success_task_cnt, SUM(success_output_cnt) AS success_output_cnt, SUM(adopted_task_cnt) AS adopted_task_cnt, SUM(adopted_output_cnt) AS adopted_output_cnt, CASE WHEN COUNT(d3_creation_user_cnt) = COUNT(*) THEN SUM(d3_creation_user_cnt) ELSE NULL END AS d3_creation_user_cnt, CASE WHEN COUNT(d7_creation_user_cnt) = COUNT(*) THEN SUM(d7_creation_user_cnt) ELSE NULL END AS d7_creation_user_cnt, CASE WHEN COUNT(d30_creation_user_cnt) = COUNT(*) THEN SUM(d30_creation_user_cnt) ELSE NULL END AS d30_creation_user_cnt, ${validTasksSql(0)} AS valid_creation_task_cnt, SUM(gmv_usd) AS gmv_usd FROM pollo_da_creation_overall_daily WHERE period BETWEEN ? AND ?${platformCondition} GROUP BY period, week_start, platform_type ORDER BY period`, startDate, endDate, ...platformBind);
@@ -3057,7 +3079,7 @@ export async function dailyDataRefresh(env: Env, start = false, force = false) {
   const day = new Date(Date.now()+8*3600000).toISOString().slice(0,10);
   if (start) {
     const date = shiftDate(day,-1);
-    const ads = [...new Set([...Array.from({length:7},(_,i)=>shiftDate(date,-i)),...[14,30,60,90,180].map(i=>shiftDate(date,-i))])];
+    const ads = [1,2,3,7,14,30,60,90,180].map(age=>shiftDate(date,-age));
     const creation = [...new Set([...Array.from({length:4},(_,i)=>shiftDate(date,-i)),shiftDate(date,-7),shiftDate(date,-30)])];
     const fresh: RefreshBatch = {day,tasks:['facts:'+LIGHT_SYNC_DATASETS.join(','),'actions',...(['pay_type','chain'].map(d=>'facts:'+d)),...ads.filter(d=>d!==date).map(d=>'ads:'+d),...creation.filter(d=>d!==date).map(d=>'creation:'+d)],cursor:0,status:'running'};
     // A delayed previous day must not make us miss today's 09:20 start. Manual
@@ -3095,10 +3117,11 @@ export async function dailyDataRefresh(env: Env, start = false, force = false) {
     }
     if (task.startsWith('facts:')) {
       const datasets=task.slice(6).split(',') as SyncDataset[];
+      const factDate=shiftDate(batch.day,-1);
       // Only a manually reopened failed batch revisits a recorded error.
       // Its replacement job keeps the ownership key and successful light steps.
       if (force || batch.errors?.[task]) {
-        const key = `${batch.day}:${datasets.join(',')}:${shiftDate(batch.day,-1)}`;
+        const key = `${batch.day}:${datasets.join(',')}:${factDate}`;
         const prior = await env.DB!.prepare("SELECT payload FROM sync_jobs WHERE json_extract(payload,'$.scheduledKey')=? ORDER BY created_at DESC,rowid DESC LIMIT 1")
           .bind(key).first<{payload:string}>();
         const failed = prior ? JSON.parse(prior.payload) as SyncRunStatus : undefined;
@@ -3108,8 +3131,8 @@ export async function dailyDataRefresh(env: Env, start = false, force = false) {
         }
       }
       const deadline=Date.now()+90000;
-      let result=await runScheduledSync(env,datasets,shiftDate(batch.day,-1),batch.day);
-      while(result.status==='queued' && !result.skipped && Date.now()<deadline)result=await runScheduledSync(env,datasets,shiftDate(batch.day,-1),batch.day);
+      let result=await runScheduledSync(env,datasets,factDate,batch.day);
+      while(result.status==='queued' && !result.skipped && Date.now()<deadline)result=await runScheduledSync(env,datasets,factDate,batch.day);
       if(result.status==='paused') throw new RefreshPausedError('同步已暂停，请在任务后台恢复后手动继续每日批次');
       if(result.status==='cancelled') throw new Error('同步任务已取消，未完成数据未写入');
       if(result.status==='failed') throw new Error(result.errorMessage || '源数据未就绪，保留原数据；请手动重试');
@@ -3438,11 +3461,20 @@ export default {
         return await cachedDashboardResponse(env, request, context, () => gmvAnomalies(env, asOfDate, scope));
       }
       if (url.pathname === '/api/dashboard/attributions' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => attributions(env, request));
+      if (url.pathname === '/api/dashboard/chain-comparison' && request.method === 'GET') {
+        let params;
+        try { params = comparisonParams(url.searchParams); } catch (error) { return errorResponse(error instanceof Error ? error.message : '比较参数无效', 400); }
+        return json(await readChainComparison(params, (sql, ...binds) => queryRows(env, sql, ...binds)));
+      }
       if (url.pathname === '/api/dashboard/chain-funnel' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => chainFunnel(env, request));
       if (url.pathname === '/api/dashboard/ads-overview' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => adsOverview(env, request));
       if (url.pathname === '/api/dashboard/creative-overview' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => creativeOverview(env, request));
       if (url.pathname === '/api/dashboard/payment-analysis' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => paymentAnalysis(env, request));
       if (url.pathname === '/api/dashboard/payment-trend' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => paymentTrend(env, request));
+      if (url.pathname === '/api/dashboard/daily-data' && request.method === 'GET') {
+        try { return json(await readDailyData(url.searchParams,(sql,...binds)=>queryRows(env,sql,...binds),(table,params)=>dailyRows(env,table,params))); }
+        catch(error) { return errorResponse(error instanceof Error?error.message:'明细数据读取失败',400); }
+      }
       if (url.pathname === '/api/workbook-preview' && request.method === 'GET') return workbookPreview(env, request);
       if (url.pathname === '/api/sync-runs/latest' && request.method === 'GET') return latestSync(env);
       if (url.pathname === '/api/ads/sync' && request.method === 'POST') {
