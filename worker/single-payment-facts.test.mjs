@@ -52,17 +52,19 @@ test('payment sync deduplicates scopes and refreshes one canonical copy idempote
    assert.deepEqual(job.steps.filter(s=>s.key.endsWith('-chain')).map(s=>s.key),platforms.includes('all')?['all-chain']:platforms.map(p=>`${p}-chain`));
    assert.equal(job.steps.filter(s=>s.key.endsWith('-renewal')).length,platforms.length);
   }
-  for(const file of ['0009_pollo_da_analytics.sql','0010_pay_type_subscription_tier.sql','0011_middle_table_dimensions.sql','0018_payment_product_dimensions.sql','0015_payment_registration.sql','0017_payment_sync_stage.sql','0022_single_payment_facts.sql','0023_payment_single_scope_guard.sql'])db.exec(sql(file));
+  for(const file of ['0009_pollo_da_analytics.sql','0010_pay_type_subscription_tier.sql','0011_middle_table_dimensions.sql','0018_payment_product_dimensions.sql','0015_payment_registration.sql','0017_payment_sync_stage.sql','0030_payment_registration_orders.sql','0022_single_payment_facts.sql','0023_payment_single_scope_guard.sql'])db.exec(sql(file));
   const adapter={prepare(statement){return {bind(...args){return {execute(){db.prepare(statement).run(...args);}};}};},async batch(statements){db.exec('BEGIN');try{for(const s of statements)s.execute();db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}}};
   const records=[];
   for(const [device,platform,gmv] of [['web','web',100],['ios','app',40],['unknown','unknown',3]]) {
-   for(const attribution_type of ['NONE','CREATION_MODE','MODEL','ACTUAL_MODEL'])records.push({period:'2026-10-20',week_start:'2026-10-17',platform:'all',device_type:device,pay_type:'首订',pay_category:'ACTIVE_PAYMENT',attribution_type,gmv_usd:gmv});
-   records.push({source_kind:'registration',period:'2026-10-20',week_start:'2026-10-17',platform,device_type:device,pay_type:'首订',user_lifecycle:'OLD',country_tier:'T1',reg_platform:'WEB',sku:'UNKNOWN',plan_tier:'UNKNOWN',plan_cycle:'UNKNOWN',credit_amount:'UNKNOWN',previous_sku:'UNKNOWN',previous_plan_tier:'UNKNOWN',previous_plan_cycle:'UNKNOWN',previous_credit_amount:'UNKNOWN',gmv_usd:gmv});
+   for(const attribution_type of ['NONE','CREATION_MODE','MODEL','ACTUAL_MODEL'])records.push({period:'2026-10-20',week_start:'2026-10-17',platform:'all',device_type:device,pay_type:'首订',pay_category:'ACTIVE_PAYMENT',attribution_type,gmv_usd:gmv,order_equivalent:10});
+   records.push({source_kind:'registration',period:'2026-10-20',week_start:'2026-10-17',platform,device_type:device,pay_type:'首订',user_lifecycle:'OLD',country_tier:'T1',reg_platform:'WEB',sku:'UNKNOWN',plan_tier:'UNKNOWN',plan_cycle:'UNKNOWN',credit_amount:'UNKNOWN',previous_sku:'UNKNOWN',previous_plan_tier:'UNKNOWN',previous_plan_cycle:'UNKNOWN',previous_credit_amount:'UNKNOWN',gmv_usd:gmv,order_count:10});
   }
   for(let attempt=0;attempt<2;attempt++)await replacePaymentRange({DB:adapter},'web','2026-10-20','2026-10-20',records);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM pollo_da_fact_rows').get().n,12);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM pollo_da_payment_registration').get().n,3);
   assert.deepEqual(db.prepare("SELECT platform,SUM(gmv_usd) gmv FROM pollo_da_fact_rows_read WHERE attribution_type='NONE' GROUP BY platform ORDER BY platform").all().map(r=>[r.platform,r.gmv]),[['all',143],['app',40],['web',100]]);
+  assert.equal(db.prepare('SELECT SUM(order_count) n FROM pollo_da_payment_registration').get().n,30);
+  await assert.rejects(()=>replacePaymentRange({DB:adapter},'all','2026-10-20','2026-10-20',records.map(r=>r.source_kind==='registration'?{...r,order_count:9}:r)),/订单量.*未对齐/);
   const invalid=records.map(r=>r.source_kind==='registration'?{...r,gmv_usd:0}:r);
   await assert.rejects(()=>replacePaymentRange({DB:adapter},'all','2026-10-20','2026-10-20',invalid),/未对齐/);
   assert.equal(db.prepare("SELECT SUM(gmv_usd) n FROM pollo_da_fact_rows WHERE attribution_type='NONE'").get().n,143);

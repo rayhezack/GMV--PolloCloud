@@ -14,11 +14,15 @@ export function IncomeOverviewChart({
   total,
   onOpen,
   openLabel = '明细',
+  formatValue = (value: number) => formatChartTooltipValue(value, 'currency'),
+  metricLabel = 'GMV',
 }: {
   periods: IncomeOverviewPeriod[];
   total: number;
   onOpen: (id: string) => void;
   openLabel?: string;
+  formatValue?: (value: number) => string;
+  metricLabel?: string;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
@@ -84,12 +88,12 @@ export function IncomeOverviewChart({
   };
 
   return (
-    <div ref={root} className="income-overview" role="group" aria-label="分析期 GMV 分布">
+    <div ref={root} className="income-overview" role="group" aria-label={`分析期 ${metricLabel} 分布`}>
       <div className="income-overview-scroll" role="region" aria-label="滚动查看全部归因项目" tabIndex={0}>
         {periods.length ? (
           periods.map((period, i) => {
             const on = period.id === active;
-            const value = formatChartTooltipValue(period.amount, 'currency');
+            const value = formatValue(period.amount);
             const ratio = formatChartTooltipValue(share(period.amount), 'ratio');
             return (
               <div className="income-overview-row" key={period.id} data-active={on || undefined}>

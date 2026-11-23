@@ -1,3 +1,4 @@
+import { formatPaymentValue, type PaymentMetric } from "@shared/payment-metric";
 import { useMemo, useState } from "react";
 import { ArrowDownToLine, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -35,24 +36,27 @@ export default function PaymentDailyDetail({
   grouping,
   query,
   dimension,
+  measure = "gmv",
 }: {
   data: PaymentAnalysisResponse;
   scope: RevenueScope;
   grouping: PaymentGrouping;
   query: string;
   dimension: string;
+  measure?: PaymentMetric;
 }) {
   const [page, setPage] = useState(0),
     [shape, setShape] = useState<"long" | "wide">("long"),
     [metric, setMetric] = useState<"gmv" | "cost">("gmv");
   const rows = useMemo(
     () =>
-      buildPaymentDailyRows(data, scope, grouping).filter((r) =>
+      buildPaymentDailyRows(data, scope, grouping, measure).filter((r) =>
         entityLabel(r.key).toLowerCase().includes(query.trim().toLowerCase()),
       ),
-    [data, scope, grouping, query],
+    [data, scope, grouping, query, measure],
   );
-  const costAvailable = data.costAvailable && grouping !== "payType";
+  const measureLabel = measure === "orders" ? "订单量" : "GMV";
+  const costAvailable = measure === "gmv" && data.costAvailable && grouping !== "payType";
   const effectiveMetric = costAvailable ? metric : "gmv";
   const pivot = useMemo(
     () => buildPaymentDailyPivot(rows, effectiveMetric),
@@ -63,14 +67,14 @@ export default function PaymentDailyDetail({
     current = Math.min(page, count - 1);
   const exportRows = () =>
     downloadCsv(
-      `GMV-日明细-${data.attributionType}-${shape === "long" ? "长表" : effectiveMetric === "gmv" ? "GMV宽表" : "成本宽表"}.csv`,
+      `${measureLabel}-日明细-${data.attributionType}-${shape === "long" ? "长表" : effectiveMetric === "gmv" ? `${measureLabel}宽表` : "成本宽表"}.csv`,
       shape === "long"
         ? [
             [
               "日期",
               "业务周",
               dimension,
-              "GMV_USD",
+              measure === "orders" ? "订单量" : "GMV_USD",
               ...(costAvailable ? ["模型成本_USD", "成本/GMV"] : []),
               "数据来源",
             ],
@@ -133,7 +137,7 @@ export default function PaymentDailyDetail({
                   aria-pressed={effectiveMetric === m}
                   onClick={() => setMetric(m)}
                 >
-                  {m === "gmv" ? "GMV" : "模型成本"}
+                  {m === "gmv" ? measureLabel : "模型成本"}
                 </Button>
               ))}
             </div>
@@ -153,7 +157,7 @@ export default function PaymentDailyDetail({
                   <>
                     <TableHead>日期</TableHead>
                     <TableHead>{dimension}</TableHead>
-                    <TableHead>GMV</TableHead>
+                    <TableHead>{measureLabel}</TableHead>
                     {costAvailable && (
                       <>
                         <TableHead>模型成本</TableHead>
@@ -179,7 +183,7 @@ export default function PaymentDailyDetail({
                     <TableRow key={r.period + r.key}>
                       <TableCell>{r.period}</TableCell>
                       <TableCell>{entityLabel(r.key)}</TableCell>
-                      <TableCell>{preciseMoney(r.gmv)}</TableCell>
+                      <TableCell>{formatPaymentValue(r.gmv, measure)}</TableCell>
                       {costAvailable && (
                         <>
                           <TableCell>
@@ -199,7 +203,7 @@ export default function PaymentDailyDetail({
                         </TableCell>
                         {r.values.map((v, i) => (
                           <TableCell key={pivot.dates[i]}>
-                            {v == null ? "—" : preciseMoney(v)}
+                            {v == null ? "—" : effectiveMetric === "cost" ? preciseMoney(v) : formatPaymentValue(v, measure)}
                           </TableCell>
                         ))}
                       </TableRow>

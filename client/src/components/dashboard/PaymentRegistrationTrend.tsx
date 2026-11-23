@@ -1,3 +1,4 @@
+import type { PaymentMetric } from '@shared/payment-metric';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { getPaymentRegistrationTrend } from '@/api/dashboard';
 import type {
@@ -9,7 +10,7 @@ import type {
 import type { buildPaymentView } from './payment-analysis.data';
 import { registrationLayerTrend, type RegistrationDimension } from './payment-registration';
 
-type Trend = ReturnType<typeof buildPaymentView>['trend'];
+type Trend = NonNullable<ReturnType<typeof buildPaymentView>>['trend'];
 const shift = (date: string, days: number) =>
   new Date(Date.parse(date + 'T00:00:00Z') + days * 86400000).toISOString().slice(0, 10);
 export function PaymentRegistrationTrend({
@@ -22,6 +23,7 @@ export function PaymentRegistrationTrend({
   refreshToken,
   renderTrend,
   comparisonDay,
+  metric = 'gmv',
 }: {
   data: PaymentAnalysisResponse;
   payType: string;
@@ -32,6 +34,7 @@ export function PaymentRegistrationTrend({
   refreshToken: number;
   renderTrend: (trend: Trend, summary: Trend) => ReactNode;
   comparisonDay?: string | null;
+  metric?: PaymentMetric;
 }) {
   const [history, setHistory] = useState<PaymentRegistrationTrendResponse | null>(null),
     [error, setError] = useState(false),
@@ -71,8 +74,8 @@ export function PaymentRegistrationTrend({
     };
   }, [analysis, displayEnd, gap, payType, platform, deviceType, refreshToken, retry]);
   const trend = useMemo(
-    () => (history ? registrationLayerTrend(history, dimension, layer, comparisonDay ? 7 : gap, displayEnd) : null),
-    [history, dimension, layer, gap, displayEnd, Boolean(comparisonDay)],
+    () => (history ? registrationLayerTrend(history, dimension, layer, comparisonDay ? 7 : gap, displayEnd, metric) : null),
+    [history, dimension, layer, gap, displayEnd, Boolean(comparisonDay), metric],
   );
   const summary = useMemo(
     () => (trend ?? []).filter((point) => point.date >= analysis && point.date <= shift(analysis, 6)),

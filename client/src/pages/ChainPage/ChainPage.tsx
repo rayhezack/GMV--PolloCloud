@@ -1,3 +1,4 @@
+import { RefreshButton } from '@/components/system/RefreshButton';
 import ChainDiagnostics from '@/components/v62/ChainDiagnostics';
 import { PageHeader, PanelState } from '@/components/system';
 import LmdiTable from './LmdiTable';
@@ -192,9 +193,7 @@ export default function ChainPage() {
               )}
             </div>
             <PlatformSelect value={platform} onChange={(value) => update({ platform: value })} />
-            <button className="v62-button" aria-label="刷新链路" onClick={() => setRevision((n) => n + 1)}>
-              刷新
-            </button>
+            <RefreshButton loading={loading || coverageLoading} onRefresh={() => { setLoading(true); setRevision(n => n + 1); }} label="刷新链路" />
             <Link className="v62-button" to="/report">
               <WorkbenchIcon name="文件夹" />
               诊断报告

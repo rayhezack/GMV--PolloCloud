@@ -400,3 +400,9 @@
 .payment-detail-sheet .payment-brand-label {
   white-space: normal;
 }
+
+/* One compact measure control per surface; dimensions retain their own group. */
+.payment-metric-switch { margin-inline-start:auto; }
+.payment-drawer-measure { display:flex; justify-content:flex-end; margin-block:var(--space-8); }
+.payment-share-controls { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-8); }
+.payment-metric-switch .workbench-icon,.payment-drawer-measure .workbench-icon,.payment-share-controls .workbench-icon { width:18px; height:18px; }

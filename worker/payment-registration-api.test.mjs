@@ -30,7 +30,7 @@ test('registration migration keeps existing money and permits SKU/platform split
 test('registration trend API conserves matched payments, isolates payment platforms and leaves missing/mismatched dates empty',async()=>{
  const directory=mkdtempSync(join(tmpdir(),'registration-api-')),db=new DatabaseSync(':memory:');
  try{
-  for(const file of ['0009_pollo_da_analytics.sql','0010_pay_type_subscription_tier.sql','0011_middle_table_dimensions.sql','0018_payment_product_dimensions.sql','0022_single_payment_facts.sql','0015_payment_registration.sql'])db.exec(sql(file));
+  for(const file of ['0009_pollo_da_analytics.sql','0010_pay_type_subscription_tier.sql','0011_middle_table_dimensions.sql','0018_payment_product_dimensions.sql','0022_single_payment_facts.sql','0015_payment_registration.sql','0017_payment_sync_stage.sql','0030_payment_registration_orders.sql'])db.exec(sql(file));
   const parent=db.prepare("INSERT INTO pollo_da_fact_rows(dataset,source_record_id,period,week_start,platform,device_type,dataset_kind,attribution_type,pay_category,pay_type,gmv_usd,fields_json,updated_at) VALUES('pay_type',?,?, '2026-10-17',?,'web','daily','NONE','ACTIVE_PAYMENT',?,?, '{}',0)");
   for(const scope of ['all']){parent.run(scope+'20','2026-10-20',scope,'首订',100);parent.run(scope+'21','2026-10-21',scope,'首订',110);parent.run(scope+'22','2026-10-22',scope,'积分包',20);}
   const insert=db.prepare("INSERT INTO pollo_da_payment_registration(period,week_start,platform,device_type,pay_type,user_lifecycle,country_tier,reg_platform,sku,gmv_usd) VALUES(?,'2026-10-17',?,'web','首订','OLD','T1',?,'Pro_月订_800',?)");
@@ -41,9 +41,15 @@ test('registration trend API conserves matched payments, isolates payment platfo
   const {default:worker}=await import(pathToFileURL(bundle).href);
   const response=await worker.fetch(new Request('https://example.com/api/dashboard/payment-registration-trend?platform=web&startDate=2026-10-20&endDate=2026-10-23&payType='+encodeURIComponent('首订')),{DB:adapter},{waitUntil(){}});
   assert.equal(response.status,200);const result=await response.json();
-  assert.deepEqual(result.points,[{period:'2026-10-20',total:100,verified:true},{period:'2026-10-21',total:110,verified:false},{period:'2026-10-22',total:0,verified:true},{period:'2026-10-23',total:null,verified:false}]);
+  assert.deepEqual(result.points.map(({period,total,verified})=>({period,total,verified})),[{period:'2026-10-20',total:100,verified:true},{period:'2026-10-21',total:110,verified:false},{period:'2026-10-22',total:0,verified:true},{period:'2026-10-23',total:null,verified:false}]);
   assert.equal(result.rows.length,2);assert.equal(result.rows.reduce((a,b)=>a+b.gmvUsd,0),100);
   assert.deepEqual(result.rows.map(r=>r.regPlatform).sort(),['IOS','WEB']);assert.ok(result.rows.every(r=>r.sku==='Pro_月订_800'));
+  db.exec("UPDATE pollo_da_fact_rows SET order_equivalent=CASE period WHEN '2026-10-20' THEN 10 WHEN '2026-10-21' THEN 11 ELSE 1 END");
+  db.exec("UPDATE pollo_da_payment_registration SET order_count=CASE WHEN period='2026-10-21' THEN 11 WHEN reg_platform='WEB' THEN 6 ELSE 4 END WHERE platform='web'");
+  const counts=await (await worker.fetch(response.url ? new Request(response.url) : new Request('https://example.com/api/dashboard/payment-registration-trend?platform=web&startDate=2026-10-20&endDate=2026-10-23&payType='+encodeURIComponent('首订')),{DB:adapter},{waitUntil(){}})).json();
+  assert.deepEqual(counts.points.map(p=>[p.totalOrders,p.ordersVerified]),[[10,true],[11,true],[0,true],[null,false]]);
+  assert.equal(counts.points[1].verified,false); // GMV mismatch must not masquerade as an order mismatch.
+
  }finally{db.close();rmSync(directory,{recursive:true,force:true});}
 });
 

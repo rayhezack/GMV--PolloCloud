@@ -1,3 +1,4 @@
+import { RefreshButton } from '@/components/system/RefreshButton';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader, DataFreshness } from './Headers';
@@ -31,9 +32,7 @@ export function OperationalHeader({
               />
             )}
             <PlatformSelect deviceEnabled={title !== '付费广告'} value={window.platform} onChange={(platform) => window.update({ platform })} />
-            <button className="v62-button" disabled={loading} onClick={window.refresh}>
-              刷新
-            </button>
+            <RefreshButton loading={loading} onRefresh={window.refresh} />
             <Link className="v62-button" to={`/report?platform=${window.platform}`}>
               <WorkbenchIcon name="文件夹" />
               诊断报告

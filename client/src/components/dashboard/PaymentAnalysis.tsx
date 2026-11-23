@@ -1,6 +1,8 @@
+import { PaymentMetricSwitch } from './PaymentMetricSwitch';
+import { paymentValue, paymentMetricLabel, formatPaymentValue, signedPaymentValue, type PaymentMetric } from '@shared/payment-metric';
 import { Drawer, DrawerHeader } from '@astryxdesign/core/Drawer';
 import { Selector } from '@astryxdesign/core/Selector';
-import { DataTable, DivergingBar, InfoTip, DeltaBadge } from '@/components/system';
+import { DataTable, DivergingBar, InfoTip, DeltaBadge, PanelState } from '@/components/system';
 import { share, signedPp } from '@shared/format';
 import { DetailComparison } from '@/components/system/DetailComparison';
 import { paymentDayComparison, toggleComparisonDay } from './detail-comparison';
@@ -109,16 +111,18 @@ function RevenueTrend({
   costs = false,
   comparisonDay,
   onActivate,
+  measure = 'gmv',
 }: {
-  trend: ReturnType<typeof buildPaymentView>['trend'];
-  summaryTrend?: ReturnType<typeof buildPaymentView>['trend'];
+  trend: NonNullable<ReturnType<typeof buildPaymentView>>['trend'];
+  summaryTrend?: NonNullable<ReturnType<typeof buildPaymentView>>['trend'];
   costs?: boolean;
   comparisonDay?: string | null;
   onActivate?: (date: string) => void;
+  measure?: PaymentMetric;
 }) {
   const [metric, setMetric] = useState('gmv');
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
-  const selectedMetric = costs ? metric : 'gmv';
+  const selectedMetric = costs ? metric : measure;
   const ratio = selectedMetric === 'ratio';
   const valuesFor = (rows: typeof trend) =>
     rows.map((p) => ({
@@ -185,7 +189,7 @@ function RevenueTrend({
       <div className="payment-history-caption">
         <InfoTip label="详情对比口径">
           {comparisonDay
-            ? '所选日与上周同日比较实际金额；再次选择同一天或点击恢复周对比可返回原业务周。缺失日期不补零。'
+            ? '所选日与上周同日比较当前指标；再次选择同一天或点击恢复周对比可返回原业务周。缺失日期不补零。'
             : '周均与增量只比较分析周和基准周相同的已观测星期。点击走势日期切换到与上周同日的对比。'}
         </InfoTip>
       </div>
@@ -193,11 +197,11 @@ function RevenueTrend({
         key={`${selectedMetric}:${values.map((p) => p.label).join(',')}`}
         className={`payment-detail-cash-flow${paired.length ? '' : ' has-no-comparison'}`}
         data-days={observed.length}
-        title={`${ratio ? '成本占比' : selectedMetric === 'cost' ? '模型成本' : 'GMV'}逐日走势`}
+        title={`${ratio ? '成本占比' : selectedMetric === 'cost' ? '模型成本' : paymentMetricLabel(measure)}逐日走势`}
         description=""
         icon={null}
         data={values.map((p) => ({ date: p.date, value: p.analysis ?? NaN }))}
-        unit={ratio ? 'rate' : 'currency'}
+        unit={ratio ? 'rate' : measure === 'orders' ? 'count' : 'currency'}
         compare={values.flatMap((p) => (p.baseline == null ? [] : [p.baseline]))}
         compareIndices={values.flatMap((p, index) => (p.baseline == null ? [] : [index]))}
         compareLabel={comparisonDay ? '上周同日' : '基准同期值'}
@@ -206,7 +210,7 @@ function RevenueTrend({
         total={comparisonDay && !summaryObserved.length ? NaN : total}
         changeLabel={comparisonDay ? '较上周同日' : ratio ? '较基准周' : '较基准周日均'}
         change={comparisonDay && !paired.length ? NaN : change}
-        formatValue={(value) => (Number.isFinite(value) ? (ratio ? percent(value) : money(value)) : '—')}
+        formatValue={(value) => (Number.isFinite(value) ? (ratio ? percent(value) : formatPaymentValue(value, measure)) : '—')}
         formatChangeValue={
           ratio
             ? (value) =>
@@ -266,6 +270,13 @@ export default function PaymentAnalysis({
   const [bubblePressed, setBubblePressed] = useState(false);
   const glassFilterId = `payment-glass-${liquidId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const mode = attributionModes.find((m) => m.value === params.get('attributionType'))?.value || 'NONE';
+  const measure: PaymentMetric = mode === 'NONE' && params.get('paymentMetric') === 'orders' ? 'orders' : 'gmv';
+  const measureLabel = paymentMetricLabel(measure);
+  const valueText = (value: number | null | undefined) => formatPaymentValue(value, measure);
+  const signedValueText = (value: number) => signedPaymentValue(value, measure);
+  const [detailMeasure, setDetailMeasure] = useState<PaymentMetric>('gmv');
+  const detailLabel = paymentMetricLabel(detailMeasure);
+  const detailValueText = (value: number | null | undefined) => formatPaymentValue(value, detailMeasure);
   const modelTable = mode === 'MODEL' || mode === 'ACTUAL_MODEL';
   const scope: RevenueScope = revenueScopes.find((s) => s.value === params.get('income'))?.value || 'ALL';
   const modeLabel = attributionModes.find((m) => m.value === mode)!.dimension;
@@ -298,6 +309,7 @@ export default function PaymentAnalysis({
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailDay, setDetailDay] = useState<string | null>(null);
   const openDetail = (key: string) => {
+    setDetailMeasure(measure);
     setSelected(key);
     setRegistrationLayer(null);
     setDetailDay(null);
@@ -431,23 +443,23 @@ export default function PaymentAnalysis({
     setQuery('');
     setShowInsight(false);
   }, [mode, scope, grouping, platform, deviceType, baselinePeriod, analysisPeriod]);
-  const view = useMemo(() => (data ? buildPaymentView(data, scope, grouping) : null), [data, scope, grouping]);
+  const view = useMemo(() => (data ? buildPaymentView(data, scope, grouping, undefined, measure) : null), [data, scope, grouping, measure]);
   const contributionScale = Math.max(
     Number.EPSILON,
     ...(view?.items || []).map((item) => Math.abs(item.contribution || 0)),
   );
   const detail = useMemo(
-    () => (data && selected ? buildPaymentView(data, scope, grouping, selected) : null),
-    [data, scope, grouping, selected],
+    () => (data && selected ? buildPaymentView(data, scope, grouping, selected, detailMeasure) : null),
+    [data, scope, grouping, selected, detailMeasure],
   );
   const detailTitleRef = useRef<HTMLHeadingElement>(null);
   const detailTriggerRef = useRef<HTMLButtonElement | null>(null);
   const selectedItem = view?.items.find((item) => item.key === selected);
   const selectedMetrics = detailDay
     ? detailData
-      ? buildPaymentView(detailData, scope, grouping).items.find((item) => item.key === selected)
+      ? buildPaymentView(detailData, scope, grouping, undefined, detailMeasure)?.items.find((item) => item.key === selected)
       : undefined
-    : selectedItem;
+    : detail ? detail.items.find(item => item.key === selected) : undefined;
   const filtered = useMemo(() => {
     const items = (view?.items || []).filter((r) =>
       entityLabel(r.key).toLowerCase().includes(query.trim().toLowerCase()),
@@ -481,9 +493,9 @@ export default function PaymentAnalysis({
       scopeLabel: revenueScopes.find((item) => item.value === scope)?.label,
       drivers: sameDirection.slice(0, 2),
       offset: offsets[0],
-      summary: `本周${revenueScopes.find((item) => item.value === scope)?.label || '全部收入'}日均 GMV ${money(total.gmv)}，较基准周${direction}${signedMoney(total.change)}（${rate}）。${sameDirection[0] ? `核心驱动是${entityLabel(sameDirection[0].key)}，贡献${percent(sameDirection[0].contribution)}（${money(sameDirection[0].baseline)} → ${money(sameDirection[0].gmv)}，${signedMoney(sameDirection[0].change)}）。` : '当前维度没有可识别的同向核心驱动。'}${sameDirection[1] ? `次要驱动是${entityLabel(sameDirection[1].key)}，贡献${percent(sameDirection[1].contribution)}（${signedMoney(sameDirection[1].change)}）。` : ''}${offsets[0] ? `主要抵消项是${entityLabel(offsets[0].key)}，${signedMoney(offsets[0].change)}。` : ''}`,
+      summary: `本周${revenueScopes.find((item) => item.value === scope)?.label || '全部收入'}日均${measureLabel} ${valueText(total.gmv)}，较基准周${direction}${signedValueText(total.change)}（${rate}）。${sameDirection[0] ? `核心驱动是${entityLabel(sameDirection[0].key)}，贡献${percent(sameDirection[0].contribution)}（${valueText(sameDirection[0].baseline)} → ${valueText(sameDirection[0].gmv)}，${signedValueText(sameDirection[0].change)}）。` : '当前维度没有可识别的同向核心驱动。'}${sameDirection[1] ? `次要驱动是${entityLabel(sameDirection[1].key)}，贡献${percent(sameDirection[1].contribution)}（${signedValueText(sameDirection[1].change)}）。` : ''}${offsets[0] ? `主要抵消项是${entityLabel(offsets[0].key)}，${signedValueText(offsets[0].change)}。` : ''}`,
     };
-  }, [view, scope]);
+  }, [view, scope, measure]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const visiblePage = Math.min(page, pageCount - 1);
   const shown = filtered.slice(visiblePage * PAGE_SIZE, (visiblePage + 1) * PAGE_SIZE);
@@ -560,9 +572,10 @@ export default function PaymentAnalysis({
             selected,
             detailDay ? shiftDay(analysisPeriod, -7) : baselinePeriod,
             analysisPeriod,
+            detailMeasure,
           )
         : null,
-    [costHistory, selected, baselinePeriod, analysisPeriod, Boolean(detailDay)],
+    [costHistory, selected, baselinePeriod, analysisPeriod, Boolean(detailDay), detailMeasure],
   );
   const costDaily = useMemo(() => {
     if (!data?.costAvailable) return [];
@@ -625,11 +638,11 @@ export default function PaymentAnalysis({
     </button>
   );
   const exportRows = () =>
-    downloadCsv(`GMV-${mode}-${analysisPeriod}.csv`, [
+    downloadCsv(`${measureLabel}-${mode}-${analysisPeriod}.csv`, [
       [
         '名称',
-        '基准期日均GMV',
-        '分析期日均GMV',
+        `基准期日均${measureLabel}`,
+        `分析期日均${measureLabel}`,
         '日均变化',
         '变化率',
         '贡献度',
@@ -655,7 +668,7 @@ export default function PaymentAnalysis({
     ]);
   const detailTypes = useMemo(() => {
     const data = detailData;
-    if (!data?.comparison || !selected) return [];
+    if (!data?.comparison || !selected || data.revenues.some(row => paymentValue(row, detailMeasure) == null)) return [];
     const { analysisPeriod, baselinePeriod } = data.comparison;
     const analysisOffsets = new Set(
       data.revenues
@@ -673,8 +686,8 @@ export default function PaymentAnalysis({
       const detailKey =
         grouping === 'actualSupplier' || grouping === 'actualProvider' ? r.attributionName || '未归因' : r.payType;
       const v = values.get(detailKey) || { baseline: 0, analysis: 0 };
-      if (r.weekStart === baselinePeriod) v.baseline += r.gmvUsd;
-      if (r.weekStart === analysisPeriod) v.analysis += r.gmvUsd;
+      if (r.weekStart === baselinePeriod) v.baseline += paymentValue(r, detailMeasure) ?? 0;
+      if (r.weekStart === analysisPeriod) v.analysis += paymentValue(r, detailMeasure) ?? 0;
       values.set(detailKey, v);
     }
     return [...values]
@@ -684,14 +697,14 @@ export default function PaymentAnalysis({
         analysis: v.analysis / (data.comparison?.analysisPeriodDays || 7),
       }))
       .sort((a, b) => b.analysis - a.analysis);
-  }, [detailData, selected, grouping, scope]);
+  }, [detailData, selected, grouping, scope, detailMeasure]);
   const detailContributions = changeContributions(detailTypes);
   const registrationRows = useMemo(
     () =>
       comparisonRegistration && selected
-        ? registrationBreakdown(comparisonRegistration, selected, registrationDimension)
+        ? registrationBreakdown(comparisonRegistration, selected, registrationDimension, detailMeasure)
         : null,
-    [comparisonRegistration, selected, registrationDimension],
+    [comparisonRegistration, selected, registrationDimension, detailMeasure],
   );
   const registrationContributions = changeContributions(registrationRows ?? []);
   const visibleRegistrationRows = registrationRows
@@ -720,7 +733,7 @@ export default function PaymentAnalysis({
       <Tabs value={mode} onValueChange={(value) => update({ attributionType: value, groupBy: undefined })}>
         <div className="payment-bento-toolbar">
           <Segment
-            label="GMV 归因模式"
+            label="付费归因模式"
             variant="icons"
             value={mode}
             onChange={(value) => update({ attributionType: value, groupBy: undefined })}
@@ -729,6 +742,7 @@ export default function PaymentAnalysis({
               icon: (['chart-pie', 'blocks', 'cpu', 'workflow'] as const)[index],
             }))}
           />
+          {mode === 'NONE' && <div className="payment-metric-switch"><PaymentMetricSwitch value={measure} onChange={(value) => { update({ paymentMetric: value }); setPage(0); }} /></div>}
           <Selector
             label="收入范围"
             isLabelHidden
@@ -762,7 +776,7 @@ export default function PaymentAnalysis({
             </div>
           ) : !view || !data?.comparison ? (
             <div className="payment-state">
-              <h2>当前业务周没有足够的数据</h2>
+              <h2>{measure === 'orders' && data?.comparison ? '所选日期缺少可核对的订单量' : '当前业务周没有足够的数据'}</h2>
               <p>请在右上角选择有数据的基准周和分析周。</p>
             </div>
           ) : (
@@ -781,6 +795,7 @@ export default function PaymentAnalysis({
                   scope={scope}
                   refreshToken={refreshToken}
                   highlightedEntity={highlight}
+                  metric={measure}
                 />
                 {showCosts ? (
                   <FinancialTrendsChart
@@ -809,10 +824,10 @@ export default function PaymentAnalysis({
                     <CardHeader className="payment-viz-head">
                       <div>
                         <CardTitle>
-                          GMV 分布<InfoTip label="GMV 分布口径">分析期同业务日日均 GMV，单位 USD。</InfoTip>
+                          {measureLabel} 分布<InfoTip label="分布口径">分析期与基准期使用相同业务日，按日均比较。{measure === 'orders' ? '订单量为有效实付订单数，不是付款人数。' : 'GMV 单位 USD。'}</InfoTip>
                         </CardTitle>
                         <div className="payment-viz-reading">
-                          <strong>{money(view.total.gmv)}</strong>
+                          <strong>{valueText(view.total.gmv)}</strong>
                           <span className="payment-distribution-change">较基准周</span>
                           <Change value={view.total.changeRate} />
                         </div>
@@ -828,6 +843,8 @@ export default function PaymentAnalysis({
                           amount: item.gmv,
                         }))}
                         total={view.total.gmv}
+                        formatValue={valueText}
+                        metricLabel={measureLabel}
                         onOpen={grouping === 'payType' ? setShareSelected : openDetail}
                         openLabel={grouping === 'payType' ? '占比趋势' : '明细'}
                       />
@@ -842,8 +859,7 @@ export default function PaymentAnalysis({
                     <CardTitle>
                       归因明细
                       <InfoTip label="归因明细口径">
-                        分析期与基准期按相同业务日对齐，金额取日均，单位 USD。贡献度 = 该项 GMV 变化 ÷ 总 GMV
-                        净变化；总变化为零时不计算。正负方向由 GMV 变化决定。
+                        分析期与基准期按相同业务日对齐，{measureLabel}取日均。贡献度 = 该项{measureLabel}变化 ÷ 总{measureLabel}净变化；总变化为零时不计算。
                       </InfoTip>
                     </CardTitle>
                   </div>
@@ -886,6 +902,7 @@ export default function PaymentAnalysis({
                         grouping={grouping}
                         query={query}
                         dimension={dimension}
+                        measure={measure}
                       />
                       <Button
                         variant="ghost"
@@ -960,24 +977,24 @@ export default function PaymentAnalysis({
                       },
                       {
                         key: 'gmv',
-                        header: header('分析周 GMV', 'gmv'),
+                        header: header(`分析周日均${measureLabel}`, 'gmv'),
                         numeric: true,
                         minWidth: modelTable ? 120 : 130,
-                        render: (r) => money(r.gmv),
+                        render: (r) => valueText(r.gmv),
                       },
                       {
                         key: 'baseline',
-                        header: header('基准周 GMV', 'baseline'),
+                        header: header(`基准周日均${measureLabel}`, 'baseline'),
                         numeric: true,
                         minWidth: modelTable ? 120 : 130,
-                        render: (r) => <span className="payment-muted-cell">{money(r.baseline)}</span>,
+                        render: (r) => <span className="payment-muted-cell">{valueText(r.baseline)}</span>,
                       },
                       {
                         key: 'change',
                         header: header('变化', 'change'),
                         numeric: true,
                         minWidth: modelTable ? 110 : 120,
-                        render: (r) => signedMoney(r.change),
+                        render: (r) => signedValueText(r.change),
                       },
                       {
                         key: 'changeRate',
@@ -1078,6 +1095,8 @@ export default function PaymentAnalysis({
               </Card>
               <PaymentShareDialog
                 entity={shareSelected}
+                initialMetric={measure}
+                allowOrders={mode === 'NONE'}
                 label={shareSelected ? entityLabel(shareSelected) : ''}
                 history={costHistory}
                 platform={platform}
@@ -1125,6 +1144,8 @@ export default function PaymentAnalysis({
                       ‹ 返回付费贡献分析
                     </button>
                   )}
+                  {mode === 'NONE' && <div className="payment-drawer-measure"><PaymentMetricSwitch label="抽屉分析指标" value={detailMeasure} onChange={setDetailMeasure} /></div>}
+                  {selectedItem && !detail && <PanelState state="empty" reason="当前指标数据未覆盖，可切回 GMV 查看已有分析。" />}
                   {selectedItem && detail && (
                     <>
                       {entityCosts && (
@@ -1163,9 +1184,11 @@ export default function PaymentAnalysis({
                           deviceType={deviceType}
                           refreshToken={refreshToken}
                           comparisonDay={detailDay}
+                          metric={detailMeasure}
                           renderTrend={(trend, summary) => (
                             <RevenueTrend
                               trend={trend}
+                              measure={detailMeasure}
                               summaryTrend={summary}
                               comparisonDay={detailDay}
                               onActivate={activateDay}
@@ -1175,6 +1198,7 @@ export default function PaymentAnalysis({
                       ) : monthTrend?.length ? (
                         <RevenueTrend
                           trend={monthTrend}
+                          measure={detailMeasure}
                           summaryTrend={detail.trend}
                           costs={entityCosts}
                           comparisonDay={detailDay}
@@ -1257,20 +1281,20 @@ export default function PaymentAnalysis({
                                   key: 'baseline',
                                   header: detailDay ? '基准日' : '基准周日均',
                                   numeric: true,
-                                  render: (r) => money(r.baseline),
+                                  render: (r) => detailValueText(r.baseline),
                                 },
                                 {
                                   key: 'analysis',
                                   header: detailDay ? '分析日' : '分析周日均',
                                   numeric: true,
-                                  render: (r) => money(r.analysis),
+                                  render: (r) => detailValueText(r.analysis),
                                 },
                                 {
                                   key: 'change',
                                   header: '绝对变化',
                                   numeric: true,
                                   minWidth: 112,
-                                  render: (r) => signedMoney(r.analysis - r.baseline),
+                                  render: (r) => signedPaymentValue(r.analysis - r.baseline, detailMeasure),
                                 },
                                 {
                                   key: 'relativeChange',
@@ -1309,7 +1333,8 @@ export default function PaymentAnalysis({
                                       ? '所选日期缺少支付订单注册明细，无法下钻；请检查数据同步。'
                                       : data.source === 'legacy'
                                         ? '历史口径没有可核对的注册明细，无法下钻。'
-                                        : '此付费类型的注册明细缺失或与归因表按日金额不一致，无法下钻；请核对数据源。'}
+                                        : detailMeasure === 'orders' ? '所选日期的订单明细缺失或与主表订单数不一致，暂不展示。'
+                                      : '此付费类型的注册明细缺失或与归因表按日金额不一致，无法下钻；请核对数据源。'}
                             </p>
                           )}
                           {registrationRows && (
@@ -1355,20 +1380,20 @@ export default function PaymentAnalysis({
                                 key: 'baseline',
                                 header: detailDay ? '基准日' : '基准周日均',
                                 numeric: true,
-                                render: (r) => money(r.baseline),
+                                render: (r) => detailValueText(r.baseline),
                               },
                               {
                                 key: 'analysis',
                                 header: detailDay ? '分析日' : '分析周日均',
                                 numeric: true,
-                                render: (r) => money(r.analysis),
+                                render: (r) => detailValueText(r.analysis),
                               },
                               {
                                 key: 'change',
                                 header: '绝对变化',
                                 numeric: true,
                                 minWidth: 112,
-                                render: (r) => signedMoney(r.analysis - r.baseline),
+                                render: (r) => signedPaymentValue(r.analysis - r.baseline, detailMeasure),
                               },
                               {
                                 key: 'relativeChange',

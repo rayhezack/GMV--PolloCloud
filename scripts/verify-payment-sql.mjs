@@ -11,16 +11,16 @@ db.exec(`CREATE TABLE pollo_da_fact_rows (
   metric_version TEXT, attribution_type TEXT, attribution_name TEXT,
   actual_supplier TEXT, actual_provider TEXT, pay_category TEXT, pay_type TEXT,
   function_name TEXT, user_tag TEXT, subscription_tier TEXT,
-  gmv_usd REAL, model_cost_usd REAL
+  gmv_usd REAL, model_cost_usd REAL, order_equivalent REAL
 )`);
 db.exec('CREATE VIEW pollo_da_fact_rows_read AS SELECT * FROM pollo_da_fact_rows');
-const insert = db.prepare('INSERT INTO pollo_da_fact_rows VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+const insert = db.prepare('INSERT INTO pollo_da_fact_rows VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
 const dates = Array.from({ length: 365 }, (_, i) => new Date(Date.UTC(2026, 0, i + 1)).toISOString().slice(0, 10));
 for (const date of dates) for (const mode of ['NONE', 'CREATION_MODE', 'MODEL', 'ACTUAL_MODEL', null]) {
   for (const device of ['desktop', 'mobile']) for (const platform of ['web', 'app']) {
     const row = ['pay_type', date, date, platform, device, mode ? 'ads_v1' : null, mode, 'model', 'supplier', 'provider'];
-    insert.run(...row, 'ACTIVE_PAYMENT', '首订', 'function', 'new', null, 10, 0);
-    insert.run(...row, '汇总', '汇总', null, null, null, 0, 3);
+    insert.run(...row, 'ACTIVE_PAYMENT', '首订', 'function', 'new', null, 10, 0, 1);
+    insert.run(...row, '汇总', '汇总', null, null, null, 0, 3, 0);
   }
 }
 

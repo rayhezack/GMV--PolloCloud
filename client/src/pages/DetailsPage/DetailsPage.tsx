@@ -1,3 +1,4 @@
+import { RefreshButton } from '@/components/system/RefreshButton';
 import { useEffect, useState } from 'react';
 import { Selector } from '@astryxdesign/core/Selector';
 import { apiRequest } from '@/lib/pollocloud';
@@ -144,9 +145,7 @@ export default function DetailsPage() {
               />
             )}
             <PlatformSelect deviceEnabled={false} value={platform} onChange={(v) => change({ platform: v })} />
-            <button className="v62-button" onClick={window.refresh} disabled={loading}>
-              刷新
-            </button>
+            <RefreshButton loading={loading} onRefresh={window.refresh} />
             <button className="v62-button" disabled={!data?.items.length || loading} onClick={exportPage}>
               <Download size={16} strokeWidth={1.7} aria-hidden="true" />
               导出本页

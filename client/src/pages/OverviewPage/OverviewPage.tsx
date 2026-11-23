@@ -1,9 +1,9 @@
+import { RefreshButton } from '@/components/system/RefreshButton';
 import './home.css';
 import { PageHeader, PanelState, Modal } from '@/components/system';
 import { day } from '@shared/format';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { RefreshCw } from 'lucide-react';
 import { RevenueStructureDialog } from '@/components/dashboard/AnalysisWidgets';
 import type {
   DashboardGmvAnomalyResponse,
@@ -62,6 +62,7 @@ export default function OverviewPage() {
     ? (params.get('granularity') as 'day' | 'week' | 'month')
     : 'day';
 
+  const rowsScope = useRef('');
   const [rows, setRows] = useState<OverviewTrendPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -114,7 +115,9 @@ export default function OverviewPage() {
     let live = true;
     setLoading(true);
     setError('');
-    setRows([]);
+    const scope = [platform,deviceType,readStart,endDate].join('|');
+    if (rowsScope.current !== scope) setRows([]);
+    rowsScope.current = scope;
     void getDashboardOverview({
       view: 'cards',
       includeRenewal: 'true',
@@ -185,7 +188,7 @@ export default function OverviewPage() {
       onSelect={(key) => update({ metric: key })}
       onStructure={setStructureMetric}
       onExpand={setExpandedMetric}
-      loading={loading}
+      loading={loading && !rows.length}
       error={error}
       onRetry={() => setRevision((v) => v + 1)}
     />
@@ -212,18 +215,7 @@ export default function OverviewPage() {
               />
             )}
             <PlatformSelect value={platform} onChange={(value) => update({ platform: value })} />
-            <button
-              type="button"
-              className="v62-icon-button"
-              aria-label="刷新数据"
-              disabled={loading}
-              onClick={() => {
-                invalidateDashboardCache();
-                setRevision((value) => value + 1);
-              }}
-            >
-              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            </button>
+            <RefreshButton loading={loading || coverageLoading} onRefresh={() => { setLoading(true); invalidateDashboardCache(); setRevision(value => value + 1); }} label="刷新数据" />
             <Link
               className="v62-icon-button"
               aria-label="诊断报告"
@@ -310,10 +302,10 @@ export default function OverviewPage() {
                   ...(monitor?.anomalyDates ?? []),
                   ...(monitor?.alerts ?? []).map((alert) => alert.period),
                 ]}
-                loading={loading}
+                loading={loading && !rows.length}
               />
             )}
-            {loading ? (
+            {loading && !rows.length ? (
               <div className="home-composition-state">
                 <PanelState state="loading" />
               </div>

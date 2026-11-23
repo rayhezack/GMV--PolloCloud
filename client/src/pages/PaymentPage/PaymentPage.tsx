@@ -1,3 +1,4 @@
+import { RefreshButton } from '@/components/system/RefreshButton';
 import { PageHeader, PanelState } from '@/components/system';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -57,14 +58,7 @@ export default function PaymentPage() {
               />
             )}
             <PlatformSelect value={platform} onChange={(value) => update({ platform: value })} />
-            <button
-              className="v62-icon-button"
-              aria-label="刷新付费类型"
-              disabled={loading}
-              onClick={() => setRefresh((value) => value + 1)}
-            >
-              刷新
-            </button>
+            <RefreshButton loading={loading || coverageLoading} onRefresh={() => { setLoading(true); setRefresh(value => value + 1); }} label="刷新付费类型" />
             <Link className="v62-button" to="/report">
               <WorkbenchIcon name="文件夹" />
               诊断报告

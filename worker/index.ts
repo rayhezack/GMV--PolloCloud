@@ -16,7 +16,7 @@ import { reserveSyncJob } from './sync-job-reservation';
 import { sumMicroDollars } from './monetary-sum';
 import { assertChainConservation, assertCreationConservation, assertPaymentModeConservation } from './source-conservation';
 import { getBusinessWeekStart } from '../shared/business-week';
-import { paymentAnalysisSql } from './payment-analysis-sql';
+import { paymentAnalysisSql, paymentOrderTotal, paymentOrdersMatch } from './payment-analysis-sql';
 import { GMV_ATTRIBUTION_TYPES, type GmvAttributionType, type PaymentAnalysisResponse, type PaymentTrendResponse } from '../shared/api.interface';
 /* Pollocloud Worker: D1 stores analytical facts; Base keeps task records for bot notifications. */
 
@@ -575,6 +575,22 @@ async function replacePaymentRange(env: Env, platform: string, startDate: string
   const expected = totals(parents.filter(row => row.attribution_type === 'NONE' && row.pay_type !== '汇总'));
   const actual = totals(children);
   if (!parents.length || !children.length || [...new Set([...expected.keys(),...actual.keys()])].some(key => Math.round((expected.get(key) ?? 0)*100) !== Math.round((actual.get(key) ?? 0)*100))) throw new Error('付费结果与注册维度未对齐，已保留原数据');
+  if (children.some(row => row.order_count != null)) {
+    const groups = (records: D1Row[], field: string) => {
+      const result = new Map<string,D1Row[]>();
+      for (const row of records) {
+        const key = [row.period,row.device_type,row.pay_type].join('|');
+        const values = result.get(key) ?? [];
+        values.push({order_count:row[field]}); result.set(key,values);
+      }
+      return result;
+    };
+    const parentOrders = groups(parents.filter(row => row.attribution_type === 'NONE' && row.pay_type !== '汇总'), 'order_equivalent');
+    const childOrders = groups(children, 'order_count');
+    for (const key of new Set([...parentOrders.keys(),...childOrders.keys()])) {
+      if (!paymentOrdersMatch(parentOrders.get(key) ?? [],childOrders.get(key) ?? [])) throw new Error('付费订单量与注册维度未对齐，已保留原数据');
+    }
+  }
   const identities = new Set<string>();
   for (const row of parents) {
     const key = factSourceId('pay_type',row);
@@ -582,7 +598,7 @@ async function replacePaymentRange(env: Env, platform: string, startDate: string
     identities.add(key);
     for (const field of ['gmv_usd','model_cost_usd','order_equivalent']) if (row[field] != null && !Number.isFinite(Number(row[field]))) throw new Error('付费数值无效，已保留原数据');
   }
-  const regFields = ['period','week_start','platform','device_type','pay_type','user_lifecycle','country_tier','reg_platform','sku','plan_tier','plan_cycle','credit_amount','previous_sku','previous_plan_tier','previous_plan_cycle','previous_credit_amount','gmv_usd'];
+  const regFields = ['period','week_start','platform','device_type','pay_type','user_lifecycle','country_tier','reg_platform','sku','plan_tier','plan_cycle','credit_amount','previous_sku','previous_plan_tier','previous_plan_cycle','previous_credit_amount','gmv_usd','order_count'];
   const regWhere = `period BETWEEN ? AND ?${platform === 'all' ? '' : ' AND platform = ?'}`;
   const regBinds = platform === 'all' ? [startDate,endDate] : [startDate,endDate,platform];
   const factWhere = "dataset='pay_type' AND platform=? AND period BETWEEN ? AND ?";
@@ -593,7 +609,7 @@ async function replacePaymentRange(env: Env, platform: string, startDate: string
   ]);
   const factInsert = FACT_INSERT_SQL.replace('INSERT OR REPLACE INTO pollo_da_fact_rows','INSERT INTO pollo_da_payment_fact_stage');
   const inserts = [...parents.map(row => env.DB!.prepare(factInsert).bind(...factValues('pay_type',row))),
-    ...children.map(row => env.DB!.prepare(`INSERT INTO pollo_da_payment_registration_stage (${regFields.join(',')}) VALUES (${regFields.map(()=>'?').join(',')})`).bind(...regFields.map(field=>row[field])))];
+    ...children.map(row => env.DB!.prepare(`INSERT INTO pollo_da_payment_registration_stage (${regFields.join(',')}) VALUES (${regFields.map(()=>'?').join(',')})`).bind(...regFields.map(field=>row[field] ?? null)))];
   for (let i=0;i<inserts.length;i+=50) await env.DB.batch(inserts.slice(i,i+50));
   await env.DB.batch([
     env.DB.prepare(`DELETE FROM pollo_da_fact_rows WHERE ${factWhere}`).bind(...factBinds),
@@ -1337,16 +1353,18 @@ async function paymentTrend(env: Env, request: Request) {
   const groupBy = p.get('groupBy') || (attributionType==='NONE' ? 'payType' : 'attributionName');
   if (!['payType','attributionName','actualSupplier','actualProvider'].includes(groupBy) || (attributionType==='NONE' && groupBy!=='payType') || (attributionType!=='ACTUAL_MODEL' && ['actualSupplier','actualProvider'].includes(groupBy))) return errorResponse('趋势维度无效');
   const entities = new Map<string,Map<string,number>>();
+  const entityOrders = new Map<string,Map<string,number>>();
+  const missingOrders = new Set<string>();
   const entityCosts = new Map<string,Map<string,number>>();
   const buckets = new Map<string,PaymentTrendResponse['points'][number]>();
   const bucketKey = (period:string) => granularity==='day' ? period : (granularity==='month'||granularity==='year') ? monthStart(period) : shiftDate(period,-((new Date(period+'T00:00:00Z').getUTCDay()+1)%7));
   for(let date=startDate;date<=endDate;date=shiftDate(date,1)) {
-    const key=bucketKey(date);if(!buckets.has(key))buckets.set(key,{period:key,gmvUsd:null,modelCostUsd:null,days:0,source:null});
+    const key=bucketKey(date);if(!buckets.has(key))buckets.set(key,{period:key,gmvUsd:null,orderCount:null,modelCostUsd:null,days:0,source:null});
   }
   for(const [date,row] of byDate) {
     const point=buckets.get(bucketKey(date))!;
     const source=isAttributedPayRow(row) ? 'ads_v1' : 'legacy';
-    point.days++;point.gmvUsd=0;
+    point.days++;point.gmvUsd=0;point.orderCount=0;
     point.source=point.source && point.source!==source ? 'mixed' : source;
     if(hasModels)point.modelCostUsd=0;
   }
@@ -1361,6 +1379,11 @@ async function paymentTrend(env: Env, request: Request) {
       const value=asNumber(r.gmv_usd);point.gmvUsd=(point.gmvUsd || 0)+value;
       const key=asText(r[groupBy==='payType'?'pay_type':groupBy==='actualSupplier'?'actual_supplier':groupBy==='actualProvider'?'actual_provider':'attribution_name']) || (groupBy==='actualSupplier'?'unknown_supplier':groupBy==='actualProvider'?'unknown_provider':'未归因');
       if(!entities.has(key))entities.set(key,new Map());const values=entities.get(key)!;values.set(bucket,(values.get(bucket)||0)+value);
+      if(r.order_count == null) missingOrders.add(bucket);
+      else {
+        const orders=asNumber(r.order_count);point.orderCount=(point.orderCount || 0)+orders;
+        if(!entityOrders.has(key))entityOrders.set(key,new Map());const ordersFor=entityOrders.get(key)!;ordersFor.set(bucket,(ordersFor.get(bucket)||0)+orders);
+      }
     }
     for(const r of costs){
       const bucket=bucketKey(asText(r.period)),point=buckets.get(bucket)!;
@@ -1369,8 +1392,9 @@ async function paymentTrend(env: Env, request: Request) {
       if(!entityCosts.has(key))entityCosts.set(key,new Map());const values=entityCosts.get(key)!;values.set(bucket,(values.get(bucket)||0)+value);
     }
   }
+  for(const bucket of missingOrders)buckets.get(bucket)!.orderCount=null;
   const keys=[...new Set([...entities.keys(),...entityCosts.keys()])];
-  const series=keys.sort((a,b)=>sum([...(entities.get(b)?.values()??[])])-sum([...(entities.get(a)?.values()??[])])).map(key=>({key,label:key,points:[...buckets.values()].map(bucket=>({period:bucket.period,gmvUsd:bucket.days ? entities.get(key)?.get(bucket.period)||0 : null,modelCostUsd:bucket.days&&hasModels ? entityCosts.get(key)?.get(bucket.period)||0 : null}))}));
+  const series=keys.sort((a,b)=>sum([...(entities.get(b)?.values()??[])])-sum([...(entities.get(a)?.values()??[])])).map(key=>({key,label:key,points:[...buckets.values()].map(bucket=>({period:bucket.period,orderCount:bucket.days && !missingOrders.has(bucket.period) ? entityOrders.get(key)?.get(bucket.period) || 0 : null,gmvUsd:bucket.days ? entities.get(key)?.get(bucket.period)||0 : null,modelCostUsd:bucket.days&&hasModels ? entityCosts.get(key)?.get(bucket.period)||0 : null}))}));
   return json({granularity,startDate,endDate,points:[...buckets.values()],series} satisfies PaymentTrendResponse);
 }
 
@@ -1389,7 +1413,7 @@ async function paymentRegistrationTrend(env: Env, request: Request) {
   if (deviceType) { filters.push('device_type=?'); binds.push(deviceType); }
   const [parents,rows] = await Promise.all([
     queryRows(env,parentQuery.sql,...parentQuery.binds),
-    queryRows(env,`SELECT period,user_lifecycle,country_tier,reg_platform,sku,plan_tier,plan_cycle,credit_amount,previous_sku,previous_plan_tier,previous_plan_cycle,previous_credit_amount,SUM(gmv_usd) AS gmv_usd FROM pollo_da_payment_registration WHERE ${filters.join(' AND ')} GROUP BY period,user_lifecycle,country_tier,reg_platform,sku,plan_tier,plan_cycle,credit_amount,previous_sku,previous_plan_tier,previous_plan_cycle,previous_credit_amount`,...binds),
+    queryRows(env,`SELECT period,user_lifecycle,country_tier,reg_platform,sku,plan_tier,plan_cycle,credit_amount,previous_sku,previous_plan_tier,previous_plan_cycle,previous_credit_amount,SUM(gmv_usd) AS gmv_usd,CASE WHEN COUNT(order_count)=COUNT(*) THEN SUM(order_count) ELSE NULL END AS order_count FROM pollo_da_payment_registration WHERE ${filters.join(' AND ')} GROUP BY period,user_lifecycle,country_tier,reg_platform,sku,plan_tier,plan_cycle,credit_amount,previous_sku,previous_plan_tier,previous_plan_cycle,previous_credit_amount`,...binds),
   ]);
   const totals = new Map<string,number>(), childTotals = new Map<string,number>();
   for (const row of parents) if (asText(row.pay_type) === payType) totals.set(asText(row.period),(totals.get(asText(row.period)) ?? 0)+asNumber(row.gmv_usd));
@@ -1397,8 +1421,10 @@ async function paymentRegistrationTrend(env: Env, request: Request) {
   const observed = new Set(parents.map(row=>asText(row.period)));
   const verified = new Set(dates.filter(date => observed.has(date) &&
     (totals.has(date) ? childTotals.has(date) && Math.round(totals.get(date)!*100) === Math.round(childTotals.get(date)!*100) : !childTotals.has(date))));
-  return json({ startDate,endDate,points:dates.map(period=>({period,total:observed.has(period) ? totals.get(period) ?? 0 : null,verified:verified.has(period)})),
-    rows:rows.filter(row=>verified.has(asText(row.period))).map(row=>({period:asText(row.period),userLifecycle:asText(row.user_lifecycle),countryTier:asText(row.country_tier),regPlatform:asText(row.reg_platform),sku:asText(row.sku),planTier:asText(row.plan_tier),planCycle:asText(row.plan_cycle),creditAmount:asText(row.credit_amount),previousSku:asText(row.previous_sku),previousPlanTier:asText(row.previous_plan_tier),previousPlanCycle:asText(row.previous_plan_cycle),previousCreditAmount:asText(row.previous_credit_amount),gmvUsd:asNumber(row.gmv_usd)})) });
+  const orderParents = parents.filter(row => asText(row.pay_type) === payType);
+  const orderDays = new Set(dates.filter(date => observed.has(date) && paymentOrdersMatch(orderParents.filter(row => row.period === date), rows.filter(row => row.period === date))));
+  return json({ startDate,endDate,points:dates.map(period=>({period,total:observed.has(period) ? totals.get(period) ?? 0 : null,verified:verified.has(period),totalOrders:observed.has(period) ? paymentOrderTotal(orderParents.filter(row=>row.period===period)) : null,ordersVerified:orderDays.has(period)})),
+    rows:rows.filter(row=>verified.has(asText(row.period)) || orderDays.has(asText(row.period))).map(row=>({period:asText(row.period),userLifecycle:asText(row.user_lifecycle),countryTier:asText(row.country_tier),regPlatform:asText(row.reg_platform),sku:asText(row.sku),planTier:asText(row.plan_tier),planCycle:asText(row.plan_cycle),creditAmount:asText(row.credit_amount),previousSku:asText(row.previous_sku),previousPlanTier:asText(row.previous_plan_tier),previousPlanCycle:asText(row.previous_plan_cycle),previousCreditAmount:asText(row.previous_credit_amount),gmvUsd:asNumber(row.gmv_usd),orderCount:row.order_count == null ? null : asNumber(row.order_count)})) });
 }
 
 async function paymentAnalysis(env: Env, request: Request) {
@@ -1445,7 +1471,7 @@ async function paymentAnalysis(env: Env, request: Request) {
   });
   const response: PaymentAnalysisResponse = {
     attributionType, source: legacy ? 'legacy' : 'ads_v1', availableAttributionTypes, comparison,
-    revenues: revenues.map((row) => ({ ...identity(row), payType: asText(row.pay_type), payCategory: asText(row.pay_category) as 'ACTIVE_PAYMENT' | 'AUTO_RENEWAL' | 'API', gmvUsd: asNumber(row.gmv_usd) })),
+    revenues: revenues.map((row) => ({ ...identity(row), payType: asText(row.pay_type), payCategory: asText(row.pay_category) as 'ACTIVE_PAYMENT' | 'AUTO_RENEWAL' | 'API', gmvUsd: asNumber(row.gmv_usd), orderCount: row.order_count == null ? null : asNumber(row.order_count) })),
     costs: costs.map((row) => ({ ...identity(row), modelCostUsd: asNumber(row.model_cost_usd) })),
     costAvailable,
   };
@@ -1456,7 +1482,7 @@ async function paymentAnalysis(env: Env, request: Request) {
     if (platform !== 'all') { filters.push('platform=?'); binds.push(platform); }
     if (deviceType) { filters.push('device_type=?'); binds.push(deviceType); }
     try {
-      const rows = await queryRows(env, `SELECT period,week_start,pay_type,user_lifecycle,country_tier,reg_platform,sku,plan_tier,plan_cycle,credit_amount,previous_sku,previous_plan_tier,previous_plan_cycle,previous_credit_amount,SUM(gmv_usd) AS gmv_usd FROM pollo_da_payment_registration WHERE ${filters.join(' AND ')} GROUP BY period,week_start,pay_type,user_lifecycle,country_tier,reg_platform,sku,plan_tier,plan_cycle,credit_amount,previous_sku,previous_plan_tier,previous_plan_cycle,previous_credit_amount`, ...binds);
+      const rows = await queryRows(env, `SELECT period,week_start,pay_type,user_lifecycle,country_tier,reg_platform,sku,plan_tier,plan_cycle,credit_amount,previous_sku,previous_plan_tier,previous_plan_cycle,previous_credit_amount,SUM(gmv_usd) AS gmv_usd,CASE WHEN COUNT(order_count)=COUNT(*) THEN SUM(order_count) ELSE NULL END AS order_count FROM pollo_da_payment_registration WHERE ${filters.join(' AND ')} GROUP BY period,week_start,pay_type,user_lifecycle,country_tier,reg_platform,sku,plan_tier,plan_cycle,credit_amount,previous_sku,previous_plan_tier,previous_plan_cycle,previous_credit_amount`, ...binds);
       if (rows.length) response.registrationStatus = 'available';
       // Verify every date, including zero/missing groups, against payment results.
       // Never rescale registration slices or substitute funnel revenue for orders.
@@ -1472,9 +1498,14 @@ async function paymentAnalysis(env: Env, request: Request) {
       }
       const verifiedPayTypes = [...new Set(response.revenues.map(row => row.payType))].filter(type =>
         rows.some(row => asText(row.pay_type) === type) && dates.every(date => Math.round((parent.get(`${date}|${type}`) ?? 0)*100) === Math.round((children.get(`${date}|${type}`) ?? 0)*100)));
+      const verifiedOrderPayTypes = [...new Set(response.revenues.map(row => row.payType))].filter(type =>
+        rows.some(row => row.pay_type === type) && dates.every(date => paymentOrdersMatch(
+          revenues.filter(row => row.period === date && row.pay_type === type),
+          rows.filter(row => row.period === date && row.pay_type === type))));
       response.registration = {
         verifiedPayTypes,
-        rows: rows.filter(row => verifiedPayTypes.includes(asText(row.pay_type))).map(row => ({period:asText(row.period),weekStart:asText(daily ? row.period : row.week_start),payType:asText(row.pay_type),userLifecycle:asText(row.user_lifecycle),countryTier:asText(row.country_tier),regPlatform:asText(row.reg_platform),sku:asText(row.sku),planTier:asText(row.plan_tier),planCycle:asText(row.plan_cycle),creditAmount:asText(row.credit_amount),previousSku:asText(row.previous_sku),previousPlanTier:asText(row.previous_plan_tier),previousPlanCycle:asText(row.previous_plan_cycle),previousCreditAmount:asText(row.previous_credit_amount),gmvUsd:asNumber(row.gmv_usd)})),
+        verifiedOrderPayTypes,
+        rows: rows.filter(row => verifiedPayTypes.includes(asText(row.pay_type)) || verifiedOrderPayTypes.includes(asText(row.pay_type))).map(row => ({period:asText(row.period),weekStart:asText(daily ? row.period : row.week_start),payType:asText(row.pay_type),userLifecycle:asText(row.user_lifecycle),countryTier:asText(row.country_tier),regPlatform:asText(row.reg_platform),sku:asText(row.sku),planTier:asText(row.plan_tier),planCycle:asText(row.plan_cycle),creditAmount:asText(row.credit_amount),previousSku:asText(row.previous_sku),previousPlanTier:asText(row.previous_plan_tier),previousPlanCycle:asText(row.previous_plan_cycle),previousCreditAmount:asText(row.previous_credit_amount),gmvUsd:asNumber(row.gmv_usd),orderCount:row.order_count == null ? null : asNumber(row.order_count)})),
       };
     } catch (error) {
       if (!String(error).includes('no such table: pollo_da_payment_registration')) throw error;
@@ -2420,7 +2451,7 @@ async function pullDailyFacts(env: Env, platform: string, dataset: DatasetKind, 
   const registration = await analytics.executeCompleteSql(buildPaymentRegistrationSql(startDate,endDate));
   const children = registration.rows.map(values => Object.fromEntries(registration.column_names.map((column,i)=>[column.toLowerCase(),values[i]])) as D1Row)
     .filter(row => platform === 'all' || row.platform === platform)
-    .map(row => ({...row,gmv_usd:Number(row.gmv_usd),source_kind:'registration'}));
+    .map(row => ({...row,gmv_usd:Number(row.gmv_usd),order_count:row.order_count == null ? null : Number(row.order_count),source_kind:'registration'}));
   return [...parents,...children];
 }
 
@@ -3457,6 +3488,18 @@ export default {
         return errorResponse('不支持的请求方式', 405);
       }
       if (url.pathname === '/api/dashboard/payment-registration-trend' && request.method === 'GET') return paymentRegistrationTrend(env, request);
+      if (url.pathname === '/api/dashboard/product-actions/sync' && request.method === 'POST') {
+        const denial = await authorizeDashboardMutation(request);
+        if (denial) return denial;
+        if (!env.DB) return errorResponse('D1 未配置', 503);
+        const result = await syncProductActions(env.DB, (pageToken, signal) => {
+          const query = new URLSearchParams({ page_size: '500' });
+          if (pageToken) query.set('page_token', pageToken);
+          return baseRequest<ActionPage>(env, 'product_actions', `/records?${query}`, undefined, 'GET', signal);
+        }, { force: true });
+        if (result.status === 'success') await markDailyDiagnosisDirty(env);
+        return json(result);
+      }
       if (url.pathname === '/api/dashboard/product-actions' && request.method === 'GET') {
         try {
           if (!env.DB) throw new Error('D1 未配置');

@@ -8,6 +8,16 @@ type Scope = {
   legacy: boolean;
 };
 
+/** Missing counts never become zeros, even when the same slices reconcile in USD. */
+export function paymentOrderTotal(rows: Record<string, unknown>[]): number | null {
+  return rows.every(row => row.order_count != null && Number.isFinite(Number(row.order_count)) && Number(row.order_count) >= 0)
+    ? rows.reduce((n, row) => n + Number(row.order_count), 0) : null;
+}
+export function paymentOrdersMatch(parents: Record<string, unknown>[], children: Record<string, unknown>[]) {
+  const parent = paymentOrderTotal(parents), child = paymentOrderTotal(children);
+  return parent != null && child != null && Math.abs(parent - child) < 1e-7;
+}
+
 export function paymentAnalysisSql(
   scope: Scope,
   measure: "revenue" | "cost",
@@ -61,7 +71,7 @@ export function paymentAnalysisSql(
     sql:
       measure === "cost"
         ? `SELECT ${dimensions},SUM(model_cost_usd) AS model_cost_usd FROM pollo_da_fact_rows_read WHERE ${filters.join(" AND ")} GROUP BY ${group} HAVING SUM(model_cost_usd)<>0`
-        : `SELECT ${dimensions},${category} AS pay_category,pay_type,SUM(gmv_usd) AS gmv_usd FROM pollo_da_fact_rows_read WHERE ${filters.join(" AND ")} GROUP BY ${group},${category},pay_type`,
+        : `SELECT ${dimensions},${category} AS pay_category,pay_type,SUM(gmv_usd) AS gmv_usd,CASE WHEN COUNT(order_equivalent)=COUNT(*) THEN SUM(order_equivalent) ELSE NULL END AS order_count FROM pollo_da_fact_rows_read WHERE ${filters.join(" AND ")} GROUP BY ${group},${category},pay_type`,
     binds,
   };
 }

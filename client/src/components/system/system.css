@@ -408,3 +408,6 @@ html[data-astryx-theme='pollo-v62']
     animation: none !important;
   }
 }
+
+.sys-refresh-button { inline-size: 32px; block-size: 32px; padding: 6px; flex: 0 0 32px; }
+.sys-refresh-button .workbench-icon { inline-size: 20px; block-size: 20px; flex-basis: 20px; }

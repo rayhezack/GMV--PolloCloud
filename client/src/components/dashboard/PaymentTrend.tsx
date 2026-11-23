@@ -1,3 +1,4 @@
+import { paymentValue, formatPaymentValue, type PaymentMetric } from '@shared/payment-metric';
 import { chartTicks } from '@/components/charts/geometry';
 import { entityColor } from '@shared/chart-colors';
 import { paymentWeekBands, paymentTrendUnit } from '@shared/comparison-display';
@@ -27,6 +28,7 @@ export default function PaymentTrend({
   refreshToken,
   onDataChange,
   highlightedEntity,
+  metric = 'gmv',
 }: {
   platform: DashboardPlatform;
   deviceType?: AppDeviceType;
@@ -38,6 +40,7 @@ export default function PaymentTrend({
   refreshToken: number;
   onDataChange?: (data: PaymentTrendResponse | null) => void;
   highlightedEntity?: string | null;
+  metric?: PaymentMetric;
 }) {
   const [params, setParams] = useSearchParams();
   const granularity = (
@@ -94,7 +97,8 @@ export default function PaymentTrend({
     date: point.period,
     values: Object.fromEntries(
       shown.flatMap((series) => {
-        const value = series.points[i]?.gmvUsd;
+        const reading = series.points[i];
+        const value = reading ? paymentValue(reading, metric) : null;
         return value == null || !point.days ? [] : [[series.key, value / point.days]];
       }),
     ),
@@ -214,8 +218,8 @@ export default function PaymentTrend({
               重试
             </Button>
           </div>
-        ) : !data?.points.some((p) => p.days) ? (
-          <div className="payment-trend-state">暂无数据</div>
+        ) : !data?.points.some((p) => p.days && paymentValue(p, metric) != null) ? (
+          <div className="payment-trend-state">{metric === 'orders' ? '所选范围缺少可核对的订单量' : '暂无数据'}</div>
         ) : (
           <InvestmentPerformanceChart
             key={`${mode}-${scope}-${grouping}-${granularity}`}
@@ -227,11 +231,10 @@ export default function PaymentTrend({
             highlightedSeries={
               legendHighlight ?? shown.find((s) => s.key === highlightedEntity || s.label === highlightedEntity)?.key
             }
-            formatValue={money}
+            formatValue={(value) => formatPaymentValue(value, metric)}
             formatAxis={(value) =>
               new Intl.NumberFormat('en-US', {
-                style: 'currency',
-                currency: 'USD',
+                ...(metric === 'gmv' ? { style: 'currency', currency: 'USD' } as const : {}),
                 notation: 'compact',
                 maximumFractionDigits: 0,
               }).format(value)

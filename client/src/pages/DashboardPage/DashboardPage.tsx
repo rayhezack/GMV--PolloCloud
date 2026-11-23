@@ -1,3 +1,4 @@
+import { RefreshButton } from '@/components/system/RefreshButton';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuPortal } from '@/components/ui/dropdown-menu';
 import { WeekComparisonPicker } from '@/components/dashboard/WeekComparisonPicker';
 import DateRangePicker from '@/components/dashboard/DashboardDateRangePicker';
@@ -17,7 +18,6 @@ import {
   type ReactNode,
 } from 'react';
 import dayjs from 'dayjs';
-import { Slide } from 'loading-dev';
 import { LOCAL_DATA_WINDOW, LOCAL_REVENUE_WINDOW } from '@/lib/local-data-window';
 import { GlobalFinanceMarketComboChart } from '@/components/global-finance-market-combo-chart';
 import gsap from 'gsap';
@@ -1333,18 +1333,7 @@ function GlobalDashboardControls({
           </DropdownMenuSub>
         </DropdownMenuContent>
       </DropdownMenu>
-      <button
-        type="button"
-        className="icon-control"
-        aria-label="刷新数据"
-        title="刷新数据"
-        onClick={onRefresh}
-        disabled={loading}
-        aria-busy={loading}
-      >
-        {loading ? <Slide size={16} color="currentColor" aria-hidden="true" /> : <RefreshCw className="size-4" />}
-        <span className="icon-control-tooltip">刷新数据</span>
-      </button>
+      <RefreshButton loading={loading} onRefresh={onRefresh} />
     </div>
   );
 }

@@ -589,3 +589,87 @@ return {
     }
   }
 ];
+
+ICONS.push({
+  name: 'banknote',
+  zh: '纸币',
+  category: 'commerce',
+  tags: ['money', 'cash', 'bill', 'payment', 'currency', '现金', '钞票'],
+  variants: ['plus', 'minus', 'check', 'x', 'up', 'down', 'right', 'sync', 'clock'],
+  // Two banknotes, one on the other; on hover they fan apart as if being counted.
+  svg: (u) => {
+    const note = rr(0, 0, 20.6, 12.6, KR);
+    return `<g data-n="b"><g filter="${u.sh}"><g filter="${u.hi}"><path d="${note}" fill="${u.upS}"/></g></g><path d="${note}" ${OL}/></g>
+      <g data-n="fr"><g filter="${u.sh}"><g filter="${u.hi}"><path d="${note}" fill="${u.loS}"/></g></g><path d="${note}" ${OL}/>
+        <path d="${circ(10.3, 6.3, 3.2)}" fill="#fff"/>
+        <path d="${circ(4, 6.3, 1.25) + circ(16.6, 6.3, 1.25)}" fill="#fff" data-w="fill"/></g>`;
+  },
+  target: (h) => ({ b: h ? [7.2, 2.6, 7] : [6.4, 3.6, 0], fr: h ? [3.6, 9.2, -4] : [4, 8.4, 0] }),
+  draw(p, E) {
+    at(E.b, { transform: `translate(${f(p.b[0])} ${f(p.b[1])}) rotate(${f(p.b[2])} 10.3 6.3)` });
+    at(E.fr, { transform: `translate(${f(p.fr[0])} ${f(p.fr[1])}) rotate(${f(p.fr[2])} 10.3 6.3)` });
+  }
+});
+{
+const cardBack=(u,d,fill)=>`<g filter="${u.sh}"><g filter="${u.hi}"><path d="${d}" fill="${fill}"/></g></g><path d="${d}" ${OL}/>`;
+// The slip: straight sides, five torn teeth along the bottom.
+const slip = (() => {
+  const l = 8.4, r = 22.6, w = (r - l) / 5, pts = [[l, -1], [r, -1], [r, 19.6]];
+  for (let i = 0; i < 5; i++) pts.push([r - w * (i + 0.5), 21.2], [r - w * (i + 1), 19.6]);
+  pts.pop(); pts.push([l, 19.6]);
+  return rp(pts, [0, 0, 0.3, ...pts.slice(3, -1).map(() => 0.4), 0.3]);
+})();
+
+ICONS.push({
+  name: 'receipt',
+  zh: '小票',
+  category: 'commerce',
+  tags: ['bill', 'purchase', 'order', 'transaction', 'expense', '收据', '账单'],
+  variants: ['plus', 'check', 'x', 'search', 'down', 'right', 'clock', 'alert', 'sparkle'],
+  // A receipt coming out of a printer slot; on hover it prints longer.
+  svg: (u) => `<clipPath id="${u.id('out')}"><rect x="0" y="4" width="31" height="24"/></clipPath>
+    <g clip-path="url(#${u.id('out')})"><g data-n="slip"><g filter="${u.sh}"><g filter="${u.hi}"><path d="${slip}" fill="${u.loS}"/></g></g><path d="${slip}" ${OL}/>
+      <path d="${lines(10.8, 9.6, [9.4, 6])}" class="ln" stroke="#fff" data-w="stroke"/></g></g>
+    ${cardBack(u, rr(5.2, 1.4, 20.6, 4.6, 2.3), u.upS)}`,
+  target: (h) => ({ y: h ? 2.6 : 0 }),
+  draw(p, E) { at(E.slip, { transform: `translate(0 ${f(p.y)})` }); }
+});
+
+}
+
+{
+function arcArrow(a0, a1, r, head = 2.5, len = 3) {
+  const rad = (d) => d * Math.PI / 180;
+  const pt = (a) => [r * Math.cos(rad(a)), r * Math.sin(rad(a))];
+  const s = pt(a0), e = pt(a1);
+  const t = [-Math.sin(rad(a1)), Math.cos(rad(a1))], n = [Math.cos(rad(a1)), Math.sin(rad(a1))];
+  const tip = [e[0] + t[0] * len, e[1] + t[1] * len];
+  const hd = rp([[e[0] + n[0] * head, e[1] + n[1] * head], tip, [e[0] - n[0] * head, e[1] - n[1] * head]], 0.5);
+  return { arc: `M${f(s[0])} ${f(s[1])}A${r} ${r} 0 ${Math.abs(a1 - a0) > 180 ? 1 : 0} 1 ${f(e[0])} ${f(e[1])}`, head: hd };
+}
+/**
+ * A straight arrow from (x1, y1) to (x2, y2): a shaft ending under a solid head.
+ * Returns { shaft, head }: stroke the shaft at 2.2 with round caps, fill the head.
+ */
+const disc=(u)=>`<g filter="${u.sh}"><g filter="${u.hi}"><path d="${circ(15.5,12.5,11.5)}" fill="${u.loS}"/></g></g><path d="${circ(15.5,12.5,11.5)}" ${OL}/><g filter="${u.hi}"><path d="${circ(15.5,12.5,8.4)}" fill="${u.upS}"/></g><path d="${circ(15.5,12.5,8.4)}" ${OL}/>`;
+const STROKE='fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" data-t="stroke:#2F6FE0"',DEEP='data-t="fill:#2F6FE0"';
+const place=(a)=>`translate(15.5 12.5) rotate(${f(a)})`,swell=(x)=>Math.sin(Math.PI*x);
+const ring = (r) => arcArrow(40, 310, r, 2.6, 3.2), ARC = ring(4.6);
+
+ICONS.push({
+  name: 'rotate-cw',
+  zh: '顺时针旋转',
+  category: 'arrows',
+  tags: ['rotate', 'clockwise', 'redo', 'turn', 'refresh', '旋转'],
+  // A disc with a clockwise circular arrow that spins a full turn on hover, opening
+  // out a little as it goes.
+  svg: (u) => disc(u) + `<g data-n="arr"><path data-n="aS" d="${ARC.arc}" ${STROKE}/><path data-n="aH" d="${ARC.head}" ${DEEP}/></g>`,
+  target: (h) => ({ rot: h ? 360 : 0 }),
+  draw(p, E) {
+    const a = ring(4.6 + 0.6 * swell(p.rot / 360));
+    at(E.aS, { d: a.arc }); at(E.aH, { d: a.head });
+    at(E.arr, { transform: place(p.rot) });
+  }
+});
+
+}

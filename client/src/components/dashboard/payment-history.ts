@@ -1,3 +1,4 @@
+import { paymentValue, type PaymentMetric } from '../../../../shared/payment-metric.ts';
 import type { PaymentTrendResponse } from '../../../../shared/api.interface';
 const shift=(date:string,days:number)=>new Date(Date.parse(date+'T00:00:00Z')+days*86400000).toISOString().slice(0,10);
 export type PaymentShareRange = 'week' | 'month' | 'year';
@@ -5,13 +6,13 @@ export function latestPaymentDate(history: PaymentTrendResponse) {
   return history.points.filter(point => point.days > 0 && point.gmvUsd != null).map(point => point.period).sort().at(-1);
 }
 /** Aggregate GMV before taking a ratio; never average daily shares or fill missing coverage with zero. */
-export function paymentShareTrend(history: PaymentTrendResponse, entity: string, range?: PaymentShareRange) {
+export function paymentShareTrend(history: PaymentTrendResponse, entity: string, range?: PaymentShareRange, metric: PaymentMetric = 'gmv') {
   const series = history.series.find(series => series.key === entity);
   const end = latestPaymentDate(history);
   if (!series || !end) return [];
   const start = range === 'year' ? end.slice(0, 4) + '-01-01' : shift(end, range === 'week' ? -13 : -29);
   const totals = new Map(history.points.map(point => [point.period, point]));
-  const amounts = new Map(series.points.map(point => [point.period, point.gmvUsd]));
+  const amounts = new Map(series.points.map(point => [point.period, paymentValue(point, metric)]));
   const buckets = new Map<string, {date: string; startDate: string; endDate: string; days: number; missingDays: number; gmv: number; totalGmv: number}>();
   for (let date = start; date <= end; date = shift(date, 1)) {
     const key = range === 'year' ? date.slice(0, 7) + '-01' : range === 'month'
@@ -21,8 +22,8 @@ export function paymentShareTrend(history: PaymentTrendResponse, entity: string,
     bucket.endDate = date;
     bucket.days++;
     const total = totals.get(date), amount = amounts.get(date);
-    if (!total?.days || total.gmvUsd == null || amount == null) bucket.missingDays++;
-    else { bucket.gmv += amount; bucket.totalGmv += total.gmvUsd; }
+    if (!total?.days || paymentValue(total, metric) == null || amount == null) bucket.missingDays++;
+    else { bucket.gmv += amount; bucket.totalGmv += paymentValue(total, metric)!; }
   }
   return [...buckets.values()].map(bucket => {
     const {date, startDate, endDate, days, missingDays} = bucket;
@@ -32,7 +33,7 @@ export function paymentShareTrend(history: PaymentTrendResponse, entity: string,
       share: gmv != null && totalGmv != null && totalGmv > 0 ? gmv / totalGmv : null};
   });
 }
-export function paymentMonthTrend(history:PaymentTrendResponse,entity:string,baselineWeek:string,analysisWeek:string) {
+export function paymentMonthTrend(history:PaymentTrendResponse,entity:string,baselineWeek:string,analysisWeek:string,metric: PaymentMetric = 'gmv') {
   const byDate=new Map(history.series.find(series=>series.key===entity)?.points.map(point=>[point.period,point])??[]);
   const available=history.points.filter(point=>point.gmvUsd!=null);
   const end=available.at(-1)?.period;
@@ -41,6 +42,6 @@ export function paymentMonthTrend(history:PaymentTrendResponse,entity:string,bas
   const gap=Math.round((Date.parse(analysisWeek)-Date.parse(baselineWeek))/86400000);
   return available.filter(point=>point.period>=start).map((point,day)=>{
     const actual=byDate.get(point.period),previous=byDate.get(shift(point.period,-gap));
-    return {day,date:point.period,label:point.period.slice(5).replace('-','/'),analysis:actual?.gmvUsd??0,cost:actual?.modelCostUsd??null,baseline:previous?.gmvUsd??null,baselineCost:previous?.modelCostUsd??null};
+    return {day,date:point.period,label:point.period.slice(5).replace('-','/'),analysis:actual ? paymentValue(actual,metric) : paymentValue(point,metric) == null ? null : 0,cost:actual?.modelCostUsd??null,baseline:previous ? paymentValue(previous,metric) : null,baselineCost:previous?.modelCostUsd??null};
   });
 }

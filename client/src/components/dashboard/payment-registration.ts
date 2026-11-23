@@ -1,3 +1,4 @@
+import { paymentValue, type PaymentMetric } from '../../../../shared/payment-metric.ts';
 import type { PaymentAnalysisResponse, PaymentRegistrationTrendResponse } from '../../../../shared/api.interface';
 
 export type RegistrationDimension = 'userLifecycle' | 'countryTier' | 'regPlatform' | 'sku' | 'upgradeCombination' | 'creditAmount' | 'cycleTransition';
@@ -30,8 +31,8 @@ export function registrationLabel(row: RegistrationRow, dimension: RegistrationD
   }
 }
 
-export function registrationBreakdown(data: PaymentAnalysisResponse, payType: string, dimension: RegistrationDimension) {
-  if (!data.comparison || !data.registration?.verifiedPayTypes.includes(payType)) return null;
+export function registrationBreakdown(data: PaymentAnalysisResponse, payType: string, dimension: RegistrationDimension, metric: PaymentMetric = 'gmv') {
+  if (!data.comparison || !(metric === 'orders' ? data.registration?.verifiedOrderPayTypes : data.registration?.verifiedPayTypes)?.includes(payType)) return null;
   const { analysisPeriod, baselinePeriod } = data.comparison;
   const offsets = (week: string) => new Set(data.revenues.filter(row => row.weekStart === week).map(row => Date.parse(row.period) - Date.parse(week)));
   const analysisOffsets = offsets(analysisPeriod), baselineOffsets = offsets(baselinePeriod);
@@ -42,7 +43,7 @@ export function registrationBreakdown(data: PaymentAnalysisResponse, payType: st
     if (row.payType !== payType || ![analysisPeriod, baselinePeriod].includes(row.weekStart) || !matched.has(Date.parse(row.period) - Date.parse(row.weekStart))) continue;
     const key = registrationLabel(row,dimension);
     const group = groups.get(key) ?? { key, baseline:0, analysis:0 };
-    group[row.weekStart === analysisPeriod ? 'analysis' : 'baseline'] += row.gmvUsd / matched.size;
+    group[row.weekStart === analysisPeriod ? 'analysis' : 'baseline'] += paymentValue(row, metric)! / matched.size;
     groups.set(key, group);
   }
   return groups.size ? [...groups.values()].sort((a,b) => b.analysis-a.analysis || a.key.localeCompare(b.key)) : null;
@@ -50,11 +51,11 @@ export function registrationBreakdown(data: PaymentAnalysisResponse, payType: st
 
 
 /** Match the selected table layer exactly. Missing or unreconciled days stay null. */
-export function registrationLayerTrend(history: PaymentRegistrationTrendResponse,dimension: RegistrationDimension,layer:string,gap:number,displayEnd:string) {
+export function registrationLayerTrend(history: PaymentRegistrationTrendResponse,dimension: RegistrationDimension,layer:string,gap:number,displayEnd:string,metric:PaymentMetric = 'gmv') {
   const shift=(date:string,days:number)=>new Date(Date.parse(date+'T00:00:00Z')+days*86400000).toISOString().slice(0,10);
   const totals=new Map<string,number>();
-  for(const row of history.rows)if(registrationLabel(row,dimension)===layer)totals.set(row.period,(totals.get(row.period) ?? 0)+row.gmvUsd);
-  const valid=new Set(history.points.filter(point=>point.verified).map(point=>point.period));
+  for(const row of history.rows)if(registrationLabel(row,dimension)===layer)totals.set(row.period,(totals.get(row.period) ?? 0)+(paymentValue(row, metric) ?? 0));
+  const valid=new Set(history.points.filter(point=>metric === 'orders' ? point.ordersVerified : point.verified).map(point=>point.period));
   const value=(date:string)=>valid.has(date)?totals.get(date) ?? 0:null;
   return history.points.filter(point=>point.period>=shift(displayEnd,-29) && point.period<=displayEnd).map((point,day)=>({day,date:point.period,label:point.period.slice(5).replace('-','/'),analysis:value(point.period),baseline:value(shift(point.period,-gap)),cost:null,baselineCost:null}));
 }

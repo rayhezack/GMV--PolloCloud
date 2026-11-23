@@ -1,3 +1,4 @@
+import { paymentValue, type PaymentMetric } from '../../../../shared/payment-metric.ts';
 import type { PaymentAnalysisResponse, PaymentCostPoint, PaymentRevenuePoint } from '@shared/api.interface';
 
 export type RevenueScope = 'ALL' | 'ACTIVE_PAYMENT' | 'AUTO_RENEWAL' | 'API';
@@ -68,7 +69,8 @@ const offset = (row: { period: string; weekStart: string }) =>
   Math.round((Date.parse(row.period) - Date.parse(row.weekStart)) / 86400000);
 const selectedRevenue = (row: PaymentRevenuePoint, scope: RevenueScope) => scope === 'ALL' || row.payCategory === scope;
 
-export function buildPaymentDailyRows(data: PaymentAnalysisResponse, scope: RevenueScope, group: PaymentGrouping) {
+export function buildPaymentDailyRows(data: PaymentAnalysisResponse, scope: RevenueScope, group: PaymentGrouping, metric: PaymentMetric = 'gmv') {
+  if (data.revenues.some(row => selectedRevenue(row, scope) && paymentValue(row, metric) == null)) return [];
   const rows = new Map<
     string,
     {
@@ -94,7 +96,7 @@ export function buildPaymentDailyRows(data: PaymentAnalysisResponse, scope: Reve
       });
     return rows.get(id)!;
   };
-  for (const r of data.revenues) if (selectedRevenue(r, scope)) get(r).gmv += r.gmvUsd;
+  for (const r of data.revenues) if (selectedRevenue(r, scope)) get(r).gmv += paymentValue(r, metric)!;
   if (data.costAvailable && group !== 'payType')
     for (const c of data.costs) {
       const row = get(c);
@@ -113,14 +115,16 @@ export function buildPaymentView(
   scope: RevenueScope,
   group: PaymentGrouping,
   selected?: string,
+  measure: PaymentMetric = 'gmv',
 ) {
+  if (data.revenues.some(row => selectedRevenue(row, scope) && paymentValue(row, measure) == null)) return null;
   const comparison = data.comparison;
   const analysisOffsets = new Set(data.revenues.filter((r) => r.weekStart === comparison?.analysisPeriod).map(offset));
   const baselineOffsets = new Set(data.revenues.filter((r) => r.weekStart === comparison?.baselinePeriod).map(offset));
   const aligned = (row: { weekStart: string; period: string }) => analysisOffsets.has(offset(row));
   const revenue = data.revenues.filter((r) => selectedRevenue(r, scope));
   const revenueFor = (rows: PaymentRevenuePoint[], week?: string) =>
-    rows.filter((r) => r.weekStart === week && aligned(r)).reduce((n, r) => n + r.gmvUsd, 0);
+    rows.filter((r) => r.weekStart === week && aligned(r)).reduce((n, r) => n + paymentValue(r, measure)!, 0);
   const costFor = (rows: PaymentCostPoint[], week?: string) =>
     rows.filter((r) => r.weekStart === week && aligned(r)).reduce((n, r) => n + r.modelCostUsd, 0);
   const baselineDays = comparison?.baselinePeriodDays || 7;
@@ -192,7 +196,7 @@ export function buildPaymentView(
   const sumDay = (week: string | undefined, day: number, costs: boolean) =>
     costs
       ? displayCosts.filter((r) => r.weekStart === week && offset(r) === day).reduce((v, r) => v + r.modelCostUsd, 0)
-      : displayRevenue.filter((r) => r.weekStart === week && offset(r) === day).reduce((v, r) => v + r.gmvUsd, 0);
+      : displayRevenue.filter((r) => r.weekStart === week && offset(r) === day).reduce((v, r) => v + paymentValue(r, measure)!, 0);
   const trend = Array.from({ length: 7 }, (_, day) => ({
     day,
     date: comparison ? new Date(Date.parse(comparison.analysisPeriod) + day * 86400000).toISOString().slice(0, 10) : '',

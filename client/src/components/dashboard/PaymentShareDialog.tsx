@@ -1,3 +1,5 @@
+import { PaymentMetricSwitch } from './PaymentMetricSwitch';
+import { paymentMetricLabel, type PaymentMetric } from '@shared/payment-metric';
 import { useEffect, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Segment } from '@/components/v62/primitives';
@@ -20,6 +22,8 @@ const ranges = [
 
 export function PaymentShareDialog({
   entity,
+  initialMetric = 'gmv',
+  allowOrders = false,
   label,
   history,
   error,
@@ -33,6 +37,8 @@ export function PaymentShareDialog({
   onRetry,
 }: {
   entity: string | null;
+  initialMetric?: PaymentMetric;
+  allowOrders?: boolean;
   label: string;
   history: PaymentTrendResponse | null;
   error: boolean;
@@ -45,6 +51,8 @@ export function PaymentShareDialog({
   onClose: () => void;
   onRetry: () => void;
 }) {
+  const [metric, setMetric] = useState<PaymentMetric>(initialMetric);
+  const metricLabel = paymentMetricLabel(metric);
   const [range, setRange] = useState<PaymentShareRange>('month');
   const [yearHistory, setYearHistory] = useState<PaymentTrendResponse | null>(null);
   const [yearError, setYearError] = useState(false),
@@ -53,7 +61,8 @@ export function PaymentShareDialog({
   const open = entity != null;
   useEffect(() => {
     setRange('month');
-  }, [entity]);
+    setMetric(initialMetric);
+  }, [entity, initialMetric]);
   useEffect(() => {
     setYearHistory(null);
     setYearError(false);
@@ -87,8 +96,8 @@ export function PaymentShareDialog({
   const source = range === 'year' ? yearHistory : history;
   const failed = range === 'year' ? yearError : error;
   const rows = useMemo(
-    () => (entity && source ? paymentShareTrend(source, entity, range) : []),
-    [entity, source, range],
+    () => (entity && source ? paymentShareTrend(source, entity, range, metric) : []),
+    [entity, source, range, metric],
   );
   const points = useMemo(() => rows.map((row) => ({ date: row.date, value: row.share })), [rows]);
   const ticks = useMemo(() => niceTicks(0, Math.max(0.01, ...rows.map((row) => row.share ?? 0)), 5), [rows]);
@@ -96,12 +105,12 @@ export function PaymentShareDialog({
   const missingDays = rows.reduce((sum, row) => sum + row.missingDays, 0);
   const rangeLabel = ranges.find((item) => item.value === range)!.description;
   const controls = (
-    <Segment
+    <div className="payment-share-controls">{allowOrders && <PaymentMetricSwitch label="占比分析指标" value={metric} onChange={setMetric} />}<Segment
       label="占比趋势范围"
       value={range}
       items={ranges}
       onChange={(value) => setRange(value as PaymentShareRange)}
-    />
+    /></div>
   );
   const formatDate = (date: string, position: 'axis' | 'tooltip') => {
     const row = rows.find((row) => row.date === date)!;
@@ -114,7 +123,7 @@ export function PaymentShareDialog({
         : `${row.startDate.slice(5).replace('-', '/')}–${row.endDate.slice(5).replace('-', '/')}`;
   };
   const exportRows = () =>
-    downloadCsv(`${label}-GMV占比-${range}-${rows[0].startDate}-${latest!.endDate}.csv`, [
+    downloadCsv(`${label}-${metricLabel}占比-${range}-${rows[0].startDate}-${latest!.endDate}.csv`, [
       [
         '周期起点',
         '范围开始',
@@ -123,9 +132,9 @@ export function PaymentShareDialog({
         '缺失天数',
         '付费类型',
         '筛选范围',
-        '类型日均GMV(USD)',
-        '范围日均总GMV(USD)',
-        'GMV占比',
+        `类型日均${metricLabel}`,
+        `范围日均总${metricLabel}`,
+        `${metricLabel}占比`,
       ],
       ...rows.map((row) => [
         row.date,
@@ -148,14 +157,14 @@ export function PaymentShareDialog({
       }}
     >
       <DialogContent className="payment-share-dialog">
-        <DialogTitle className="sr-only">{label} GMV 占比趋势</DialogTitle>
+        <DialogTitle className="sr-only">{label} {metricLabel} 占比趋势</DialogTitle>
         <DialogDescription className="sr-only">
-          {rangeLabel}。占比为所示周期内该类型日均 GMV 除以当前筛选范围日均总 GMV；首尾周期仅计算范围内已到达的日期。
+          {rangeLabel}。占比为所示周期内该类型日均{metricLabel} 除以当前筛选范围日均总{metricLabel}；首尾周期仅计算范围内已到达的日期。
           {context}
         </DialogDescription>
         <NetWorthChart
           key={entity}
-          title={`${label} · GMV 占比`}
+          title={`${label} · ${metricLabel} 占比`}
           headerActions={controls}
           grainLabel={range === 'week' ? '日颗粒度' : range === 'month' ? '业务周日均' : '月日均'}
           bodyContent={
@@ -192,7 +201,7 @@ export function PaymentShareDialog({
               <p>
                 {rows[0]?.startDate} — {latest?.endDate}
               </p>
-              <p>占比 = 同期类型日均 GMV ÷ 范围日均总 GMV。</p>
+              <p>占比 = 同期类型日均{metricLabel} ÷ 范围日均总{metricLabel}。</p>
               {range !== 'week' && (
                 <p>
                   {range === 'month' ? '业务周为周六至周五。' : '按自然月汇总。'}

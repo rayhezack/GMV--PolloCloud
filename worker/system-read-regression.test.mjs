@@ -29,6 +29,8 @@ function fixture() {
     '0012_ads_daily.sql',
     '0013_creation_chain.sql',
     '0015_payment_registration.sql',
+    '0017_payment_sync_stage.sql',
+    '0030_payment_registration_orders.sql',
     '0018_payment_product_dimensions.sql',
     '0022_single_payment_facts.sql',
     '0024_dashboard_payment_result_index.sql',

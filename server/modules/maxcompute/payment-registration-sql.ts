@@ -66,7 +66,7 @@ WITH accounts AS (
   SELECT period,week_start,platform,device_type,pay_type,
     CASE WHEN register_date BETWEEN week_start AND DATE_ADD(week_start,6) THEN 'NEW'
       WHEN register_date<week_start THEN 'OLD' ELSE 'UNKNOWN' END AS user_lifecycle,
-    country_tier,reg_platform,sku,plan_tier,plan_cycle,credit_amount,previous_sku,previous_plan_tier,previous_plan_cycle,previous_credit_amount,SUM(gmv_usd) AS gmv_usd
+    country_tier,reg_platform,sku,plan_tier,plan_cycle,credit_amount,previous_sku,previous_plan_tier,previous_plan_cycle,previous_credit_amount,SUM(gmv_usd) AS gmv_usd,COUNT(*) AS order_count
   FROM orders
   GROUP BY period,week_start,platform,device_type,pay_type,
     CASE WHEN register_date BETWEEN week_start AND DATE_ADD(week_start,6) THEN 'NEW'

@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { buildSync } from 'esbuild';
 
 test('dashboard action API reads only the published D1 snapshot, including when Base is offline', async () => {
@@ -21,7 +21,7 @@ test('dashboard action API reads only the published D1 snapshot, including when 
       return { bind(...a) { args = a; return this; }, async all() { return { results: sqlite.prepare(sql).all(...args) }; }, async first() { return sqlite.prepare(sql).get(...args) ?? null; }, async run() { throw Error('Dashboard must not write'); } };
     } };
     const bundle = join(directory, 'worker.mjs');
-    buildSync({ entryPoints: [new URL('./index.ts', import.meta.url).pathname], bundle: true, platform: 'node', format: 'esm', outfile: bundle, logLevel: 'silent' });
+    buildSync({ entryPoints: [fileURLToPath(new URL('./index.ts', import.meta.url))], bundle: true, platform: 'node', format: 'esm', outfile: bundle, logLevel: 'silent' });
     globalThis.fetch = async () => { throw Error('Interactive request must not call Base'); };
     const { default: worker } = await import(pathToFileURL(bundle).href);
     const response = await worker.fetch(new Request('https://example.com/api/dashboard/product-actions'), { DB: db }, { waitUntil() {} });
@@ -33,5 +33,8 @@ test('dashboard action API reads only the published D1 snapshot, including when 
     assert.equal(body.actions[0].title, 'Web 发布');
     assert.equal(body.actions[0].date, '2026-11-03');
     assert.equal(body.readAt, new Date(1794000000000).toISOString());
+    const denied = await worker.fetch(new Request('https://example.com/api/dashboard/product-actions/sync',{method:'POST'}),{DB:db},{waitUntil(){}});
+    assert.equal(denied.status,503); // No identity lookup result means no sync and no database writes.
+    assert.equal(sqlite.prepare('SELECT row_count FROM product_action_sync_state WHERE id=1').get().row_count,1);
   } finally { globalThis.fetch = originalFetch; sqlite.close(); rmSync(directory, { recursive: true, force: true }); }
 });

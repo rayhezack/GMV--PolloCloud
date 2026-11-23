@@ -3,9 +3,28 @@
   "dir": "dist",
   "spa": true,
   "worker": "worker/index.ts",
-  "immutable": ["/assets/*"],
+  "immutable": [
+    "/assets/*"
+  ],
   "cron": [
-    { "schedule": "20 9 * * *", "path": "/api/cron/daily-data" },
-    { "schedule": "*/5 * * * *", "path": "/api/cron/reports" }
-  ]
+    {
+      "schedule": "20 9 * * *",
+      "path": "/api/cron/daily-data"
+    },
+    {
+      "schedule": "*/5 * * * *",
+      "path": "/api/cron/reports"
+    }
+  ],
+  "agent": {
+    "operations": [
+      {
+        "name": "sync_product_actions",
+        "description": "重新读取产品动作 Base 全部分页，校验完整性后发布到 D1；仅创建者、管理员或编辑者可执行。",
+        "method": "POST",
+        "path": "/api/dashboard/product-actions/sync"
+      }
+    ],
+    "summary": "看板数据维护：由已授权管理人员同步产品动作 Base 全量快照到 D1。"
+  }
 }
