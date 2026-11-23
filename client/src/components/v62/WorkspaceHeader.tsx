@@ -97,7 +97,7 @@ export function WorkspaceHeader({
         <div ref={searchHost} className="v62-header-search">
           <Search
             alwaysOpen
-            width={260}
+            width={240}
             placeholder="搜索分析页面…"
             value={query}
             onActivate={() => setOpen(true)}

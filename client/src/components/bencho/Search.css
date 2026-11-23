@@ -5,6 +5,8 @@
 .bencho-search[data-always-open='true'] {
   /* Map Bencho material and ink locally; nothing becomes a global token.
      No frost is needed on this white dashboard surface. */
+  --inset: 7px !important;
+  --lens: 14px !important;
   --bg: var(--canvas);
   --font-ui: inherit;
   --g-blur: 0px;
@@ -19,21 +21,21 @@
   --pane-edge: var(--line);
   width: var(--w);
   max-width: clamp(140px, 24vw, 260px);
-  height: 34px;
+  height: 28px;
   font-family: var(--font-ui);
 }
 /* The surface is the quietest thing that still reads as an object:
    no shadow, no glass, no gradient. The lens stays at a fixed inset;
    its stroke uses 1.5/18, matching a 2/24 icon without growing heavier. */
 .bencho-search[data-always-open='true'] .bencho-search-skin {
-  height: 34px;
+  height: 28px;
   border: 0;
   border-radius: var(--radius-full);
   background: var(--pane);
   box-shadow: none;
 }
 .bencho-search[data-always-open='true'] .bencho-search-field {
-  font-size: var(--fs-body);
+  font-size: var(--fs-meta);
 }
 .bencho-search[data-always-open='true']:focus-within .bencho-search-skin {
   outline: 2px solid var(--accent);

@@ -497,7 +497,7 @@ html[data-astryx-theme='pollo-v62'] .astryx-tooltip:has(.gmv-day-preview) {
 
 /* A single sheet: trend with sources, then calendar with daily activity. */
 [data-page='gmv-trend'] .v62-home-sheet.daily-rail {
-  grid-template-columns: minmax(0, 7fr) minmax(320px, 3fr);
+  grid-template-columns: minmax(0, 73fr) minmax(300px, 27fr);
   align-items: stretch;
   background: var(--surface);
   overflow: clip;
