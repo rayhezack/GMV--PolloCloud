@@ -155,7 +155,7 @@ async function cachedDashboardResponse(env: Env, request: Request, context: { wa
   const url = new URL(request.url);
   url.searchParams.delete('cacheBust');
   url.searchParams.sort();
-  const version = url.pathname === '/api/dashboard/chain-funnel' ? 'v13-chain-day' : url.pathname === '/api/dashboard/attributions' ? 'v9-lmdi' : url.pathname === '/api/dashboard/payment-analysis' ? 'v9-bounded-calendar' : url.pathname === '/api/dashboard/creative-overview' ? 'v10-creative-summary' : url.pathname === '/api/dashboard/overview' ? 'v9-bounded-renewal' : url.pathname === '/api/dashboard/ads-overview' ? 'v6-ads-lazy' : url.pathname === '/api/dashboard/gmv-anomalies' ? 'v4-anomaly-calendar' : url.pathname === '/api/dashboard/payment-trend' ? 'v5-indexed-boundary' : 'v3';
+  const version = url.pathname === '/api/dashboard/chain-funnel' ? 'v13-chain-day' : url.pathname === '/api/dashboard/attributions' ? 'v9-lmdi' : url.pathname === '/api/dashboard/payment-analysis' ? 'v10-payment-orders' : url.pathname === '/api/dashboard/creative-overview' ? 'v10-creative-summary' : url.pathname === '/api/dashboard/overview' ? 'v9-bounded-renewal' : url.pathname === '/api/dashboard/ads-overview' ? 'v6-ads-lazy' : url.pathname === '/api/dashboard/gmv-anomalies' ? 'v4-anomaly-calendar' : url.pathname === '/api/dashboard/payment-trend' ? 'v6-payment-orders' : 'v3';
   const key = `${version}:${url.pathname}?${url.searchParams}`;
   const isCacheablePayload = (payload: string) => {
     if (!['/api/dashboard/chain-funnel','/api/dashboard/creative-overview','/api/dashboard/ads-overview'].includes(url.pathname)) return true;
