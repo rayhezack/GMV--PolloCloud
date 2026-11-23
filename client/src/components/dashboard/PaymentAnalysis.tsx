@@ -12,7 +12,7 @@ import { Segment } from '@/components/v62/primitives';
 import { paymentMonthTrend } from './payment-history';
 import { relativeChange, changeContributions } from '@/lib/metric-change';
 import { motion, useReducedMotion } from 'framer-motion';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, ReferenceLine, XAxis, YAxis } from 'recharts';
@@ -25,8 +25,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { formatChartTooltipValue } from '@/lib/chart-tooltip-format';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { downloadCsv } from './AnalysisWidgets';
 import {
   attributionModes,
@@ -95,28 +95,54 @@ function PaymentPeriodHeader({
   label,
   period,
   day,
+  comparisonPeriod,
+  observedDates,
 }: {
   label: string;
   period: string;
   day?: string | null;
+  comparisonPeriod: string;
+  observedDates?: { period: string; weekStart: string }[];
 }) {
-  const from = day || period;
-  const to = day || shiftDay(period, 6);
+  const [tooltipContainer, setTooltipContainer] = useState<HTMLElement | null>(null);
+  // Native modal dialogs hide portals outside their top layer.
+  const attachHeader = useCallback((node: HTMLSpanElement | null) => {
+    setTooltipContainer(node?.closest('dialog') ?? null);
+  }, []);
+  const comparisonOffsets = new Set(
+    (observedDates || [])
+      .filter((row) => row.weekStart === comparisonPeriod)
+      .map((row) => Date.parse(row.period) - Date.parse(row.weekStart)),
+  );
+  const matchedDates = [...new Set(
+    (observedDates || [])
+      .filter((row) => row.weekStart === period)
+      .filter((row) => comparisonOffsets.has(Date.parse(row.period) - Date.parse(row.weekStart)))
+      .map((row) => row.period),
+  )].sort();
+  const selectedDay = day ? (label.startsWith('基准') ? shiftDay(day, -7) : day) : null;
+  const from = selectedDay || matchedDates[0] || period;
+  const to = selectedDay || matchedDates.at(-1) || shiftDay(period, 6);
   return (
-    <span className="payment-period-header">
+    <span className="payment-period-header" ref={attachHeader}>
       {label}
-      {!day && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button type="button" aria-label={`${label}日期范围`}>
-              <Info size={12} aria-hidden="true" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top" sideOffset={6}>
-            {label.replace('日均', '')}：{from} 至 {to}；日均按期间内可比业务日计算。
-          </TooltipContent>
-        </Tooltip>
-      )}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button type="button" className="payment-period-trigger" aria-label={`${label}日期范围`}>
+            <Info size={12} aria-hidden="true" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent container={tooltipContainer} side="top" sideOffset={6} className="payment-period-tooltip">
+          <div>{selectedDay ? from : `${from} – ${to}`}</div>
+          <div>
+            {selectedDay
+              ? '1 天 · 与上周同日对比'
+              : matchedDates.length
+                ? `${matchedDates.length} 天 · 同业务日日均`
+                : '暂无可比业务日'}
+          </div>
+        </TooltipContent>
+      </Tooltip>
     </span>
   );
 }
@@ -142,6 +168,7 @@ function RevenueTrend({
   comparisonDay,
   onActivate,
   measure = 'gmv',
+  interactionKey,
 }: {
   trend: NonNullable<ReturnType<typeof buildPaymentView>>['trend'];
   summaryTrend?: NonNullable<ReturnType<typeof buildPaymentView>>['trend'];
@@ -149,6 +176,7 @@ function RevenueTrend({
   comparisonDay?: string | null;
   onActivate?: (date: string) => void;
   measure?: PaymentMetric;
+  interactionKey?: string | number | boolean;
 }) {
   const [metric, setMetric] = useState('gmv');
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
@@ -224,7 +252,7 @@ function RevenueTrend({
         </InfoTip>
       </div>
       <CashFlowAreaChart
-        key={`${selectedMetric}:${values.map((p) => p.label).join(',')}`}
+        key={`${selectedMetric}:${interactionKey ?? ''}:${values.map((p) => p.label).join(',')}`}
         className={`payment-detail-cash-flow${paired.length ? '' : ' has-no-comparison'}`}
         data-days={observed.length}
         title={`${ratio ? '成本占比' : selectedMetric === 'cost' ? '模型成本' : paymentMetricLabel(measure)}逐日走势`}
@@ -1144,7 +1172,7 @@ export default function PaymentAnalysis({
                 isOpen={detailOpen && Boolean(selectedItem)}
                 onOpenChange={setDetailOpen}
                 label="收入归因明细"
-                width={960}
+                width="max(50vw, min(100vw, 480px))"
                 padding={0}
               >
                 <div className="payment-detail-sheet">
@@ -1223,6 +1251,7 @@ export default function PaymentAnalysis({
                               summaryTrend={summary}
                               comparisonDay={detailDay}
                               onActivate={activateDay}
+                              interactionKey={detailOpen}
                             />
                           )}
                         />
@@ -1234,6 +1263,7 @@ export default function PaymentAnalysis({
                           costs={entityCosts}
                           comparisonDay={detailDay}
                           onActivate={activateDay}
+                          interactionKey={detailOpen}
                         />
                       ) : (
                         <div className="payment-history-loading" role="status">
@@ -1299,13 +1329,13 @@ export default function PaymentAnalysis({
                                 },
                                 {
                                   key: 'baseline',
-                                  header: <PaymentPeriodHeader label={detailDay ? '基准日' : '基准周日均'} period={baselinePeriod} day={detailDay} />,
+                                  header: <PaymentPeriodHeader label={detailDay ? '基准日' : '基准周日均'} period={baselinePeriod} comparisonPeriod={analysisPeriod} day={detailDay} observedDates={comparisonRegistration?.revenues} />,
                                   numeric: true,
                                   render: (r) => detailValueText(r.baseline),
                                 },
                                 {
                                   key: 'analysis',
-                                  header: <PaymentPeriodHeader label={detailDay ? '分析日' : '分析周日均'} period={analysisPeriod} day={detailDay} />,
+                                  header: <PaymentPeriodHeader label={detailDay ? '分析日' : '分析周日均'} period={analysisPeriod} comparisonPeriod={baselinePeriod} day={detailDay} observedDates={comparisonRegistration?.revenues} />,
                                   numeric: true,
                                   render: (r) => detailValueText(r.analysis),
                                 },
@@ -1391,13 +1421,13 @@ export default function PaymentAnalysis({
                               },
                               {
                                 key: 'baseline',
-                                header: <PaymentPeriodHeader label={detailDay ? '基准日' : '基准周日均'} period={baselinePeriod} day={detailDay} />,
+                                header: <PaymentPeriodHeader label={detailDay ? '基准日' : '基准周日均'} period={baselinePeriod} comparisonPeriod={analysisPeriod} day={detailDay} observedDates={detailData?.revenues} />,
                                 numeric: true,
                                 render: (r) => detailValueText(r.baseline),
                               },
                               {
                                 key: 'analysis',
-                                header: <PaymentPeriodHeader label={detailDay ? '分析日' : '分析周日均'} period={analysisPeriod} day={detailDay} />,
+                                header: <PaymentPeriodHeader label={detailDay ? '分析日' : '分析周日均'} period={analysisPeriod} comparisonPeriod={baselinePeriod} day={detailDay} observedDates={detailData?.revenues} />,
                                 numeric: true,
                                 render: (r) => detailValueText(r.analysis),
                               },

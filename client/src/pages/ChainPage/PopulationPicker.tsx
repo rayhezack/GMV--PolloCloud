@@ -9,15 +9,16 @@ type Scope = { lifecycle?: string; creationTier?: string; countryTier?: string; 
 type PopulationRow = ChainGroup & { id: string; kind: 'row' | 'child'; scope: Scope; selected: boolean };
 export function PopulationPicker({
   data,
+  populationDimension,
   onSelect,
   onDimensionChange,
 }: {
   data: ChainComparison;
+  populationDimension: 'creation' | 'country';
   onSelect: (scope: Scope) => void;
   onDimensionChange: (dimension: 'creation' | 'country') => void;
 }) {
   const { chainType, lifecycle, creationTier, planTier } = data.comparison;
-  const populationDimension = data.comparison.populationDimension || 'creation';
   const countryDimension = populationDimension === 'country';
   const [open, setOpen] = useState<string | null>(lifecycle || null);
   const active = chainType === 'active';
@@ -33,7 +34,7 @@ export function PopulationPicker({
     };
     const children: PopulationRow[] =
       active && open === group.key
-        ? (countryDimension ? data.countryGroups || [] : data.groups)
+        ? (countryDimension ? data.countryGroups || [] : data.creationGroups || data.groups)
             .filter((child) => child.key.split(' × ')[1] === group.key)
             .map((child) => {
               const tier = child.key.split(' × ')[0];

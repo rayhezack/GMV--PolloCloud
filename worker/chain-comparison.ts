@@ -325,6 +325,7 @@ export function buildChainComparison(
     groups,
     lifecycleGroups,
     countryGroups,
+    creationGroups,
     trend,
   };
 }

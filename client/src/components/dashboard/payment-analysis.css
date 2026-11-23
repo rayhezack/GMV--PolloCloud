@@ -308,8 +308,9 @@
 
 .payment-history-caption { display:flex; justify-content:space-between; gap:12px; margin:0; color:#61718a; font-size:11px; }
 .payment-period-header { display:inline-flex; align-items:center; gap:4px; }
-.payment-period-header button { display:inline-grid; place-items:center; padding:0; border:0; background:transparent; color:var(--text-3); cursor:help; }
-.payment-period-header button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:2px; }
+.payment-period-trigger { display:inline-grid; place-items:center; padding:0; border:0; background:transparent; color:var(--text-3); cursor:default; }
+.payment-period-tooltip { border:0; border-radius:8px; background:var(--surface); color:var(--text-3); box-shadow:var(--shadow-floating); text-align:left; white-space:nowrap; }
+.payment-period-trigger:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:2px; }
 .payment-history-method { display:inline-flex; align-items:center; gap:5px; border:0; border-radius:6px; padding:0 2px; background:transparent; color:inherit; font:inherit; cursor:pointer; }
 .payment-history-method:hover { color:#533afd; }
 .payment-history-method:focus-visible { outline:2px solid #533afd; outline-offset:3px; }

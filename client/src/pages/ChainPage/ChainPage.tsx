@@ -81,7 +81,6 @@ export default function ChainPage() {
     let live = true;
     setLoading(true);
     setError('');
-    setData(null);
     void getChainComparison({
       platform,
       deviceType,
@@ -90,7 +89,6 @@ export default function ChainPage() {
       analysis,
       baseline,
       revision,
-      populationDimension,
       lifecycle,
       creationTier,
       countryTier,
@@ -108,7 +106,7 @@ export default function ChainPage() {
     return () => {
       live = false;
     };
-  }, [platform, deviceType, mode, chainType, analysis, baseline, revision, populationDimension, lifecycle, creationTier, countryTier, planTier]);
+  }, [platform, deviceType, mode, chainType, analysis, baseline, revision, lifecycle, creationTier, countryTier, planTier]);
   const factor = data ? preferredFactor(data.factors, params.get('factor')) : undefined;
   const trendEnd = analysis ? (mode === 'week' ? [shiftDay(analysis, 6), latest || analysis].sort()[0] : analysis) : '';
   const trend = useMemo(
@@ -161,7 +159,7 @@ export default function ChainPage() {
   return (
     <div
       className="v62-page v62-sheet-page chain-page"
-      aria-busy={loading}
+      aria-busy={loading || coverageLoading}
       data-dashboard-ready={!coverageLoading && !loading && Boolean(data?.ready) && !error && !coverageError}
     >
       <PageHeader
@@ -201,9 +199,9 @@ export default function ChainPage() {
           </>
         }
       />
-      {coverageLoading || loading ? (
+      {(coverageLoading || loading) && !data ? (
         <PanelState state="loading" />
-      ) : error || coverageError ? (
+      ) : (error || coverageError) && !data ? (
         <PanelState state="error" reason={error || coverageError} onRetry={() => setRevision((n) => n + 1)} />
       ) : !data?.ready ? (
         <>
@@ -222,6 +220,8 @@ export default function ChainPage() {
         </>
       ) : (
         <>
+          {loading && <div className="chain-refresh-status" role="status">正在更新链路分析…</div>}
+          {error && <div className="chain-refresh-status is-error" role="alert">更新失败，仍显示上次结果：{error}</div>}
           <div className="chain-scope-toolbar">
             <Segment
               label="链路类型"
@@ -237,6 +237,7 @@ export default function ChainPage() {
           </div>
           <PopulationPicker
             data={data}
+            populationDimension={populationDimension}
             onDimensionChange={(value) =>
               update({
                 populationDimension: value,

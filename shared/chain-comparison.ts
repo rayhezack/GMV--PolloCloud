@@ -35,6 +35,8 @@ export type ChainComparison = {
   lifecycleGroups?: ChainGroup[];
   /** Country groups keyed by country tier × registration lifecycle. */
   countryGroups?: ChainGroup[];
+  /** Creation groups keyed by creation tier × registration lifecycle. */
+  creationGroups?: ChainGroup[];
   trend: { date: string; values: Record<string, number | null> }[];
 };
 

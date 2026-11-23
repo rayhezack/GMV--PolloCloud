@@ -7,6 +7,15 @@
   align-items: center;
   gap: var(--space-8);
 }
+.chain-refresh-status {
+  margin: var(--space-8) var(--space-16) 0;
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+  text-align: right;
+}
+.chain-refresh-status.is-error {
+  color: var(--negative);
+}
 .chain-day-picker {
   display: flex;
   align-items: center;

@@ -360,6 +360,7 @@ function CashFlowAreaChart({
   const gapped = data.some((p) => !Number.isFinite(p.value)) || paired.some((v) => !Number.isFinite(v));
   const [focused, setFocused] = React.useState(false);
   const [escaped, setEscaped] = React.useState(hideCursorUntilInteraction);
+  const [cursorEngaged, setCursorEngaged] = React.useState(false);
   const [indexValue, setIndex] = useControllableState({
     value: indexProp,
     defaultValue: defaultIndex ?? Math.max(0, Math.floor((n - 1) / 2)),
@@ -381,6 +382,7 @@ function CashFlowAreaChart({
   const [hovered, setHovered] = React.useState<number | null>(null);
   const selected = n ? Math.min(Math.max(Math.round(indexValue), 0), n - 1) : -1;
   const active = hovered !== null && hovered < n ? hovered : selected;
+  const cursorVisible = !escaped && (!hideCursorUntilInteraction || cursorEngaged);
   const point = data[active] && Number.isFinite(data[active].value) ? data[active] : undefined;
   const cursorX = current[active]?.x ?? width / 2;
   const t = n > 1 ? active / (n - 1) : 0.5;
@@ -762,6 +764,7 @@ function CashFlowAreaChart({
 
   const select = (next: number) => {
     if (!n) return;
+    setCursorEngaged(true);
     setEscaped(false);
     setIndex(Math.min(Math.max(next, 0), n - 1));
   };
@@ -776,6 +779,8 @@ function CashFlowAreaChart({
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if ((event.key === 'Enter' || event.key === ' ') && data[selected]) {
       event.preventDefault();
+      setCursorEngaged(true);
+      setEscaped(false);
       onPointActivate?.(selected, data[selected]);
       return;
     }
@@ -787,6 +792,7 @@ function CashFlowAreaChart({
       return;
     }
     setFocused(true);
+    setCursorEngaged(true);
     setEscaped(false);
     const page = Math.max(1, Math.round((n - 1) / 10));
     const next = {
@@ -900,7 +906,7 @@ function CashFlowAreaChart({
                   {...GRID_DASH}
                 />
               ))}
-              {point && !escaped && (
+              {point && cursorVisible && (
                 // the cursor: a 1px blue-500 line centred on the point, dashed 4/4 between two filled triangle caps
                 <g ref={cursorRef} data-slot="cash-flow-area-chart-cursor" className="fill-primary-blue-500">
                   <line
@@ -969,7 +975,7 @@ function CashFlowAreaChart({
                 </svg>
               ) : null,
             )}
-            {point && !escaped && (
+            {point && cursorVisible && (
               <>
                 <Marker series="current" x={cursorX} y={currentY} className="bg-primary-blue-500" />
                 {compareY !== undefined && (
@@ -988,7 +994,19 @@ function CashFlowAreaChart({
               aria-valuenow={Math.max(0, selected)}
               aria-valuetext={valueText}
               data-slot="cash-flow-area-chart-scrubber"
+              onPointerEnter={(event) => {
+                setCursorEngaged(true);
+                setHovered(pointAt(event));
+                setEscaped(false);
+              }}
+              onPointerDown={(event) => {
+                if (event.button !== 0) return;
+                setCursorEngaged(true);
+                setHovered(pointAt(event));
+                setEscaped(false);
+              }}
               onPointerMove={(event) => {
+                setCursorEngaged(true);
                 setHovered(pointAt(event));
                 setEscaped(false);
               }}
@@ -1000,7 +1018,10 @@ function CashFlowAreaChart({
                 setFocused(false);
                 setHovered(null);
               }}
-              onPointerLeave={() => setHovered(null)}
+              onPointerLeave={() => {
+                setHovered(null);
+                if (hideCursorUntilInteraction) setCursorEngaged(false);
+              }}
               onPointerUp={(event) => {
                 if (event.button === 0) {
                   const next = pointAt(event);
@@ -1012,7 +1033,7 @@ function CashFlowAreaChart({
               className="absolute inset-0 cursor-pointer touch-pan-y rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-primary-blue-500/40"
             />
 
-            {tooltip && !escaped && (hovered != null || focused) && (
+            {tooltip && cursorVisible && (hovered != null || focused) && (
               <div
                 ref={tipRef}
                 aria-hidden
@@ -1085,7 +1106,7 @@ function CashFlowAreaChart({
               </span>
             </span>
           ))}
-          {point && !escaped && (
+          {point && cursorVisible && (
             <span
               ref={activeLabelRef}
               data-slot="cash-flow-area-chart-axis-label"
