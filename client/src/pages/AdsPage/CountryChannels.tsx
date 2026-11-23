@@ -5,7 +5,9 @@ import type { AdsCountryDetail, AdsChannelRow } from '@shared/api.interface';
 import { DataTable, Modal, PanelState, DeltaBadge } from '@/components/system';
 import { FinanceOverviewAreaChart } from '@/components/finance-overview-area-chart';
 import { money, count, rate } from '@shared/format';
-import { adsBuckets, type AdsMetric } from './ads-data';
+import { adsBuckets, adsValue, type AdsMetric } from './ads-data';
+import { DetailComparison } from '@/components/system/DetailComparison';
+import { toggleComparisonDay } from '@/components/dashboard/detail-comparison';
 import { shiftDay } from '@/components/v62/trend-data';
 import { Popover, PopoverTrigger } from '@/components/ui/popover';
 import { Content as PopoverContent } from '@radix-ui/react-popover';
@@ -114,10 +116,20 @@ export function CountryChannels({
   ];
   const currentMetric = metrics.find((m) => m.key === metric) || metrics[1];
   const [selectedDay, setSelectedDay] = useState('');
+  const [comparisonDay, setComparisonDay] = useState<string | null>(null);
+  useEffect(() => {
+    setComparisonDay(null);
+    setSelectedDay('');
+  }, [open, selected?.key, active?.key, key]);
   const [grain, setGrain] = useState<'day' | 'week' | 'month'>('day');
   const trend = active ? adsBuckets(active.trend, currentMetric.key, 'D0', asOf, trendStart, trendEnd, grain) : [];
   const side = (key: string, which: 'baseline' | 'current') => {
     if (!active) return null;
+    if (comparisonDay) {
+      const date = which === 'current' ? comparisonDay : shiftDay(comparisonDay, -7);
+      const row = active.trend.find((point) => point.period === date);
+      return row ? adsValue([row], key as AdsMetric, 'D0', asOf) : null;
+    }
     const p = active[which];
     if (key === 'roas') return p.roasByHorizon?.D0 ?? null;
     if (key === 'ltv') return p.registerUsers > 0 ? p.gmvD0 / p.registerUsers : null;
@@ -157,6 +169,15 @@ export function CountryChannels({
           <PanelState state="empty" reason="该国家暂无渠道数据" />
         ) : (
           <>
+            <DetailComparison day={comparisonDay} onReset={() => setComparisonDay(null)} />
+            {comparisonDay &&
+              ![comparisonDay, shiftDay(comparisonDay, -7)].every((date) =>
+                active.trend.some((point) => point.period === date),
+              ) && (
+                <p role="status" className="daily-muted">
+                  所选日或上周同日未被渠道数据覆盖，缺失值未补零。
+                </p>
+              )}
             <DataTable
               selectedRowId={metric}
               onRowActivate={(row) => setMetric(row.id)}
@@ -187,9 +208,10 @@ export function CountryChannels({
                   header: (
                     <PeriodLabel
                       label="基准期"
-                      dates={comparisonDates?.baseline}
-                      from={request.baselinePeriod}
-                      days={baseDays}
+                      dates={comparisonDay ? [shiftDay(comparisonDay, -7)] : comparisonDates?.baseline}
+                      from={comparisonDay ? shiftDay(comparisonDay, -7) : request.baselinePeriod}
+                      days={comparisonDay ? 1 : baseDays}
+                      daily={Boolean(comparisonDay)}
                     />
                   ),
                   numeric: true,
@@ -200,9 +222,10 @@ export function CountryChannels({
                   header: (
                     <PeriodLabel
                       label="分析期"
-                      dates={comparisonDates?.analysis}
-                      from={request.analysisPeriod}
-                      days={days}
+                      dates={comparisonDay ? [comparisonDay] : comparisonDates?.analysis}
+                      from={comparisonDay || request.analysisPeriod}
+                      days={comparisonDay ? 1 : days}
+                      daily={Boolean(comparisonDay)}
                     />
                   ),
                   numeric: true,
@@ -239,8 +262,12 @@ export function CountryChannels({
                 buckets={trend}
                 selectedDay={selectedDay || trend.at(-1)?.date || asOf}
                 onSelect={setSelectedDay}
+                onActivate={(date) => setComparisonDay((current) => toggleComparisonDay(current, date))}
                 granularity={grain}
-                onGranularityChange={setGrain}
+                onGranularityChange={(value) => {
+                  setGrain(value);
+                  if (value !== 'day') setComparisonDay(null);
+                }}
               />
             </section>
           </>
@@ -250,7 +277,19 @@ export function CountryChannels({
   );
 }
 
-function PeriodLabel({ label, dates, from, days }: { label: string; dates?: string[]; from: string; days: number }) {
+function PeriodLabel({
+  label,
+  dates,
+  from,
+  days,
+  daily = false,
+}: {
+  label: string;
+  dates?: string[];
+  from: string;
+  days: number;
+  daily?: boolean;
+}) {
   const observed = [...(dates || [])].sort();
   const start = observed[0] || from,
     end = observed.at(-1) || shiftDay(from, days - 1);
@@ -267,7 +306,7 @@ function PeriodLabel({ label, dates, from, days }: { label: string; dates?: stri
         <span>
           {start} – {end}
         </span>
-        <span>{observed.length || days} 天 · 同业务日日均</span>
+        <span>{daily ? '当日值 · 较上周同日' : `${observed.length || days} 天 · 同业务日日均`}</span>
       </PopoverContent>
     </Popover>
   );

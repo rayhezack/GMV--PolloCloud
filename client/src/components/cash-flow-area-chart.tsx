@@ -86,6 +86,8 @@ type CashFlowAreaChartProps = Omit<React.ComponentProps<'div'>, 'children'> & {
   index?: number;
   defaultIndex?: number;
   onIndexChange?: (index: number, point: CashFlowPoint) => void;
+  /** Commit a clicked point (including the selected point), or Enter/Space. Hover only previews. */
+  onPointActivate?: (index: number, point: CashFlowPoint) => void;
   /** Text for a point's date on the axis ("Apr") and in the tooltip ("April"). */
   formatDate?: (date: string, context: 'axis' | 'tooltip') => string;
   /** Called by the ⋯ button. */
@@ -323,6 +325,7 @@ function CashFlowAreaChart({
   index: indexProp,
   defaultIndex,
   onIndexChange,
+  onPointActivate,
   formatDate,
   onMoreClick,
   locale = 'en-US',
@@ -768,6 +771,11 @@ function CashFlowAreaChart({
     return n > 1 ? Math.min(n - 1, Math.max(0, Math.round((x - INSET) / step))) : 0;
   };
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if ((event.key === 'Enter' || event.key === ' ') && data[selected]) {
+      event.preventDefault();
+      onPointActivate?.(selected, data[selected]);
+      return;
+    }
     if (event.key === 'Escape') {
       event.preventDefault();
       setHovered(null);
@@ -991,7 +999,11 @@ function CashFlowAreaChart({
               }}
               onPointerLeave={() => setHovered(null)}
               onPointerUp={(event) => {
-                if (event.button === 0) select(pointAt(event));
+                if (event.button === 0) {
+                  const next = pointAt(event);
+                  select(next);
+                  if (data[next]) onPointActivate?.(next, data[next]);
+                }
               }}
               onKeyDown={onKeyDown}
               className="absolute inset-0 cursor-pointer touch-pan-y rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-primary-blue-500/40"

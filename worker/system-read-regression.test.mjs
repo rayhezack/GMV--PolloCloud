@@ -288,3 +288,41 @@ test('headline renewal aggregation preserves selected device users without trans
     db.close();
   }
 });
+
+test('payment day comparison selects exact dates, verifies slices only on those dates, and preserves week requests', async () => {
+  const { db, request, fact } = fixture();
+  try {
+    for (const [date,week,amount] of [
+      ['2026-10-27','2026-10-24',100], ['2026-11-03','2026-10-31',150],
+      ['2026-10-28','2026-10-24',900], ['2026-11-04','2026-10-31',5000],
+    ]) {
+      fact(date,'web','NONE',amount,'自动续订',week);
+      fact(date,'ios','NONE',99999,'自动续订',week);
+      fact(date,'web','MODEL',amount,'自动续订',week);
+      db.prepare(`INSERT INTO pollo_da_fact_rows(dataset,source_record_id,period,week_start,platform,device_type,dataset_kind,attribution_type,pay_category,pay_type,attribution_name,model_cost_usd,fields_json,updated_at)
+        VALUES('pay_type',?,?,?,'all','web','daily','MODEL','汇总','汇总','seedance-2-5',?,'{}',0)`).run('cost-'+date,date,week,amount/5);
+      db.prepare(`INSERT INTO pollo_da_payment_registration(period,week_start,platform,device_type,pay_type,user_lifecycle,country_tier,sku,gmv_usd)
+        VALUES(?,?,'web','web','自动续订','OLD','T1','Pro_月订_800',?)`).run(date,week,date.endsWith('04') ? 1 : amount);
+    }
+    const params={platform:'web',baselinePeriod:'2026-10-27',analysisPeriod:'2026-11-03',mode:'day',registrationPayType:'自动续订'};
+    const day=await request('payment-analysis',params);
+    assert.equal(day.comparison.analysisPeriodDays,1);
+    assert.equal(day.comparison.baselinePeriodDays,1);
+    assert.deepEqual(day.revenues.map(r=>[r.period,r.weekStart,r.gmvUsd]),[
+      ['2026-10-27','2026-10-27',100],['2026-11-03','2026-11-03',150],
+    ]);
+    assert.deepEqual(day.registration.verifiedPayTypes,['自动续订']);
+    assert.equal(day.registration.rows.reduce((sum,r)=>sum+r.gmvUsd,0),250);
+    assert.ok(day.registration.rows.every(r=>r.weekStart===r.period));
+    const week=await request('payment-analysis',{...params,mode:'week',baselinePeriod:'2026-10-24',analysisPeriod:'2026-10-31'});
+    assert.equal(week.comparison.analysisPeriodDays,2);
+    assert.equal(week.revenues.length,4);
+    assert.deepEqual(week.registration.verifiedPayTypes,[]);
+    const missing=await request('payment-analysis',{...params,baselinePeriod:'2026-10-26'});
+    assert.equal(missing.comparison,null);
+    assert.ok(!missing.revenues.some(r=>r.period==='2026-10-26'));
+    const model=await request('payment-analysis',{...params,attributionType:'MODEL'});
+    assert.equal(model.revenues.reduce((sum,r)=>sum+r.gmvUsd,0),250);
+    assert.deepEqual(model.costs.map(r=>[r.weekStart,r.modelCostUsd]),[['2026-10-27',20],['2026-11-03',30]]);
+  } finally { db.close(); }
+});

@@ -112,6 +112,7 @@ export async function getPaymentAnalysis(params: {
   attributionType: GmvAttributionType;
   cacheBust?: number;
   registrationPayType?: string;
+  mode?: 'day' | 'week';
 }): Promise<PaymentAnalysisResponse> {
   if(STATIC_DEMO_MODE) return {attributionType:params.attributionType,source:'ads_v1',availableAttributionTypes:['NONE','CREATION_MODE','MODEL','ACTUAL_MODEL'],comparison:null,revenues:[],costs:[],costAvailable:false,registrationStatus:'source_missing'};
   const response = await readDashboard<PaymentAnalysisResponse>(`/api/dashboard/payment-analysis${buildQueryString(params)}`);

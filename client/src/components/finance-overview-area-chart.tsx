@@ -19,6 +19,7 @@ type Props = {
   onGranularityChange: (value: 'day' | 'week' | 'month') => void;
   selectedDay: string;
   onSelect: (date: string) => void;
+  onActivate?: (date: string) => void;
 };
 /** Business controls around the shared mebius Cash Flow Area chart. */
 export function FinanceOverviewAreaChart({
@@ -34,6 +35,7 @@ export function FinanceOverviewAreaChart({
   onGranularityChange,
   selectedDay,
   onSelect,
+  onActivate,
 }: Props) {
   const daily = granularity === 'day';
   const chosen = buckets.findIndex((b) => b.dates.includes(selectedDay));
@@ -82,6 +84,7 @@ export function FinanceOverviewAreaChart({
             compareIndices={daily ? series.compareIndices : []}
             index={index}
             onIndexChange={(next) => onSelect(buckets[next].selectedDate)}
+            onPointActivate={daily && onActivate ? (next) => onActivate(buckets[next].selectedDate) : undefined}
             showSummary={false}
             plotHeight={plotHeight}
             unit={unit}

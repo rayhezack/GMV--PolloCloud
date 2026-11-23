@@ -1409,16 +1409,17 @@ async function paymentAnalysis(env: Env, request: Request) {
   const baseline = url.searchParams.get('baselinePeriod') || '';
   const analysis = url.searchParams.get('analysisPeriod') || '';
   const registrationPayType = url.searchParams.get('registrationPayType');
+  const daily = url.searchParams.get('mode') === 'day';
   if (!DASHBOARD_PLATFORMS.has(platform)) return errorResponse('请选择有效的端类型');
   if (deviceType && (platform !== 'app' || !['ios','android'].includes(deviceType))) return errorResponse('设备筛选只支持 App 的 iOS 或 Android');
   if (!GMV_ATTRIBUTION_TYPES.includes(attributionType)) return errorResponse('归因模式无效');
   if (![baseline, analysis].every((value) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))) || baseline === analysis) return errorResponse('请选择两个不同的有效业务周');
   const startDate = [baseline, analysis].sort()[0];
-  const endDate = shiftDate([baseline, analysis].sort()[1], 6);
-  const canonical = await queryRows(env, `SELECT period,week_start,attribution_type,metric_version FROM pollo_da_fact_rows_read
-    WHERE dataset='pay_type' AND platform=? AND period BETWEEN ? AND ? AND week_start IN (?,?)
+  const endDate = shiftDate([baseline, analysis].sort()[1], daily ? 0 : 6);
+  const canonical = await queryRows(env, `SELECT period,${daily ? 'period' : 'week_start'} AS week_start,attribution_type,metric_version FROM pollo_da_fact_rows_read
+    WHERE dataset='pay_type' AND platform=? AND period BETWEEN ? AND ? AND ${daily ? 'period' : 'week_start'} IN (?,?)
       AND (attribution_type IS NULL OR (attribution_type='NONE' AND pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL','API') AND pay_type<>'汇总'))
-      ${deviceType ? 'AND device_type=?' : ''} GROUP BY period,week_start,attribution_type,metric_version`, platform,startDate,endDate,baseline,analysis,...(deviceType ? [deviceType] : []));
+      ${deviceType ? 'AND device_type=?' : ''} GROUP BY period,${daily ? 'period' : 'week_start'},attribution_type,metric_version`, platform,startDate,endDate,baseline,analysis,...(deviceType ? [deviceType] : []));
   const hasBothWeeks = [baseline, analysis].every((week) => canonical.some((row) => asText(row.week_start) === week));
   const comparison = hasBothWeeks ? buildComparison(alignComparisonWeekdays(canonical, baseline, analysis), startDate, endDate, baseline, analysis) : null;
   const legacy = canonical.some((row) => !isAttributedPayRow(row));
@@ -1437,7 +1438,7 @@ async function paymentAnalysis(env: Env, request: Request) {
     ]);
   }
   const identity = (row: D1Row) => ({
-    period: asText(row.period), weekStart: asText(row.week_start),
+    period: asText(row.period), weekStart: asText(daily ? row.period : row.week_start),
     attributionName: asText(row.attribution_name) || '未归因',
     actualSupplier: asText(row.actual_supplier) || null,
     actualProvider: asText(row.actual_provider) || null,
@@ -1473,7 +1474,7 @@ async function paymentAnalysis(env: Env, request: Request) {
         rows.some(row => asText(row.pay_type) === type) && dates.every(date => Math.round((parent.get(`${date}|${type}`) ?? 0)*100) === Math.round((children.get(`${date}|${type}`) ?? 0)*100)));
       response.registration = {
         verifiedPayTypes,
-        rows: rows.filter(row => verifiedPayTypes.includes(asText(row.pay_type))).map(row => ({period:asText(row.period),weekStart:asText(row.week_start),payType:asText(row.pay_type),userLifecycle:asText(row.user_lifecycle),countryTier:asText(row.country_tier),regPlatform:asText(row.reg_platform),sku:asText(row.sku),planTier:asText(row.plan_tier),planCycle:asText(row.plan_cycle),creditAmount:asText(row.credit_amount),previousSku:asText(row.previous_sku),previousPlanTier:asText(row.previous_plan_tier),previousPlanCycle:asText(row.previous_plan_cycle),previousCreditAmount:asText(row.previous_credit_amount),gmvUsd:asNumber(row.gmv_usd)})),
+        rows: rows.filter(row => verifiedPayTypes.includes(asText(row.pay_type))).map(row => ({period:asText(row.period),weekStart:asText(daily ? row.period : row.week_start),payType:asText(row.pay_type),userLifecycle:asText(row.user_lifecycle),countryTier:asText(row.country_tier),regPlatform:asText(row.reg_platform),sku:asText(row.sku),planTier:asText(row.plan_tier),planCycle:asText(row.plan_cycle),creditAmount:asText(row.credit_amount),previousSku:asText(row.previous_sku),previousPlanTier:asText(row.previous_plan_tier),previousPlanCycle:asText(row.previous_plan_cycle),previousCreditAmount:asText(row.previous_credit_amount),gmvUsd:asNumber(row.gmv_usd)})),
       };
     } catch (error) {
       if (!String(error).includes('no such table: pollo_da_payment_registration')) throw error;

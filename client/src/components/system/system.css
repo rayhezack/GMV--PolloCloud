@@ -365,11 +365,29 @@ html[data-astryx-theme='pollo-v62'] .dashboard-shell tbody tr:is(:hover, [data-s
 }
 
 /* Shared table headers, including portaled drawers and modal detail tables. */
-html[data-astryx-theme='pollo-v62'] :is(.dashboard-shell, .sys-modal-body, .payment-detail-sheet, .sys-data-table) :is(thead, thead tr, thead th) {
+html[data-astryx-theme='pollo-v62']
+  :is(.dashboard-shell, .sys-modal-body, .payment-detail-sheet, .sys-data-table)
+  :is(thead, thead tr, thead th) {
   background: var(--surface);
 }
-html[data-astryx-theme='pollo-v62'] :is(.dashboard-shell, .sys-modal-body, .payment-detail-sheet, .sys-data-table) thead th {
+html[data-astryx-theme='pollo-v62']
+  :is(.dashboard-shell, .sys-modal-body, .payment-detail-sheet, .sys-data-table)
+  thead
+  th {
   color: var(--text-3);
   font-weight: 500;
   border-bottom: 1px solid var(--line);
+}
+.sys-detail-comparison {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  margin-block: var(--space-12);
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+}
+.sys-detail-comparison button {
+  color: var(--text-1);
 }

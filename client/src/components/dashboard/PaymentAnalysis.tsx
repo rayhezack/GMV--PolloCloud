@@ -2,6 +2,9 @@ import { Drawer, DrawerHeader } from '@astryxdesign/core/Drawer';
 import { Selector } from '@astryxdesign/core/Selector';
 import { DataTable, DivergingBar, InfoTip, DeltaBadge } from '@/components/system';
 import { share } from '@shared/format';
+import { DetailComparison } from '@/components/system/DetailComparison';
+import { paymentDayComparison, toggleComparisonDay } from './detail-comparison';
+import { shiftDay } from '@/components/v62/trend-data';
 
 import { Segment, Definition } from '@/components/v62/primitives';
 import { paymentMonthTrend } from './payment-history';
@@ -114,10 +117,14 @@ function RevenueTrend({
   trend,
   summaryTrend = trend,
   costs = false,
+  comparisonDay,
+  onActivate,
 }: {
   trend: ReturnType<typeof buildPaymentView>['trend'];
   summaryTrend?: ReturnType<typeof buildPaymentView>['trend'];
   costs?: boolean;
+  comparisonDay?: string | null;
+  onActivate?: (date: string) => void;
 }) {
   const [metric, setMetric] = useState('gmv');
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
@@ -145,7 +152,7 @@ function RevenueTrend({
             : p.baseline,
     }));
   const values = valuesFor(trend),
-    summaryValues = valuesFor(summaryTrend);
+    summaryValues = valuesFor(comparisonDay ? trend.filter((p) => p.date === comparisonDay) : summaryTrend);
   const observed = values.filter((p) => p.analysis != null);
   const firstComparable = observed.findIndex((p) => p.baseline != null);
   const comparison = firstComparable < 0 ? [] : observed.slice(firstComparable);
@@ -154,7 +161,9 @@ function RevenueTrend({
   const paired = summaryObserved.filter((p) => p.baseline != null);
   const sum = (rows: typeof trend, key: 'cost' | 'analysis' | 'baselineCost' | 'baseline') =>
     rows.reduce((total, p) => total + (p[key] ?? 0), 0);
-  const ratioRows = summaryTrend.filter((p) => p.analysis != null && p.cost != null && p.analysis > 0);
+  const ratioRows = (comparisonDay ? trend.filter((p) => p.date === comparisonDay) : summaryTrend).filter(
+    (p) => p.analysis != null && p.cost != null && p.analysis > 0,
+  );
   const comparableRatioRows = ratioRows.filter((p) => p.baseline != null && p.baselineCost != null && p.baseline > 0);
   const total = ratio
     ? sum(ratioRows, 'cost') / (sum(ratioRows, 'analysis') || 1)
@@ -184,8 +193,10 @@ function RevenueTrend({
         )}
       </div>
       <div className="payment-history-caption">
-        <InfoTip label="周对比口径">
-          周均与增量只比较分析周和基准周相同的已观测星期。下图为独立的最近 30 日走势；基准线取对应基准周期同日数据。
+        <InfoTip label="详情对比口径">
+          {comparisonDay
+            ? '所选日与上周同日比较实际金额；再次选择同一天或点击恢复周对比可返回原业务周。缺失日期不补零。'
+            : '周均与增量只比较分析周和基准周相同的已观测星期。点击走势日期切换到与上周同日的对比。'}
         </InfoTip>
       </div>
       <CashFlowAreaChart
@@ -199,15 +210,19 @@ function RevenueTrend({
         unit={ratio ? 'rate' : 'currency'}
         compare={values.flatMap((p) => (p.baseline == null ? [] : [p.baseline]))}
         compareIndices={values.flatMap((p, index) => (p.baseline == null ? [] : [index]))}
-        compareLabel="基准同期值"
-        totalLabel={ratio ? '分析周成本 / GMV' : '分析周日均'}
-        total={total}
-        changeLabel={ratio ? '较基准周' : '较基准周日均'}
-        change={change}
-        formatValue={ratio ? percent : money}
+        compareLabel={comparisonDay ? '上周同日' : '基准同期值'}
+        onPointActivate={onActivate ? (_, point) => onActivate(point.date) : undefined}
+        totalLabel={comparisonDay ? '分析日' : ratio ? '分析周成本 / GMV' : '分析周日均'}
+        total={comparisonDay && !summaryObserved.length ? NaN : total}
+        changeLabel={comparisonDay ? '较上周同日' : ratio ? '较基准周' : '较基准周日均'}
+        change={comparisonDay && !paired.length ? NaN : change}
+        formatValue={(value) => (Number.isFinite(value) ? (ratio ? percent(value) : money(value)) : '—')}
         formatChangeValue={
           ratio
-            ? (value) => `${value > 0 ? '+' : value < 0 ? '−' : ''}${(Math.abs(value) * 100).toFixed(2)}pp`
+            ? (value) =>
+                Number.isFinite(value)
+                  ? `${value > 0 ? '+' : value < 0 ? '−' : ''}${(Math.abs(value) * 100).toFixed(2)}pp`
+                  : '—'
             : undefined
         }
         formatDate={(date, context) => (context === 'axis' ? date.slice(5).replace('-', '/') : date)}
@@ -291,9 +306,11 @@ export default function PaymentAnalysis({
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [detailDay, setDetailDay] = useState<string | null>(null);
   const openDetail = (key: string) => {
     setSelected(key);
     setRegistrationLayer(null);
+    setDetailDay(null);
     setRegistrationDimension(registrationDimensions(key)[0]);
     setDetailOpen(true);
   };
@@ -302,6 +319,52 @@ export default function PaymentAnalysis({
   const [registrationDimension, setRegistrationDimension] = useState<RegistrationDimension>('userLifecycle');
   const [registrationData, setRegistrationData] = useState<PaymentAnalysisResponse | null>(null);
   const [registrationError, setRegistrationError] = useState(false);
+  const [dayResult, setDayResult] = useState<{
+    key: string;
+    data: PaymentAnalysisResponse | null;
+    error: string;
+  } | null>(null);
+  const dayKey = JSON.stringify([
+    detailDay,
+    selected,
+    mode,
+    scope,
+    grouping,
+    platform,
+    deviceType,
+    refreshToken,
+    retry,
+  ]);
+  useEffect(() => {
+    if (!detailOpen || !detailDay || !selected) return;
+    let live = true;
+    void getPaymentAnalysis({
+      platform,
+      deviceType,
+      mode: 'day',
+      analysisPeriod: detailDay,
+      baselinePeriod: shiftDay(detailDay, -7),
+      attributionType: mode,
+      registrationPayType: mode === 'NONE' && grouping === 'payType' ? selected : undefined,
+      cacheBust: refreshToken || retry || undefined,
+    })
+      .then((result) => {
+        if (live) setDayResult({ key: dayKey, data: paymentDayComparison(result, detailDay), error: '' });
+      })
+      .catch(() => {
+        if (live) setDayResult({ key: dayKey, data: null, error: '单日对比读取失败，请重新选择日期' });
+      });
+    return () => {
+      live = false;
+    };
+  }, [detailOpen, dayKey]);
+  const dayState = dayResult?.key === dayKey ? dayResult : null;
+  const detailData = detailDay ? (dayState?.data ?? null) : data;
+  const comparisonRegistration = detailDay ? detailData : registrationData;
+  const activateDay = (date: string) => setDetailDay((current) => toggleComparisonDay(current, date));
+  useEffect(() => {
+    if (!detailOpen) setDetailDay(null);
+  }, [detailOpen]);
   useEffect(() => {
     setRegistrationData(null);
     setRegistrationError(false);
@@ -390,6 +453,11 @@ export default function PaymentAnalysis({
   const detailTitleRef = useRef<HTMLHeadingElement>(null);
   const detailTriggerRef = useRef<HTMLButtonElement | null>(null);
   const selectedItem = view?.items.find((item) => item.key === selected);
+  const selectedMetrics = detailDay
+    ? detailData
+      ? buildPaymentView(detailData, scope, grouping).items.find((item) => item.key === selected)
+      : undefined
+    : selectedItem;
   const filtered = useMemo(() => {
     const items = (view?.items || []).filter((r) =>
       entityLabel(r.key).toLowerCase().includes(query.trim().toLowerCase()),
@@ -455,7 +523,7 @@ export default function PaymentAnalysis({
     if (!showCosts && !detailOpen) return;
     const weekEnd = new Date(Date.parse(analysisPeriod + 'T00:00:00Z') + 6 * 86400000).toISOString().slice(0, 10);
     const endDate = [weekEnd, observedThrough || weekEnd].sort()[0];
-    const offset = Math.abs(Date.parse(analysisPeriod) - Date.parse(baselinePeriod)) / 86400000;
+    const offset = Math.max(7, Math.abs(Date.parse(analysisPeriod) - Date.parse(baselinePeriod)) / 86400000);
     const startDate = new Date(Date.parse(endDate + 'T00:00:00Z') - (29 + offset) * 86400000)
       .toISOString()
       .slice(0, 10);
@@ -495,8 +563,16 @@ export default function PaymentAnalysis({
     detailOpen,
   ]);
   const monthTrend = useMemo(
-    () => (costHistory && selected ? paymentMonthTrend(costHistory, selected, baselinePeriod, analysisPeriod) : null),
-    [costHistory, selected, baselinePeriod, analysisPeriod],
+    () =>
+      costHistory && selected
+        ? paymentMonthTrend(
+            costHistory,
+            selected,
+            detailDay ? shiftDay(analysisPeriod, -7) : baselinePeriod,
+            analysisPeriod,
+          )
+        : null,
+    [costHistory, selected, baselinePeriod, analysisPeriod, Boolean(detailDay)],
   );
   const costDaily = useMemo(() => {
     if (!data?.costAvailable) return [];
@@ -588,7 +664,9 @@ export default function PaymentAnalysis({
       ]),
     ]);
   const detailTypes = useMemo(() => {
-    if (!data || !selected) return [];
+    const data = detailData;
+    if (!data?.comparison || !selected) return [];
+    const { analysisPeriod, baselinePeriod } = data.comparison;
     const analysisOffsets = new Set(
       data.revenues
         .filter((r) => r.weekStart === analysisPeriod)
@@ -616,14 +694,32 @@ export default function PaymentAnalysis({
         analysis: v.analysis / (data.comparison?.analysisPeriodDays || 7),
       }))
       .sort((a, b) => b.analysis - a.analysis);
-  }, [data, selected, grouping, scope, analysisPeriod, baselinePeriod]);
+  }, [detailData, selected, grouping, scope]);
   const detailContributions = changeContributions(detailTypes);
   const registrationRows = useMemo(
     () =>
-      registrationData && selected ? registrationBreakdown(registrationData, selected, registrationDimension) : null,
-    [registrationData, selected, registrationDimension],
+      comparisonRegistration && selected
+        ? registrationBreakdown(comparisonRegistration, selected, registrationDimension)
+        : null,
+    [comparisonRegistration, selected, registrationDimension],
   );
   const registrationContributions = changeContributions(registrationRows ?? []);
+  const visibleRegistrationRows = registrationRows
+    ?.map((row, index) => ({
+      ...row,
+      id: row.key,
+      contribution: registrationContributions[index],
+    }))
+    .filter((row) => !registrationLayer || row.key === registrationLayer);
+  if (registrationLayer && visibleRegistrationRows?.length === 0) {
+    visibleRegistrationRows.push({
+      key: registrationLayer,
+      id: registrationLayer,
+      baseline: 0,
+      analysis: 0,
+      contribution: registrationRows!.reduce((sum, row) => sum + row.analysis - row.baseline, 0) !== 0 ? 0 : null,
+    });
+  }
 
   return (
     <div
@@ -1045,8 +1141,8 @@ export default function PaymentAnalysis({
                         <div className="payment-detail-metrics">
                           <div>
                             <span>GMV</span>
-                            <strong>{money(selectedItem.gmv)}</strong>
-                            <Change value={selectedItem.changeRate} />
+                            <strong>{selectedMetrics ? money(selectedMetrics.gmv) : '—'}</strong>
+                            <Change value={selectedMetrics?.changeRate ?? null} />
                           </div>
                           {entityCosts && (
                             <>
@@ -1054,31 +1150,46 @@ export default function PaymentAnalysis({
                                 <span>
                                   模型成本 <CostInfo />
                                 </span>
-                                <strong>{money(selectedItem.cost || 0)}</strong>
-                                <Change value={selectedItem.costChangeRate} />
+                                <strong>{selectedMetrics?.cost == null ? '—' : money(selectedMetrics.cost)}</strong>
+                                <Change value={selectedMetrics?.costChangeRate ?? null} />
                               </div>
                               <div>
                                 <span>成本 / GMV</span>
-                                <strong>{percent(selectedItem.costRatio)}</strong>
-                                <RatioChange value={selectedItem.costRatioChange} />
+                                <strong>{percent(selectedMetrics?.costRatio ?? null)}</strong>
+                                <RatioChange value={selectedMetrics?.costRatioChange ?? null} />
                               </div>
                             </>
                           )}
                         </div>
                       )}
-                      {registrationLayer && selected ? (
+                      <DetailComparison day={detailDay} onReset={() => setDetailDay(null)} />
+                      {registrationLayer && selected && registrationData ? (
                         <PaymentRegistrationTrend
-                          data={data}
+                          data={registrationData}
                           payType={selected}
                           dimension={registrationDimension}
                           layer={registrationLayer}
                           platform={platform}
                           deviceType={deviceType}
                           refreshToken={refreshToken}
-                          renderTrend={(trend, summary) => <RevenueTrend trend={trend} summaryTrend={summary} />}
+                          comparisonDay={detailDay}
+                          renderTrend={(trend, summary) => (
+                            <RevenueTrend
+                              trend={trend}
+                              summaryTrend={summary}
+                              comparisonDay={detailDay}
+                              onActivate={activateDay}
+                            />
+                          )}
                         />
                       ) : monthTrend?.length ? (
-                        <RevenueTrend trend={monthTrend} summaryTrend={detail.trend} costs={entityCosts} />
+                        <RevenueTrend
+                          trend={monthTrend}
+                          summaryTrend={detail.trend}
+                          costs={entityCosts}
+                          comparisonDay={detailDay}
+                          onActivate={activateDay}
+                        />
                       ) : (
                         <div className="payment-history-loading" role="status">
                           {historyError ? (
@@ -1095,11 +1206,16 @@ export default function PaymentAnalysis({
                           )}
                         </div>
                       )}
-                      {mode === 'NONE' && grouping === 'payType' && !registrationLayer && (
+                      {detailDay && !detailData && (
+                        <p role="status" className="payment-registration-note">
+                          {!dayState ? '正在读取单日对比…' : dayState.error || '所选日或上周同日未被数据覆盖，未补零。'}
+                        </p>
+                      )}
+                      {(!detailDay || detailData) && mode === 'NONE' && grouping === 'payType' && (
                         <section className="payment-detail-types payment-registration">
                           <header>
-                            <h3>付费贡献分析</h3>
-                            {mode === 'NONE' && grouping === 'payType' && (
+                            <h3>{registrationLayer ? '分层对比' : '付费贡献分析'}</h3>
+                            {!registrationLayer && mode === 'NONE' && grouping === 'payType' && (
                               <Segment
                                 label="付费下钻维度"
                                 value={registrationDimension}
@@ -1124,32 +1240,37 @@ export default function PaymentAnalysis({
                           ) : null}
                           {registrationRows ? (
                             <DataTable
-                              rows={registrationRows.map((row, index) => ({
-                                ...row,
-                                id: row.key,
-                                contribution: registrationContributions[index],
-                              }))}
+                              rows={visibleRegistrationRows ?? []}
                               columns={[
                                 {
                                   key: 'entity',
                                   header: registrationDimensionLabels[registrationDimension],
-                                  render: (r) => (
-                                    <button
-                                      type="button"
-                                      className="payment-entity"
-                                      onClick={() => {
-                                        setRegistrationLayer(r.key);
-                                        detailTitleRef.current?.closest('dialog')?.scrollTo({ top: 0 });
-                                      }}
-                                    >
-                                      <span className="payment-entity-label">{r.key}</span>
-                                      <ChevronRight size={13} />
-                                    </button>
-                                  ),
+                                  render: (r) =>
+                                    registrationLayer ? (
+                                      r.key
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="payment-entity"
+                                        onClick={() => {
+                                          setRegistrationLayer(r.key);
+                                          detailTitleRef.current?.closest('dialog')?.scrollTo({ top: 0 });
+                                        }}
+                                      >
+                                        <span className="payment-entity-label">{r.key}</span>
+                                        <ChevronRight size={13} />
+                                      </button>
+                                    ),
+                                },
+                                {
+                                  key: 'baseline',
+                                  header: detailDay ? '基准日' : '基准周日均',
+                                  numeric: true,
+                                  render: (r) => money(r.baseline),
                                 },
                                 {
                                   key: 'analysis',
-                                  header: '分析周日均',
+                                  header: detailDay ? '分析日' : '分析周日均',
                                   numeric: true,
                                   render: (r) => money(r.analysis),
                                 },
@@ -1186,11 +1307,11 @@ export default function PaymentAnalysis({
                             <p role="status">
                               {registrationError
                                 ? '付费下钻读取失败，请关闭后重试。'
-                                : !registrationData
+                                : !comparisonRegistration
                                   ? '正在读取付费下钻…'
-                                  : registrationData.registrationStatus === 'table_missing'
+                                  : comparisonRegistration.registrationStatus === 'table_missing'
                                     ? '注册明细 D1 表缺失，无法下钻；请检查数据同步。'
-                                    : registrationData.registrationStatus === 'source_missing'
+                                    : comparisonRegistration.registrationStatus === 'source_missing'
                                       ? '所选日期缺少支付订单注册明细，无法下钻；请检查数据同步。'
                                       : data.source === 'legacy'
                                         ? '历史口径没有可核对的注册明细，无法下钻。'
@@ -1200,12 +1321,13 @@ export default function PaymentAnalysis({
                           {registrationRows && (
                             <Definition label="付费下钻口径">
                               {registrationDimension === 'userLifecycle' ? '新用户指所在业务周内注册；' : ''}贡献度 =
-                              该分层日均变化 ÷ 此付费类型日均总变化，抵消整体变化的分层为负。
+                              该分层{detailDay ? '当日' : '日均'}变化 ÷ 此付费类型{detailDay ? '当日' : '日均'}
+                              总变化，抵消整体变化的分层为负。
                             </Definition>
                           )}
                         </section>
                       )}
-                      {grouping !== 'payType' && (
+                      {(!detailDay || detailData) && grouping !== 'payType' && (
                         <div className="payment-detail-types">
                           <h3>
                             {grouping === 'actualSupplier' || grouping === 'actualProvider'
@@ -1235,8 +1357,14 @@ export default function PaymentAnalysis({
                                 ),
                               },
                               {
+                                key: 'baseline',
+                                header: detailDay ? '基准日' : '基准周日均',
+                                numeric: true,
+                                render: (r) => money(r.baseline),
+                              },
+                              {
                                 key: 'analysis',
-                                header: '分析周日均',
+                                header: detailDay ? '分析日' : '分析周日均',
                                 numeric: true,
                                 render: (r) => money(r.analysis),
                               },
