@@ -357,3 +357,32 @@
 
 /* Keep entity labels at the same compact row height as the other attribution modes. */
 .payment-table-content .payment-entity-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Model tables use text hierarchy instead of repeated badges and meters. */
+.payment-table-content.payment-model-table table {
+  min-width: 960px;
+}
+.payment-model-table .payment-entity {
+  max-width: none;
+  justify-content: flex-start;
+}
+.payment-model-table .sys-table-cell[data-kind='total'] {
+  font-weight: 600;
+}
+.payment-model-table .payment-entity {
+  gap: var(--space-8);
+}
+.payment-model-table .payment-entity .model-brand {
+  width: 16px;
+  height: 16px;
+}
+.payment-table-content.payment-model-table .sys-diverging {
+  min-width: 128px;
+}
+.payment-model-table .sys-diverging-track {
+  width: 64px;
+  flex-basis: 64px;
+}
+.payment-model-table .sys-diverging b {
+  min-width: 56px;
+}

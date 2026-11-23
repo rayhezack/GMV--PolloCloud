@@ -1,6 +1,7 @@
 import { Drawer, DrawerHeader } from '@astryxdesign/core/Drawer';
 import { Selector } from '@astryxdesign/core/Selector';
 import { DataTable, DivergingBar, InfoTip, DeltaBadge } from '@/components/system';
+import { share } from '@shared/format';
 
 import { Segment, Definition } from '@/components/v62/primitives';
 import { paymentMonthTrend } from './payment-history';
@@ -260,6 +261,7 @@ export default function PaymentAnalysis({
   const [bubblePressed, setBubblePressed] = useState(false);
   const glassFilterId = `payment-glass-${liquidId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const mode = attributionModes.find((m) => m.value === params.get('attributionType'))?.value || 'NONE';
+  const modelTable = mode === 'MODEL' || mode === 'ACTUAL_MODEL';
   const scope: RevenueScope = revenueScopes.find((s) => s.value === params.get('income'))?.value || 'ALL';
   const modeLabel = attributionModes.find((m) => m.value === mode)!.dimension;
   const groups: { value: PaymentGrouping; label: string }[] =
@@ -538,9 +540,22 @@ export default function PaymentAnalysis({
     setPage(0);
   };
   const header = (label: string, key: SortKey) => (
-    <button type="button" onClick={() => sortBy(key)} className="payment-sort">
+    <button
+      type="button"
+      onClick={() => sortBy(key)}
+      className="payment-sort"
+      aria-label={`${label}，${sort.key === key ? (sort.descending ? '降序' : '升序') : '排序'}`}
+    >
       {label}
-      {sort.key === key ? sort.descending ? <ArrowDown size={12} /> : <ArrowUp size={12} /> : <ArrowUpDown size={12} />}
+      {sort.key === key ? (
+        sort.descending ? (
+          <ArrowDown size={12} />
+        ) : (
+          <ArrowUp size={12} />
+        )
+      ) : !modelTable ? (
+        <ArrowUpDown size={12} />
+      ) : null}
     </button>
   );
   const exportRows = () =>
@@ -814,7 +829,7 @@ export default function PaymentAnalysis({
                     </div>
                   </section>
                 )}
-                <CardContent className="payment-table-content">
+                <CardContent className={`payment-table-content${modelTable ? ' payment-model-table' : ''}`}>
                   <DataTable
                     rows={[
                       { ...view.total, key: 'total', id: 'total', kind: 'total' as const },
@@ -826,7 +841,7 @@ export default function PaymentAnalysis({
                       {
                         key: 'entity',
                         header: dimension,
-                        minWidth: 180,
+                        minWidth: modelTable ? 200 : 180,
                         render: (r) =>
                           r.kind === 'total' ? (
                             '合计'
@@ -840,7 +855,7 @@ export default function PaymentAnalysis({
                               }}
                               title={entityLabel(r.key)}
                             >
-                              {(mode === 'MODEL' || mode === 'ACTUAL_MODEL') && grouping !== 'payType' && (
+                              {modelTable && grouping !== 'payType' && (
                                 <ModelBrand
                                   model={r.key}
                                   kind={
@@ -853,7 +868,7 @@ export default function PaymentAnalysis({
                                 />
                               )}
                               <span className="payment-entity-label">{entityLabel(r.key)}</span>
-                              <ChevronRight size={13} />
+                              {!modelTable && <ChevronRight size={13} />}
                             </button>
                           ),
                       },
@@ -861,35 +876,35 @@ export default function PaymentAnalysis({
                         key: 'gmv',
                         header: header('分析周 GMV', 'gmv'),
                         numeric: true,
-                        minWidth: 130,
+                        minWidth: modelTable ? 120 : 130,
                         render: (r) => money(r.gmv),
                       },
                       {
                         key: 'baseline',
                         header: header('基准周 GMV', 'baseline'),
                         numeric: true,
-                        minWidth: 130,
+                        minWidth: modelTable ? 120 : 130,
                         render: (r) => <span className="payment-muted-cell">{money(r.baseline)}</span>,
                       },
                       {
                         key: 'change',
                         header: header('变化', 'change'),
                         numeric: true,
-                        minWidth: 120,
+                        minWidth: modelTable ? 110 : 120,
                         render: (r) => signedMoney(r.change),
                       },
                       {
                         key: 'changeRate',
                         header: '较基准周',
                         numeric: true,
-                        minWidth: 100,
-                        render: (r) => <DeltaBadge value={r.changeRate} />,
+                        minWidth: modelTable ? 96 : 100,
+                        render: (r) => (modelTable ? share(r.changeRate) : <DeltaBadge value={r.changeRate} />),
                       },
                       {
                         key: 'contribution',
                         header: header('贡献度', 'contribution'),
                         numeric: true,
-                        minWidth: 184,
+                        minWidth: modelTable ? 156 : 184,
                         render: (r) =>
                           r.kind === 'total' ? (
                             view.total.change !== 0 ? (
@@ -907,12 +922,12 @@ export default function PaymentAnalysis({
                               key: 'cost',
                               header: header('模型成本变化', 'cost'),
                               numeric: true,
-                              minWidth: 130,
+                              minWidth: 104,
                               render: (r: PaymentEntity & { kind?: string }) => (
                                 <span
                                   title={`基准期 ${r.baselineCost == null ? '—' : money(r.baselineCost)}；分析期 ${r.cost == null ? '—' : money(r.cost)}`}
                                 >
-                                  <DeltaBadge value={r.costChangeRate} />
+                                  {share(r.costChangeRate)}
                                 </span>
                               ),
                             },
@@ -925,12 +940,12 @@ export default function PaymentAnalysis({
                                 </span>
                               ),
                               numeric: true,
-                              minWidth: 120,
+                              minWidth: 104,
                               render: (r: PaymentEntity & { kind?: string }) => (
                                 <span
                                   title={`成本 / GMV 相对变化；基准期 ${percent(r.baselineCost != null && r.baseline !== 0 ? r.baselineCost / r.baseline : null)}；分析期 ${percent(r.costRatio)}`}
                                 >
-                                  <DeltaBadge value={costRatioRelativeChange(r)} />
+                                  {share(costRatioRelativeChange(r))}
                                 </span>
                               ),
                             },

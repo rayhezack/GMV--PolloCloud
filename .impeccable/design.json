@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-22T08:25:07.472775+00:00",
+  "generatedAt": "2026-11-23T04:27:53.258046+00:00",
   "title": "Design System: PolloCloud GMV V6.3",
   "extensions": {
     "colorMeta": {
@@ -114,7 +114,7 @@
       "name": "可选择 KPI 分区",
       "kind": "card",
       "refersTo": "kpi",
-      "description": "KpiItem 的标签、数值/变化、基准结构；首页四项、广告五项由页面网格承载。",
+      "description": "KpiItem 的标签、数值/变化、基准结构；首页四项、广告五项由页面网格承载。 首页图标为浅色底与清晰前景色，避免深色实底。",
       "html": "<article class=\"ds-kpi\"><button class=\"ds-kpi-select\" aria-label=\"查看大盘 GMV 趋势\" aria-pressed=\"true\"></button><span class=\"ds-kpi-label\">大盘 GMV</span><div class=\"ds-kpi-value\"><strong>$143,717</strong><span>↗ 20.8%</span></div><footer class=\"ds-kpi-base\">11/04 周三 · 上周同日 $118,934</footer></article>",
       "css": ".ds-kpi{position:relative;min-width:0;padding:var(--space-16);background:var(--surface);color:var(--text-1);border:0;font-family:var(--font-family-body);font-size:var(--fs-body);font-variant-numeric:tabular-nums}.ds-kpi-label,.ds-kpi-base{color:var(--text-2);font-size:var(--fs-meta)}.ds-kpi-value{display:flex;align-items:center;gap:var(--space-8);margin:var(--space-8) 0}.ds-kpi-value strong{font-size:var(--fs-kpi);font-weight:500;line-height:1.2}.ds-kpi-value span{color:var(--positive);font-size:var(--fs-meta)}.ds-kpi-base{border-top:1px solid var(--line);padding-top:var(--space-12)}.ds-kpi-select{position:absolute;inset:0;background:transparent;border:0;border-radius:var(--radius-element);cursor:pointer}.ds-kpi-select[aria-pressed=\"true\"]{border-bottom:2px solid var(--accent);border-radius:0}.ds-kpi-select:hover{background:transparent}.ds-kpi-select:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}"
     },
@@ -145,8 +145,13 @@
   ],
   "narrative": {
     "northStar": "连续白色分析工作台",
-    "overview": "紧凑 Bento 分区、深蓝文字、品牌紫数据与操作，依靠布局和内部细线表达层级。首页用于每日监测，将异动引导到支付链路；其余页面共享体系。\n\n用户最新明确约束优先，Stripe 品牌约束高于看板组件规范。src/themes/pollo-v62/tokens.css 是唯一运行时 token 来源；本 sidecar 是文档扩展与静态组件示例，不是第二套主题。\n\n最新工作台顶栏保留 Kubai 当前位置面包屑，个人账号在铃铛右侧；PaymentTrend 使用真实 Mebius InvestmentPerformanceChart，日/周/月/年保留日均和缺失断点，占比弹窗使用扁平 Segment。广告 CountryChannels 从国家行进入，宽 880px，指标行联动趋势；CTR 差只用 pp。链路 Table2 先开 960px 明细再导出。",
-    "keyCharacteristics": ["连续白色表面", "内部细线与浅灰选择", "制表数字与单位一致", "按需展开证据"],
+    "overview": "紧凑 Bento 分区、深蓝文字、品牌紫数据与操作，依靠布局和内部细线表达层级。首页用于每日监测，将异动引导到支付链路；其余页面共享体系。\n\n用户最新明确约束优先，Stripe 品牌约束高于看板组件规范。src/themes/pollo-v62/tokens.css 是唯一运行时 token 来源；本 sidecar 是文档扩展与静态组件示例，不是第二套主题。\n\n最新工作台顶栏保留 Kubai 当前位置面包屑，个人账号在铃铛右侧；PaymentTrend 使用真实 Mebius InvestmentPerformanceChart，日/周/月/年保留日均和缺失断点，占比弹窗使用扁平 Segment。广告 CountryChannels 从国家行进入，宽 880px，指标行联动趋势；CTR 差只用 pp。链路 Table2 先开 960px 明细再导出。\n\n首页 BudgetChart 为 35 列两行格栅，按真实份额保留类别边界，使用稳定的紫色色阶，悬浮/聚焦查看类别、金额与占比。模型表保留 16px 图标及紧凑双向贡献条，变化用单行正负号文本，仅当前排序列显示方向。模型成本与成本占比两列按用户确认展示相对变化；其他比率变化仍用 pp。报告抽屉显式绑定 Pollo 主题，与报告 Tab 共享紫色竖线、编号和数字强调。",
+    "keyCharacteristics": [
+      "连续白色表面",
+      "内部细线与浅灰选择",
+      "制表数字与单位一致",
+      "按需展开证据"
+    ],
     "rules": [
       {
         "name": "Direction Rule",

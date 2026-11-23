@@ -26,7 +26,17 @@ import PlatformSelect from '@/components/v62/PlatformSelect';
 import ActiveProcess from '@/components/v62/ActiveProcess';
 import { BudgetChart } from '@/components/budget-chart';
 import { paymentComposition } from '@shared/home-attribution';
-import { entityColor } from '@shared/chart-colors';
+
+const compositionTones: Record<string, number> = {
+  积分包: 72,
+  自动续订: 60,
+  首订: 49,
+  套餐升级: 40,
+  重置订阅周期: 32,
+  API: 26,
+  重新订阅: 20,
+  套餐降级: 15,
+};
 
 const validDate = (value: string | null): value is string =>
   Boolean(
@@ -314,7 +324,10 @@ export default function OverviewPage() {
                 total={composition.total}
                 segments={composition.items.map((item) => ({
                   ...item,
-                  color: item.id === '未分类差额' ? 'var(--residual)' : entityColor(item.id),
+                  color:
+                    item.id === '未分类差额'
+                      ? 'var(--residual)'
+                      : `color-mix(in srgb, var(--series-1) ${compositionTones[item.id] ?? 35}%, var(--surface))`,
                 }))}
               />
             ) : (

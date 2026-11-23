@@ -16,7 +16,7 @@ type BudgetChartProps = {
 
 /**
  * Adapted from mebius charts-budget (Budget Chart, Figma 1473:76306).
- * Retains ChartCard, anime.js staggered meter entrance and pointer/keyboard inspection.
+ * Retains ChartCard, the 35-column/two-cell meter, anime.js entrance and inspection.
  * The budget/limit meter is a categorical composition strip: exact segment widths,
  * no spending limit, sample figures, budget advice or decorative empty remainder.
  */
@@ -24,6 +24,7 @@ export function BudgetChart({ title, date, total, segments, className }: BudgetC
   const root = useRef<HTMLDivElement>(null);
   const [inspected, setInspected] = useState<string | null>(null);
   const tooltipId = useId();
+  const meterId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const active = segments.find((segment) => segment.id === inspected);
   const stackable = total > 0 && segments.every((segment) => segment.amount >= 0);
   const activeIndex = segments.findIndex((segment) => segment.id === inspected);
@@ -60,25 +61,38 @@ export function BudgetChart({ title, date, total, segments, className }: BudgetC
         <strong>{money(total)}</strong>
       </header>
       <div className="budget-composition-plot">
-        <div
+        <svg
           className="budget-composition-meter"
+          viewBox="0 0 700 28"
+          preserveAspectRatio="none"
           aria-label="付费类型金额占比"
           role="group"
           onPointerLeave={() => setInspected(null)}
         >
-          {stackable &&
-            segments.map((segment) => (
-              <span
-                key={segment.id}
-                data-slot="budget-chart-segment"
-                data-active={active ? segment.id === active.id : undefined}
-                style={
-                  { width: `${(segment.amount / total) * 100}%`, '--segment-color': segment.color } as CSSProperties
-                }
-                onPointerEnter={() => setInspected(segment.id)}
-              />
-            ))}
-        </div>
+          <defs>
+            <pattern id={`budget-cells-${meterId}`} width="20" height="16" patternUnits="userSpaceOnUse">
+              <rect width="16" height="12" rx="3" fill="white" />
+            </pattern>
+            <mask id={`budget-mask-${meterId}`}>
+              <rect width="700" height="28" fill={`url(#budget-cells-${meterId})`} />
+            </mask>
+          </defs>
+          <g mask={`url(#budget-mask-${meterId})`}>
+            {stackable &&
+              segments.map((segment, index) => (
+                <rect
+                  key={segment.id}
+                  data-slot="budget-chart-segment"
+                  data-active={active ? segment.id === active.id : undefined}
+                  x={(segments.slice(0, index).reduce((sum, item) => sum + item.amount, 0) / total) * 700}
+                  width={(segment.amount / total) * 700}
+                  height="28"
+                  style={{ '--segment-color': segment.color } as CSSProperties}
+                  onPointerEnter={() => setInspected(segment.id)}
+                />
+              ))}
+          </g>
+        </svg>
         {active && (
           <div
             id={tooltipId}

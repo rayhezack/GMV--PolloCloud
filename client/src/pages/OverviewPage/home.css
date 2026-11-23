@@ -578,15 +578,17 @@ html[data-astryx-theme='pollo-v62'] .astryx-tooltip:has(.gmv-day-preview) {
   width: 26px;
   height: 26px;
   flex: none;
-  color: var(--surface);
-  background: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
   border-radius: var(--radius-element);
 }
 [data-page='gmv-trend'] .home-kpi-node:nth-child(2) .sys-kpi-icon {
-  background: var(--color-data-blue-4);
+  color: var(--series-3);
+  background: color-mix(in srgb, var(--series-3) 12%, var(--surface));
 }
 [data-page='gmv-trend'] .home-kpi-node:nth-child(3) .sys-kpi-icon {
-  background: var(--positive);
+  color: var(--positive);
+  background: var(--positive-soft);
 }
 [data-page='gmv-trend'] .home-kpi-node .sys-kpi-value {
   display: flex;
@@ -686,7 +688,8 @@ html[data-astryx-theme='pollo-v62'] .astryx-tooltip:has(.gmv-day-preview) {
   flex-wrap: wrap;
 }
 [data-page='gmv-trend'] .home-kpi-node:nth-child(4) .sys-kpi-icon {
-  background: var(--color-data-blue-4);
+  color: var(--series-2);
+  background: color-mix(in srgb, var(--series-2) 12%, var(--surface));
 }
 [data-page='gmv-trend'] .home-kpi-node .sys-kpi-value strong {
   font-size: var(--fs-kpi);
