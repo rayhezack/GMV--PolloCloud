@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { buildSync } from 'esbuild';
 import { encodeDashboardCache, decodeDashboardCache } from './dashboard-cache.ts';
 
@@ -30,7 +30,7 @@ test('headline requests preserve single-copy scopes and exclude model rows witho
     }
     sqlite.exec("UPDATE pollo_da_fact_rows SET order_equivalent = gmv_usd / 10 WHERE attribution_type='NONE'");
     const bundle = join(directory, 'worker.mjs');
-    buildSync({ entryPoints: [new URL('./index.ts', import.meta.url).pathname], bundle: true, platform: 'node', format: 'esm', outfile: bundle, logLevel: 'silent' });
+    buildSync({ entryPoints: [fileURLToPath(new URL('./index.ts', import.meta.url))], bundle: true, platform: 'node', format: 'esm', outfile: bundle, logLevel: 'silent' });
     const { default: worker } = await import(pathToFileURL(bundle).href);
     const sqls = [], writes = [];
     const db = { prepare(sql) {

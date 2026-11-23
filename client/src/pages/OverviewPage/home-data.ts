@@ -57,3 +57,8 @@ export function homeBuckets(
     baseline: ratio(b.dates.map((d) => shiftDay(d, -7))),
   }));
 }
+
+/** The calendar defaults to a quarter until the header range is explicitly set. */
+export function homeCalendarWindow(startDate: string, endDate: string, explicitRange: boolean) {
+  return { startDate: explicitRange ? startDate : endDate ? shiftDay(endDate, -89) : '', endDate };
+}

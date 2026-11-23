@@ -125,7 +125,10 @@ export default function DetailsPage() {
   const actualPage = data?.page || page,
     lastPage = Math.max(1, Math.ceil((data?.total || 0) / pageSize));
   return (
-    <div className="v62-page v62-sheet-page operational-page details-page">
+    <div
+      className="v62-page v62-sheet-page operational-page details-page"
+      data-dashboard-ready={!loading && Boolean(data?.items.length) && !error}
+    >
       <PageHeader
         title="明细数据"
         tools={
@@ -208,9 +211,9 @@ export default function DetailsPage() {
           />
           <span>{data?.total != null ? `${count(data.total)} 条` : '—'}</span>
         </div>
-        {error ? (
-          <PanelState state="error" reason={error} onRetry={window.refresh} />
-        ) : loading && !data ? (
+        {error || window.error ? (
+          <PanelState state="error" reason={error || window.error} onRetry={window.refresh} />
+        ) : window.coverageLoading || (loading && !data) ? (
           <PanelState state="loading" />
         ) : !data?.items.length ? (
           <PanelState

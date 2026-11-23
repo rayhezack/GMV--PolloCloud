@@ -12,15 +12,13 @@ import type {
   OverviewTrendPoint,
 } from '@shared/api.interface';
 import { getDashboardOverview, invalidateDashboardCache } from '@/api/dashboard';
-import { getLatestSyncRun } from '@/api/sync';
-import { LOCAL_REVENUE_WINDOW } from '@/lib/local-data-window';
-import { STATIC_DEMO_MODE } from '@/lib/demo-data';
+import { useDataCoverage } from '@/components/system/useDataCoverage';
 import DateRangePicker from '@/components/dashboard/DashboardDateRangePicker';
 import DailyActivityRail from '@/components/dashboard/DailyActivityRail';
 import { WorkbenchIcon } from '@/components/icons/WorkbenchIcon';
 import RevenueTrend from '@/components/v62/RevenueTrend';
 import { HomeKpis } from './HomeKpis';
-import { homeMetrics as metrics, homeBuckets, type HomeMetric } from './home-data';
+import { homeMetrics as metrics, homeBuckets, homeCalendarWindow, type HomeMetric } from './home-data';
 import { FinanceOverviewAreaChart } from '@/components/finance-overview-area-chart';
 import { count, rate } from '@shared/format';
 import { revenueBuckets, shiftDay } from '@/components/v62/trend-data';
@@ -53,12 +51,16 @@ export default function OverviewPage() {
   const granularity = ['day', 'week', 'month'].includes(params.get('granularity') || '')
     ? (params.get('granularity') as 'day' | 'week' | 'month')
     : 'day';
-  const initialCoverage = STATIC_DEMO_MODE ? { startDate: '2026-01-01', endDate: '2026-10-09' } : LOCAL_REVENUE_WINDOW;
-  const [coverage, setCoverage] = useState(initialCoverage);
+
   const [rows, setRows] = useState<OverviewTrendPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const {
+    coverage,
+    loading: coverageLoading,
+    error: coverageError,
+  } = useDataCoverage('pay_type', platform, deviceType, revision);
   const [structureMetric, setStructureMetric] = useState<GmvAnomalyMetric | null>(null);
   const [expandedMetric, setExpandedMetric] = useState<HomeMetric | null>(null);
   const [orders, setOrders] = useState<Partial<Record<HomeMetric, boolean>>>({});
@@ -75,20 +77,6 @@ export default function OverviewPage() {
       ),
     [setParams],
   );
-  useEffect(() => {
-    if (initialCoverage) return;
-    let live = true;
-    void getLatestSyncRun()
-      .then((sync) => {
-        if (live && sync?.status === 'success') setCoverage({ startDate: '2026-01-01', endDate: sync.endDate });
-      })
-      .catch(() => {
-        if (live) setError('最新可用日期读取失败，请刷新重试');
-      });
-    return () => {
-      live = false;
-    };
-  }, []);
   const defaultEnd = coverage?.endDate || '';
   const clamp = (date: string) =>
     coverage
@@ -105,8 +93,14 @@ export default function OverviewPage() {
       ? shiftDay(endDate, -29)
       : '';
   const startDate = clamp(requestedStart > endDate ? endDate : requestedStart);
+  const calendarWindow = homeCalendarWindow(
+    startDate,
+    endDate,
+    validDate(params.get('trendStartDate')) || validDate(params.get('trendEndDate')),
+  );
+  const readStart = [startDate, calendarWindow.startDate].sort()[0];
   useEffect(() => {
-    if (!startDate || !endDate) return;
+    if (!readStart || !endDate) return;
     let live = true;
     setLoading(true);
     setError('');
@@ -117,7 +111,7 @@ export default function OverviewPage() {
       platform,
       deviceType,
       granularity: 'day',
-      startDate: shiftDay(startDate, -7),
+      startDate: shiftDay(readStart, -7),
       endDate,
       cacheBust: revision,
     })
@@ -133,10 +127,12 @@ export default function OverviewPage() {
     return () => {
       live = false;
     };
-  }, [platform, deviceType, startDate, endDate, revision]);
+  }, [platform, deviceType, readStart, endDate, revision]);
   const visibleDays = rows.filter((row) => row.period >= startDate && row.period <= endDate);
   const candidate = params.get('focusPeriod') || params.get('selectedDay');
-  const selectedDay = rows.some((row) => row.period === candidate && row.period >= startDate && row.period <= endDate)
+  const selectedDay = rows.some(
+    (row) => row.period === candidate && row.period >= calendarWindow.startDate && row.period <= endDate,
+  )
     ? candidate!
     : visibleDays.at(-1)?.period || endDate;
   const current = rows.find((row) => row.period === selectedDay);
@@ -232,13 +228,17 @@ export default function OverviewPage() {
     </>
   );
   return (
-    <div className="v62-page v62-sheet-page" data-page="gmv-trend">
+    <div
+      className="v62-page v62-sheet-page"
+      data-page="gmv-trend"
+      data-dashboard-ready={!loading && rows.length > 0 && !error}
+    >
       {!endDate ? (
         <>
           {header()}
           <PanelState
-            state={error ? 'error' : 'loading'}
-            reason={error || undefined}
+            state={error || coverageError ? 'error' : coverageLoading ? 'loading' : 'empty'}
+            reason={error || coverageError || (!coverageLoading ? '暂无付费数据' : undefined)}
             onRetry={() => setRevision((v) => v + 1)}
           />
         </>
@@ -251,6 +251,7 @@ export default function OverviewPage() {
           selectedDay={selectedDay}
           onSelectedDayChange={selectDay}
           trendWindow={{ startDate, endDate }}
+          calendarWindow={calendarWindow}
           calendarRows={rows}
           calendarMetric={financialMetric}
           onMonitoringChange={(value) => setMonitor(deviceType ? null : value)}

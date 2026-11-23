@@ -11,7 +11,7 @@ import { canManagePollocloudApp } from '@/lib/pollocloud';
 
 import Layout from './components/Layout';
 const DataPage = React.lazy(() => import('./pages/DataPage/DataPage'));
-import OverviewPage from './pages/OverviewPage/OverviewPage';
+const OverviewPage = React.lazy(() => import('./pages/OverviewPage/OverviewPage'));
 const ChainPage = React.lazy(() => import('./pages/ChainPage/ChainPage'));
 const PaymentPage = React.lazy(() => import('./pages/PaymentPage/PaymentPage'));
 const CreativePage = React.lazy(() => import('./pages/CreativePage/CreativePage'));

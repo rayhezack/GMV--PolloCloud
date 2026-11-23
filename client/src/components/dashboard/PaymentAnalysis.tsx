@@ -34,6 +34,7 @@ import {
   type PaymentEntity,
   type PaymentGrouping,
   type RevenueScope,
+  costRatioRelativeChange,
 } from './payment-analysis.data';
 import type {
   AppDeviceType,
@@ -297,6 +298,33 @@ export default function PaymentAnalysis({
   const [shareSelected, setShareSelected] = useState<string | null>(null);
   const [registrationLayer, setRegistrationLayer] = useState<string | null>(null);
   const [registrationDimension, setRegistrationDimension] = useState<RegistrationDimension>('userLifecycle');
+  const [registrationData, setRegistrationData] = useState<PaymentAnalysisResponse | null>(null);
+  const [registrationError, setRegistrationError] = useState(false);
+  useEffect(() => {
+    setRegistrationData(null);
+    setRegistrationError(false);
+    if (!detailOpen || !selected || mode !== 'NONE' || grouping !== 'payType') return;
+    let live = true;
+    void getPaymentAnalysis({
+      platform,
+      deviceType,
+      baselinePeriod,
+      analysisPeriod,
+      attributionType: mode,
+      registrationPayType: selected,
+      cacheBust: refreshToken || retry || undefined,
+    })
+      .then((result) => {
+        if (live) setRegistrationData(result);
+      })
+      .catch(() => {
+        if (live) setRegistrationError(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, [detailOpen, selected, mode, grouping, platform, deviceType, baselinePeriod, analysisPeriod, refreshToken, retry]);
+
   const [showInsight, setShowInsight] = useState(false);
   const update = (updates: Record<string, string | undefined>) =>
     setParams(
@@ -365,8 +393,10 @@ export default function PaymentAnalysis({
       entityLabel(r.key).toLowerCase().includes(query.trim().toLowerCase()),
     );
     return [...items].sort((a, b) => {
-      const x = a[sort.key],
-        y = b[sort.key];
+      const x =
+          sort.key === 'cost' ? a.costChangeRate : sort.key === 'costRatio' ? costRatioRelativeChange(a) : a[sort.key],
+        y =
+          sort.key === 'cost' ? b.costChangeRate : sort.key === 'costRatio' ? costRatioRelativeChange(b) : b[sort.key];
       if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1;
       return (sort.descending ? y - x : x - y) || a.key.localeCompare(b.key);
     });
@@ -409,6 +439,10 @@ export default function PaymentAnalysis({
     ? [...(costView?.items || [])].sort((a, b) => (b.cost || 0) - (a.cost || 0))
     : [...(view?.items || [])].sort((a, b) => b.gmv - a.gmv);
   const [costPeriod, setCostPeriod] = useState('month');
+  const observedThrough = data?.revenues
+    .map((row) => row.period)
+    .sort()
+    .at(-1);
   const [costHistory, setCostHistory] = useState<import('@shared/api.interface').PaymentTrendResponse | null>(null);
   const [historyError, setHistoryError] = useState(false);
   const [historyRetry, setHistoryRetry] = useState(0);
@@ -416,8 +450,13 @@ export default function PaymentAnalysis({
     let active = true;
     setCostHistory(null);
     setHistoryError(false);
-    const endDate = new Date(Date.parse(analysisPeriod + 'T00:00:00Z') + 6 * 86400000).toISOString().slice(0, 10);
-    const startDate = new Date(Date.parse(endDate + 'T00:00:00Z') - 89 * 86400000).toISOString().slice(0, 10);
+    if (!showCosts && !detailOpen) return;
+    const weekEnd = new Date(Date.parse(analysisPeriod + 'T00:00:00Z') + 6 * 86400000).toISOString().slice(0, 10);
+    const endDate = [weekEnd, observedThrough || weekEnd].sort()[0];
+    const offset = Math.abs(Date.parse(analysisPeriod) - Date.parse(baselinePeriod)) / 86400000;
+    const startDate = new Date(Date.parse(endDate + 'T00:00:00Z') - (29 + offset) * 86400000)
+      .toISOString()
+      .slice(0, 10);
     void getPaymentTrend({
       platform,
       deviceType,
@@ -439,7 +478,20 @@ export default function PaymentAnalysis({
     return () => {
       active = false;
     };
-  }, [platform, deviceType, analysisPeriod, mode, scope, grouping, refreshToken, historyRetry]);
+  }, [
+    platform,
+    deviceType,
+    analysisPeriod,
+    baselinePeriod,
+    observedThrough,
+    mode,
+    scope,
+    grouping,
+    refreshToken,
+    historyRetry,
+    showCosts,
+    detailOpen,
+  ]);
   const monthTrend = useMemo(
     () => (costHistory && selected ? paymentMonthTrend(costHistory, selected, baselinePeriod, analysisPeriod) : null),
     [costHistory, selected, baselinePeriod, analysisPeriod],
@@ -447,11 +499,13 @@ export default function PaymentAnalysis({
   const costDaily = useMemo(() => {
     if (!data?.costAvailable) return [];
     if (costHistory)
-      return costHistory.points.flatMap((p) =>
-        p.gmvUsd != null && p.modelCostUsd != null
-          ? [{ date: p.period, inflow: p.gmvUsd, outflow: p.modelCostUsd }]
-          : [],
-      );
+      return costHistory.points
+        .filter((p) => p.period >= new Date(Date.parse(costHistory.endDate) - 29 * 86400000).toISOString().slice(0, 10))
+        .flatMap((p) =>
+          p.gmvUsd != null && p.modelCostUsd != null
+            ? [{ date: p.period, inflow: p.gmvUsd, outflow: p.modelCostUsd }]
+            : [],
+        );
     const points = new Map<string, { date: string; inflow: number; outflow: number }>();
     const point = (date: string) => {
       if (!points.has(date)) points.set(date, { date, inflow: 0, outflow: 0 });
@@ -550,13 +604,18 @@ export default function PaymentAnalysis({
   }, [data, selected, grouping, scope, analysisPeriod, baselinePeriod]);
   const detailContributions = changeContributions(detailTypes);
   const registrationRows = useMemo(
-    () => (data && selected ? registrationBreakdown(data, selected, registrationDimension) : null),
-    [data, selected, registrationDimension],
+    () =>
+      registrationData && selected ? registrationBreakdown(registrationData, selected, registrationDimension) : null,
+    [registrationData, selected, registrationDimension],
   );
   const registrationContributions = changeContributions(registrationRows ?? []);
 
   return (
-    <div className="payment-bento" aria-busy={loading}>
+    <div
+      className="payment-bento"
+      aria-busy={loading}
+      data-dashboard-ready={!loading && Boolean(data?.revenues.length) && !error}
+    >
       <Tabs value={mode} onValueChange={(value) => update({ attributionType: value, groupBy: undefined })}>
         <div className="payment-bento-toolbar">
           <Segment
@@ -846,31 +905,33 @@ export default function PaymentAnalysis({
                         ? [
                             {
                               key: 'cost',
-                              header: header('模型成本', 'cost'),
+                              header: header('模型成本变化', 'cost'),
                               numeric: true,
                               minWidth: 130,
                               render: (r: PaymentEntity & { kind?: string }) => (
-                                <div className="payment-cell-stack">
-                                  {r.cost == null ? '—' : money(r.cost)}
+                                <span
+                                  title={`基准期 ${r.baselineCost == null ? '—' : money(r.baselineCost)}；分析期 ${r.cost == null ? '—' : money(r.cost)}`}
+                                >
                                   <DeltaBadge value={r.costChangeRate} />
-                                </div>
+                                </span>
                               ),
                             },
                             {
                               key: 'costRatio',
                               header: (
                                 <span className="payment-ratio-heading">
-                                  {header('成本 / GMV', 'costRatio')}
+                                  {header('成本占比变化', 'costRatio')}
                                   <CostInfo />
                                 </span>
                               ),
                               numeric: true,
                               minWidth: 120,
                               render: (r: PaymentEntity & { kind?: string }) => (
-                                <div className="payment-cell-stack">
-                                  {percent(r.costRatio)}
-                                  <DeltaBadge value={r.costRatioChange} unit="pp" />
-                                </div>
+                                <span
+                                  title={`成本 / GMV 相对变化；基准期 ${percent(r.baselineCost != null && r.baseline !== 0 ? r.baselineCost / r.baseline : null)}；分析期 ${percent(r.costRatio)}`}
+                                >
+                                  <DeltaBadge value={costRatioRelativeChange(r)} />
+                                </span>
                               ),
                             },
                           ]
@@ -1108,13 +1169,17 @@ export default function PaymentAnalysis({
                             />
                           ) : (
                             <p role="status">
-                              {data.registrationStatus === 'table_missing'
-                                ? '注册明细 D1 表缺失，无法下钻；请检查数据同步。'
-                                : data.registrationStatus === 'source_missing'
-                                  ? '所选日期缺少支付订单注册明细，无法下钻；请检查数据同步。'
-                                  : data.source === 'legacy'
-                                    ? '历史口径没有可核对的注册明细，无法下钻。'
-                                    : '此付费类型的注册明细缺失或与归因表按日金额不一致，无法下钻；请核对数据源。'}
+                              {registrationError
+                                ? '付费下钻读取失败，请关闭后重试。'
+                                : !registrationData
+                                  ? '正在读取付费下钻…'
+                                  : registrationData.registrationStatus === 'table_missing'
+                                    ? '注册明细 D1 表缺失，无法下钻；请检查数据同步。'
+                                    : registrationData.registrationStatus === 'source_missing'
+                                      ? '所选日期缺少支付订单注册明细，无法下钻；请检查数据同步。'
+                                      : data.source === 'legacy'
+                                        ? '历史口径没有可核对的注册明细，无法下钻。'
+                                        : '此付费类型的注册明细缺失或与归因表按日金额不一致，无法下钻；请核对数据源。'}
                             </p>
                           )}
                           {registrationRows && (

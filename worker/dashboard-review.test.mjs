@@ -22,7 +22,9 @@ function fixture() {
   const db = new DatabaseSync(':memory:');
   db.exec(`CREATE TABLE pollo_da_chain_funnel(period TEXT,week_start TEXT,platform TEXT,device_type TEXT,country_tier TEXT,user_lifecycle TEXT,creation_cnt_30d_label TEXT,active_uv REAL,paywall_expose_uv REAL,paywall_submit_uv REAL,pay_uv REAL,gmv_usd REAL,pay_fail_order_cnt REAL,pay_fail_amount_usd REAL);
  CREATE TABLE pollo_da_chain_breakdown(period TEXT,week_start TEXT,platform TEXT,device_type TEXT,user_lifecycle TEXT,creation_cnt_30d_label TEXT,breakdown_type TEXT,breakdown_value TEXT,expose_uv REAL,submit_uv REAL,pay_uv REAL,gmv_usd REAL);
- CREATE TABLE pollo_da_fact_rows_read(period TEXT,week_start TEXT,platform TEXT,device_type TEXT,dataset TEXT,dataset_kind TEXT,attribution_type TEXT,pay_category TEXT,pay_type TEXT,gmv_usd REAL,function_name TEXT,user_tag TEXT,subscription_tier TEXT,attribution_name TEXT,actual_supplier TEXT,actual_provider TEXT,model_cost_usd REAL);`);
+ CREATE TABLE pollo_da_fact_rows(period TEXT,week_start TEXT,platform TEXT,device_type TEXT,dataset TEXT,dataset_kind TEXT,attribution_type TEXT,pay_category TEXT,pay_type TEXT,gmv_usd REAL,function_name TEXT,user_tag TEXT,subscription_tier TEXT,attribution_name TEXT,actual_supplier TEXT,actual_provider TEXT,model_cost_usd REAL);`);
+  const cols = db.prepare('PRAGMA table_info(pollo_da_fact_rows)').all().map(c => c.name);
+  db.exec(`CREATE VIEW pollo_da_fact_rows_read AS SELECT * FROM pollo_da_fact_rows UNION ALL SELECT ${cols.map(c => c === 'platform' ? "CASE WHEN device_type='web' THEN 'web' ELSE 'app' END AS platform" : c).join(',')} FROM pollo_da_fact_rows WHERE platform='all' AND device_type IN ('web','ios','android')`);
   const prepare = (sql) => {
     const st = db.prepare(sql);
     const bound = (args = []) => ({
@@ -129,7 +131,7 @@ test('payment trends use the latest source date, preserve missing days and never
     ['2026-11-05', 'MODEL'],
   ])
     db.prepare(
-      'INSERT INTO pollo_da_fact_rows_read(period,week_start,platform,dataset,dataset_kind,attribution_type,pay_category,pay_type,gmv_usd) VALUES(?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO pollo_da_fact_rows(period,week_start,platform,dataset,dataset_kind,attribution_type,pay_category,pay_type,gmv_usd) VALUES(?,?,?,?,?,?,?,?,?)',
     ).run(date, '2026-10-31', 'all', 'pay_type', 'daily', kind, 'ACTIVE_PAYMENT', '首订', 100);
   const p = { platform: 'all', analysisPeriod: '2026-10-31' };
   const data = await (await paymentTrend(env, request(p))).json();

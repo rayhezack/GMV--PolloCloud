@@ -354,3 +354,6 @@
 .payment-investment-chart [data-slot='investment-performance-chart-grid-column'] { stroke-dasharray: 3 4; }
 .payment-investment-chart [data-slot='investment-performance-chart-tooltip'] .typo-label-02-regular,
 .payment-investment-chart [data-slot='investment-performance-chart-tooltip'] .typo-label-03-medium { font-size: 12px; line-height: 1.4; }
+
+/* Keep entity labels at the same compact row height as the other attribution modes. */
+.payment-table-content .payment-entity-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

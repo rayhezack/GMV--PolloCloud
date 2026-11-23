@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { homeBuckets, homeValue } from './home-data.ts';
+import { homeBuckets, homeValue, homeCalendarWindow } from './home-data.ts';
 const p = (period, expireUserCnt, renewUserCnt) => ({
   period,
   expireUserCnt,
@@ -27,4 +27,19 @@ test('missing renewal data or zero eligible users never becomes a zero rate', ()
       homeBuckets([p('2026-10-24', 0, 0)], 'renewalRate', false, '2026-10-24', '2026-10-24', 'day')[0].value,
     ),
   );
+});
+
+test('calendar defaults to a quarter independently of the trend and follows an explicitly chosen range', () => {
+  assert.deepEqual(homeCalendarWindow('2026-10-06', '2026-11-04', false), {
+    startDate: '2026-08-07',
+    endDate: '2026-11-04',
+  });
+  assert.deepEqual(homeCalendarWindow('2026-07-05', '2026-11-04', true), {
+    startDate: '2026-07-05',
+    endDate: '2026-11-04',
+  });
+  assert.deepEqual(homeCalendarWindow('2026-10-28', '2026-11-04', true), {
+    startDate: '2026-10-28',
+    endDate: '2026-11-04',
+  });
 });

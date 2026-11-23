@@ -1,3 +1,6 @@
+import { readDataCoverage, coverageQuery } from './data-coverage';
+import type { DashboardPlatform } from '../shared/api.interface';
+import { DAILY_DATASETS, type DailyDataset } from '../shared/daily-data';
 import { readDailyData } from './daily-data';
 import { comparisonParams, readChainComparison } from './chain-comparison';
 import { advanceDailyRefresh, RefreshPausedError, type RefreshBatch } from './daily-refresh';
@@ -152,7 +155,7 @@ async function cachedDashboardResponse(env: Env, request: Request, context: { wa
   const url = new URL(request.url);
   url.searchParams.delete('cacheBust');
   url.searchParams.sort();
-  const version = url.pathname === '/api/dashboard/chain-funnel' ? 'v13-chain-day' : url.pathname === '/api/dashboard/attributions' ? 'v9-lmdi' : url.pathname === '/api/dashboard/payment-analysis' ? 'v8-single-payment-facts' : url.pathname === '/api/dashboard/creative-overview' ? 'v9-creative-history' : url.pathname === '/api/dashboard/overview' ? 'v8' : url.pathname === '/api/dashboard/ads-overview' ? 'v6-ads-lazy' : url.pathname === '/api/dashboard/gmv-anomalies' ? 'v4-anomaly-calendar' : url.pathname === '/api/dashboard/payment-trend' ? 'v4-observed-month' : 'v3';
+  const version = url.pathname === '/api/dashboard/chain-funnel' ? 'v13-chain-day' : url.pathname === '/api/dashboard/attributions' ? 'v9-lmdi' : url.pathname === '/api/dashboard/payment-analysis' ? 'v9-bounded-calendar' : url.pathname === '/api/dashboard/creative-overview' ? 'v10-creative-summary' : url.pathname === '/api/dashboard/overview' ? 'v9-bounded-renewal' : url.pathname === '/api/dashboard/ads-overview' ? 'v6-ads-lazy' : url.pathname === '/api/dashboard/gmv-anomalies' ? 'v4-anomaly-calendar' : url.pathname === '/api/dashboard/payment-trend' ? 'v5-indexed-boundary' : 'v3';
   const key = `${version}:${url.pathname}?${url.searchParams}`;
   const isCacheablePayload = (payload: string) => {
     if (!['/api/dashboard/chain-funnel','/api/dashboard/creative-overview','/api/dashboard/ads-overview'].includes(url.pathname)) return true;
@@ -1038,7 +1041,7 @@ async function overview(env: Env, request: Request) {
     const periods = groupByPeriod(pay, granularity);
     const points = payTrend(pay.map(row => ({ ...row, period: trendPeriod(row, granularity) })), periods, days);
     if (url.searchParams.get('includeRenewal') === 'true') {
-      const records = renewalPlatformRows(await dailyRows(env, 'renewal_daily', { platform, startDate, endDate }), platform, deviceType);
+      const records = renewalPlatformRows(await queryRows(env, `SELECT period,week_start,platform_type,SUM(expire_user_cnt) AS expire_user_cnt,SUM(renew_user_cnt) AS renew_user_cnt,SUM(renew_amount_usd) AS renew_amount_usd FROM pollo_da_fact_rows WHERE dataset='renewal' AND platform=? AND period BETWEEN ? AND ? GROUP BY period,week_start,platform_type`, platform,startDate,endDate), platform, deviceType);
       return json({ trend: [], payTypeTrend: points.map(point => {
         const group = records.filter(row => trendPeriod(row, granularity) === point.period);
         const totals = sumRenewal(group);
@@ -1308,7 +1311,8 @@ async function paymentTrend(env: Env, request: Request) {
   if (!DASHBOARD_PLATFORMS.has(platform) || !GMV_ATTRIBUTION_TYPES.includes(attributionType) || !['day','week','month','year'].includes(granularity) || !['ALL','ACTIVE_PAYMENT','AUTO_RENEWAL','API'].includes(income)) return errorResponse('趋势筛选无效');
   if (deviceType && (platform !== 'app' || !['ios','android'].includes(deviceType))) return errorResponse('设备筛选无效');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(analysis) || Number.isNaN(Date.parse(analysis))) return errorResponse('业务周无效');
-  const watermark = await queryRows(env, `SELECT MAX(period) AS latest FROM pollo_da_fact_rows_read WHERE dataset='pay_type' AND dataset_kind='daily' AND platform=? AND (attribution_type=? OR (?='NONE' AND attribution_type IS NULL))${deviceType ? ' AND device_type=?' : ''}`, platform, attributionType, attributionType, ...(deviceType ? [deviceType] : []));
+  const boundary = coverageQuery('pay_type', platform as DashboardPlatform, deviceType, attributionType);
+  const watermark = await queryRows(env, `SELECT period AS latest FROM ${boundary.table} WHERE ${boundary.where} ORDER BY period DESC LIMIT 1`, ...boundary.binds);
   const latest = asText(watermark[0]?.latest);
   if (!latest) return json({ granularity, startDate: '', endDate: '', points: [], series: [] });
   const endDate = [p.get('endDate') || latest, latest].sort()[0];
@@ -1404,14 +1408,17 @@ async function paymentAnalysis(env: Env, request: Request) {
   const attributionType = (url.searchParams.get('attributionType') || 'NONE') as GmvAttributionType;
   const baseline = url.searchParams.get('baselinePeriod') || '';
   const analysis = url.searchParams.get('analysisPeriod') || '';
+  const registrationPayType = url.searchParams.get('registrationPayType');
   if (!DASHBOARD_PLATFORMS.has(platform)) return errorResponse('请选择有效的端类型');
   if (deviceType && (platform !== 'app' || !['ios','android'].includes(deviceType))) return errorResponse('设备筛选只支持 App 的 iOS 或 Android');
   if (!GMV_ATTRIBUTION_TYPES.includes(attributionType)) return errorResponse('归因模式无效');
   if (![baseline, analysis].every((value) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))) || baseline === analysis) return errorResponse('请选择两个不同的有效业务周');
   const startDate = [baseline, analysis].sort()[0];
   const endDate = shiftDate([baseline, analysis].sort()[1], 6);
-  const canonical = (await dailyRows(env, 'pay_type_daily', { platform, startDate, endDate, deviceType }))
-    .filter((row) => [baseline,analysis].includes(asText(row.week_start)));
+  const canonical = await queryRows(env, `SELECT period,week_start,attribution_type,metric_version FROM pollo_da_fact_rows_read
+    WHERE dataset='pay_type' AND platform=? AND period BETWEEN ? AND ? AND week_start IN (?,?)
+      AND (attribution_type IS NULL OR (attribution_type='NONE' AND pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL','API') AND pay_type<>'汇总'))
+      ${deviceType ? 'AND device_type=?' : ''} GROUP BY period,week_start,attribution_type,metric_version`, platform,startDate,endDate,baseline,analysis,...(deviceType ? [deviceType] : []));
   const hasBothWeeks = [baseline, analysis].every((week) => canonical.some((row) => asText(row.week_start) === week));
   const comparison = hasBothWeeks ? buildComparison(alignComparisonWeekdays(canonical, baseline, analysis), startDate, endDate, baseline, analysis) : null;
   const legacy = canonical.some((row) => !isAttributedPayRow(row));
@@ -1441,10 +1448,10 @@ async function paymentAnalysis(env: Env, request: Request) {
     costs: costs.map((row) => ({ ...identity(row), modelCostUsd: asNumber(row.model_cost_usd) })),
     costAvailable,
   };
-  if (attributionType === 'NONE' && !legacy && dates.length) {
+  if (registrationPayType && attributionType === 'NONE' && !legacy && dates.length) {
     response.registrationStatus = 'source_missing';
-    const filters = ['period IN (SELECT value FROM json_each(?))'];
-    const binds: unknown[] = [JSON.stringify(dates)];
+    const filters = ['period BETWEEN ? AND ?', 'period IN (SELECT value FROM json_each(?))', 'pay_type=?'];
+    const binds: unknown[] = [startDate,endDate,JSON.stringify(dates),registrationPayType];
     if (platform !== 'all') { filters.push('platform=?'); binds.push(platform); }
     if (deviceType) { filters.push('device_type=?'); binds.push(deviceType); }
     try {
@@ -1817,7 +1824,7 @@ async function adsOverview(env: Env, request: Request): Promise<Response> {
       trend, channels, countries, cohortMatrix: matrixRows, countryDetails, observedThrough: asOf, comparisonDates: {analysis: [...new Set(currentRows.map(row=>asText(row.period)))], baseline: [...new Set(baselineRows.map(row=>asText(row.period)))]},
     } satisfies AdsOverviewResponse);
   } catch {
-    return json(unavailable());
+    return errorResponse('广告数据读取失败，请重试', 503);
   }
 }
 
@@ -1850,9 +1857,10 @@ async function creativeOverview(env: Env, request: Request): Promise<Response> {
   const unavailable = (): CreativeOverviewResponse => ({ ready: false, source: 'unavailable', comparison: null, trend: [], functions: [] });
   if (!DASHBOARD_PLATFORMS.has(platform) || ![startDate, endDate, baselinePeriod, analysisPeriod].every((value) => /^\d{4}-\d{2}-\d{2}$/u.test(value))) return errorResponse('创作侧比较窗口无效');
   try {
+    const summaryOnly = url.searchParams.get('view') === 'summary';
     const platformCondition = deviceType ? ' AND platform_type = ?' : platform === 'all' ? " AND platform_type = '汇总'" : platform === 'web' ? ' AND platform_type = ?' : " AND platform_type IN ('IOS', 'ANDROID')";
     const platformBind = deviceType ? [deviceType.toUpperCase()] : platform === 'web' ? ['WEB'] : [];
-    const validTaskColumns = await Promise.all(['overall', 'function'].map(kind => queryRows(env, `PRAGMA table_info(pollo_da_creation_${kind}_daily)`)));
+    const validTaskColumns = await Promise.all((summaryOnly ? ['overall'] : ['overall', 'function']).map(kind => queryRows(env, `PRAGMA table_info(pollo_da_creation_${kind}_daily)`)));
     const validTasksSql = (index: number) => validTaskColumns[index].some(row => row.name === 'valid_creation_task_cnt') ? 'CASE WHEN COUNT(valid_creation_task_cnt) = COUNT(*) THEN SUM(valid_creation_task_cnt) ELSE NULL END' : 'NULL';
     const overallRows = await queryRows(env, `SELECT period, week_start, platform_type, SUM(creation_task_cnt) AS creation_task_cnt, SUM(creation_user_cnt) AS creation_user_cnt, SUM(success_task_cnt) AS success_task_cnt, SUM(success_output_cnt) AS success_output_cnt, SUM(adopted_task_cnt) AS adopted_task_cnt, SUM(adopted_output_cnt) AS adopted_output_cnt, CASE WHEN COUNT(d3_creation_user_cnt) = COUNT(*) THEN SUM(d3_creation_user_cnt) ELSE NULL END AS d3_creation_user_cnt, CASE WHEN COUNT(d7_creation_user_cnt) = COUNT(*) THEN SUM(d7_creation_user_cnt) ELSE NULL END AS d7_creation_user_cnt, CASE WHEN COUNT(d30_creation_user_cnt) = COUNT(*) THEN SUM(d30_creation_user_cnt) ELSE NULL END AS d30_creation_user_cnt, ${validTasksSql(0)} AS valid_creation_task_cnt, SUM(gmv_usd) AS gmv_usd FROM pollo_da_creation_overall_daily WHERE period BETWEEN ? AND ?${platformCondition} GROUP BY period, week_start, platform_type ORDER BY period`, startDate, endDate, ...platformBind);
     if (!overallRows.length) return json(unavailable());
@@ -1882,7 +1890,7 @@ async function creativeOverview(env: Env, request: Request): Promise<Response> {
     const functionGroups = new Map<string, D1Row[]>();
     // Bound each database result: an annual function query exceeds D1's result
     // size limit even though all of its daily partitions are present.
-    for (let first = startDate; first <= endDate; first = shiftDate(first,14)) {
+    for (let first = startDate; !summaryOnly && first <= endDate; first = shiftDate(first,14)) {
       const last = [shiftDate(first,13),endDate].sort()[0];
       const rows = await queryRows(env, `SELECT period, week_start, creation_mode, user_type, pay_gmv_usd_30d, SUM(creation_task_cnt) AS creation_task_cnt, SUM(creation_user_cnt) AS creation_user_cnt, SUM(success_task_cnt) AS success_task_cnt, SUM(success_output_cnt) AS success_output_cnt, SUM(adopted_task_cnt) AS adopted_task_cnt, SUM(adopted_output_cnt) AS adopted_output_cnt, CASE WHEN COUNT(d3_creation_user_cnt) = COUNT(*) THEN SUM(d3_creation_user_cnt) ELSE NULL END AS d3_creation_user_cnt, CASE WHEN COUNT(d7_creation_user_cnt) = COUNT(*) THEN SUM(d7_creation_user_cnt) ELSE NULL END AS d7_creation_user_cnt, CASE WHEN COUNT(d30_creation_user_cnt) = COUNT(*) THEN SUM(d30_creation_user_cnt) ELSE NULL END AS d30_creation_user_cnt, ${validTasksSql(1)} AS valid_creation_task_cnt, SUM(gmv_usd) AS gmv_usd FROM pollo_da_creation_function_daily WHERE period BETWEEN ? AND ?${platformCondition} GROUP BY period, week_start, creation_mode, user_type, pay_gmv_usd_30d ORDER BY period`, first, last, ...platformBind);
       for (const row of rows) {
@@ -1903,7 +1911,7 @@ async function creativeOverview(env: Env, request: Request): Promise<Response> {
     return json({ ready: true, source: 'pollo_da_creation_chain', comparison: { baselinePeriod, analysisPeriod, periodDays: currentDays, baselinePeriodDays: baselineDays, analysisPeriodDays: currentDays }, trend, functions, observedThrough, comparisonDates: {analysis: [...new Set(currentRows.map(row=>asText(row.period)))], baseline: [...new Set(baselineRows.map(row=>asText(row.period)))]} } satisfies CreativeOverviewResponse);
   } catch (error) {
     console.error('Creation overview read failed',error);
-    return json(unavailable());
+    return errorResponse('创作数据读取失败，请重试', 503);
   }
 }
 
@@ -3455,6 +3463,14 @@ export default {
           // A missing warehouse must be visible; never fetch Base on an interactive read.
           return json({ actions: [], available: false, readAt: new Date().toISOString() });
         }
+      }
+      if (url.pathname === '/api/dashboard/data-coverage' && request.method === 'GET') {
+        const dataset = url.searchParams.get('dataset') || 'pay_type';
+        const platform = url.searchParams.get('platform') || 'all';
+        const deviceType = url.searchParams.get('deviceType') || undefined;
+        if (!Object.prototype.hasOwnProperty.call(DAILY_DATASETS, dataset) || !DASHBOARD_PLATFORMS.has(platform) ||
+          (deviceType && (platform !== 'app' || !['ios','android'].includes(deviceType)))) return errorResponse('数据日期筛选无效');
+        return json(await readDataCoverage(dataset as DailyDataset, platform as DashboardPlatform, deviceType, (sql, ...binds) => queryRows(env, sql, ...binds)));
       }
       if (url.pathname === '/api/dashboard/overview' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => overview(env, request));
       if (url.pathname === '/api/dashboard/gmv-coverage' && request.method === 'GET') return await cachedDashboardResponse(env, request, context, () => gmvCoverage(env));

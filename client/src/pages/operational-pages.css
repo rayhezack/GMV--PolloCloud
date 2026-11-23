@@ -70,6 +70,9 @@
   white-space: nowrap;
   background: var(--surface);
 }
+.operational-page table.ops-feature-table thead tr th {
+  background: var(--surface-sunken);
+}
 .ops-feature-table th {
   font-weight: 500;
   color: var(--text-2);

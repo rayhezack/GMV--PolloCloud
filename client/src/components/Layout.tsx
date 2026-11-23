@@ -1,3 +1,5 @@
+import { getDataCoverage } from '@/api/dashboard';
+import { DAILY_DATASETS, type DailyDataset } from '@shared/daily-data';
 import { EyeTracker } from './bencho/EyeTracker';
 import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
@@ -22,6 +24,34 @@ const REPORT_GENERATION_PLATFORMS: Platform[] = ['web', 'app'];
 const SYNC_TICKS = 26;
 const Layout = () => {
   const location = useLocation();
+  // Start the cheap date lookup while the selected page chunk is downloading.
+  useEffect(() => {
+    const p = new URLSearchParams(location.search);
+    const view = dashboardView(location.pathname, location.search).id;
+    const dataset =
+      view === 'ads'
+        ? 'ads'
+        : view === 'creative'
+          ? 'creation_chain'
+          : view === 'chain'
+            ? p.get('chainType') === 'renewal'
+              ? 'renewal'
+              : 'chain'
+            : view === 'details'
+              ? p.get('dataset') || 'pay_type'
+              : view === 'trend' || view === 'payment'
+                ? 'pay_type'
+                : '';
+    if (!Object.prototype.hasOwnProperty.call(DAILY_DATASETS, dataset)) return;
+    const platform = p.get('platform') === 'app' ? 'app' : p.get('platform') === 'web' ? 'web' : 'all';
+    const deviceType =
+      !['ads', 'details'].includes(view) && platform === 'app' && ['ios', 'android'].includes(p.get('deviceType') || '')
+        ? (p.get('deviceType') as 'ios' | 'android')
+        : undefined;
+    void getDataCoverage({ dataset: dataset as DailyDataset, platform, deviceType, cacheBust: 0 }).catch(
+      () => undefined,
+    );
+  }, [location.pathname, location.search]);
   useEffect(() => {
     const header = document.querySelector('.dashboard-content > .dashboard-heading');
     if (!header) return;
@@ -147,18 +177,24 @@ const Layout = () => {
     let cancelled = false;
     let timer: number | undefined;
     const refreshGenerationJobs = async () => {
+      let active = false;
       try {
         const latestJobs = await Promise.all(
           REPORT_GENERATION_PLATFORMS.map((item) => getLatestReportGeneration(item)),
         );
+        active = latestJobs.some((job) => job && ['queued', 'running', 'waiting'].includes(job.status));
         if (!cancelled) setJobs(latestJobs.filter((job): job is ReportGenerationStatus => Boolean(job)));
       } catch {
         if (cancelled) return;
       } finally {
-        if (!cancelled) timer = window.setTimeout(refreshGenerationJobs, REPORT_GENERATION_KEEPALIVE_INTERVAL_MS);
+        if (!cancelled)
+          timer = window.setTimeout(
+            refreshGenerationJobs,
+            active && document.visibilityState === 'visible' ? REPORT_GENERATION_KEEPALIVE_INTERVAL_MS : 60_000,
+          );
       }
     };
-    void refreshGenerationJobs();
+    timer = window.setTimeout(refreshGenerationJobs, 1000);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
@@ -170,16 +206,19 @@ const Layout = () => {
     let cancelled = false;
     let timer: number | undefined;
     const refresh = async () => {
+      let active = false;
       try {
         const job = await getLatestSyncRun();
+        active = Boolean(job && ['queued', 'running', 'pausing'].includes(job.status));
         if (!cancelled) setSyncJob(job);
       } catch {
         /* The dock keeps its last known state until the next poll. */
       } finally {
-        if (!cancelled) timer = window.setTimeout(refresh, 3000);
+        if (!cancelled)
+          timer = window.setTimeout(refresh, active && document.visibilityState === 'visible' ? 3000 : 60_000);
       }
     };
-    void refresh();
+    timer = window.setTimeout(refresh, 1000);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
@@ -201,9 +240,10 @@ const Layout = () => {
       results.forEach((result) => {
         if (result.status === 'fulfilled') trackDaily(result.value);
       });
-      timer = window.setTimeout(refresh, 5000);
+      const active = dailyJobsRef.current.some((job) => ['queued', 'running', 'waiting'].includes(job.status));
+      timer = window.setTimeout(refresh, active && document.visibilityState === 'visible' ? 5000 : 60_000);
     };
-    void refresh();
+    timer = window.setTimeout(refresh, 1000);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
@@ -315,17 +355,17 @@ const Layout = () => {
       >
         {DASHBOARD_VIEWS.map((view) => (
           <Fragment key={view.id}>
-          {view.id === 'report' && <span className="dock-group-divider" role="separator" aria-label="诊断与管理" />}
-          <Link
-            to={dashboardHref(view.id, location.search)}
-            className="dock-link"
-            aria-current={currentView.id === view.id ? 'page' : undefined}
-            onMouseDown={(event) => event.currentTarget.blur()}
-          >
-            <span className="dock-label">{view.label}</span>
-            <WorkbenchIcon name={view.icon} active={currentView.id === view.id} />
-            {currentView.id === view.id ? <i aria-hidden="true" /> : null}
-          </Link>
+            {view.id === 'report' && <span className="dock-group-divider" role="separator" aria-label="诊断与管理" />}
+            <Link
+              to={dashboardHref(view.id, location.search)}
+              className="dock-link"
+              aria-current={currentView.id === view.id ? 'page' : undefined}
+              onMouseDown={(event) => event.currentTarget.blur()}
+            >
+              <span className="dock-label">{view.label}</span>
+              <WorkbenchIcon name={view.icon} active={currentView.id === view.id} />
+              {currentView.id === view.id ? <i aria-hidden="true" /> : null}
+            </Link>
           </Fragment>
         ))}
         <button

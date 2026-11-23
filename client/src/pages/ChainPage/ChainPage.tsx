@@ -7,9 +7,7 @@ import './chain.css';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { getChainComparison, type ChainComparison } from '@/api/chain-comparison';
-import { LOCAL_DATA_WINDOW } from '@/lib/local-data-window';
-import { STATIC_DEMO_MODE } from '@/lib/demo-data';
-import { getLatestSyncRun } from '@/api/sync';
+import { useDataCoverage } from '@/components/system/useDataCoverage';
 import { getBusinessWeekStart } from '@shared/business-week';
 import { preferredFactor } from '@shared/chain-comparison';
 import { Segment, exportCsv } from '@/components/v62/primitives';
@@ -49,19 +47,13 @@ export default function ChainPage() {
     platform === 'app' && ['ios', 'android'].includes(params.get('deviceType') || '')
       ? (params.get('deviceType') as 'ios' | 'android')
       : undefined;
-  const [latest, setLatest] = useState(STATIC_DEMO_MODE ? '2026-10-09' : LOCAL_DATA_WINDOW?.endDate || '');
-  useEffect(() => {
-    if (latest) return;
-    let live = true;
-    void getLatestSyncRun()
-      .then((run) => {
-        if (live && run?.status === 'success') setLatest(run.endDate);
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [latest]);
+  const [revision, setRevision] = useState(0);
+  const {
+    coverage,
+    loading: coverageLoading,
+    error: coverageError,
+  } = useDataCoverage(chainType === 'renewal' ? 'renewal' : 'chain', platform, deviceType, revision);
+  const latest = coverage?.endDate || '';
   const fallback = latest && (mode === 'week' ? getBusinessWeekStart(latest) : latest);
   const analysisKey = mode === 'day' ? 'analysisDate' : 'analysisWeek',
     baselineKey = mode === 'day' ? 'baselineDate' : 'baselineWeek';
@@ -79,8 +71,7 @@ export default function ChainPage() {
       : '';
   const [data, setData] = useState<ChainComparison | null>(null),
     [error, setError] = useState(''),
-    [loading, setLoading] = useState(false),
-    [revision, setRevision] = useState(0);
+    [loading, setLoading] = useState(false);
   const [granularity, setGranularity] = useState<'day' | 'week' | 'month'>('day');
   useEffect(() => {
     if (!analysis || !baseline) return;
@@ -163,7 +154,11 @@ export default function ChainPage() {
     ]);
   };
   return (
-    <div className="v62-page v62-sheet-page chain-page" aria-busy={loading}>
+    <div
+      className="v62-page v62-sheet-page chain-page"
+      aria-busy={loading}
+      data-dashboard-ready={!loading && Boolean(data?.ready) && !error}
+    >
       <PageHeader
         title="支付链路"
         tools={
@@ -203,10 +198,10 @@ export default function ChainPage() {
           </>
         }
       />
-      {loading ? (
+      {coverageLoading || loading ? (
         <PanelState state="loading" />
-      ) : error ? (
-        <PanelState state="error" reason={error} onRetry={() => setRevision((n) => n + 1)} />
+      ) : error || coverageError ? (
+        <PanelState state="error" reason={error || coverageError} onRetry={() => setRevision((n) => n + 1)} />
       ) : !data?.ready ? (
         <>
           <div className="chain-empty-tools">

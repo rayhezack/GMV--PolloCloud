@@ -63,6 +63,7 @@ export default function DailyActivityRail({
   children,
   renderProcess,
   calendarRows,
+  calendarWindow = trendWindow,
   calendarMetric,
   renderHeader,
 }: {
@@ -74,6 +75,7 @@ export default function DailyActivityRail({
   onSelectedDayChange?: (date: string) => void;
   onMonitoringChange?: (value: DashboardGmvAnomalyResponse | null) => void;
   onActionsChange?: (value: ProductActionSource | null) => void;
+  calendarWindow?: { startDate: string; endDate: string };
   calendarRows?: OverviewTrendPoint[];
   calendarMetric?: GmvAnomalyMetric;
   children?: ReactNode;
@@ -289,8 +291,8 @@ export default function DailyActivityRail({
                 new Map([...actionDates].map((date) => [date, filteredActions.filter((a) => a.date === date).length]))
               }
               anomalies={deviceType ? new Set() : anomalyDates}
-              start={trendWindow.startDate}
-              end={trendWindow.endDate}
+              start={calendarWindow.startDate}
+              end={calendarWindow.endDate}
             />
           ) : (
             <div />

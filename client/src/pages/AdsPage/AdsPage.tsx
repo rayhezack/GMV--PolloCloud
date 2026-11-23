@@ -34,6 +34,7 @@ export default function AdsPage() {
     [comparison, setComparison] = useState<AdsOverviewResponse | null>(null),
     [loading, setLoading] = useState(false),
     [error, setError] = useState('');
+  const [comparisonError, setComparisonError] = useState('');
   const [metric, setMetric] = useState<AdsMetric>('clicks'),
     [horizon, setHorizon] = useState<Horizon>('D0'),
     [ltvHorizon, setLtvHorizon] = useState<LtvHorizon>('D0'),
@@ -48,6 +49,9 @@ export default function AdsPage() {
     let live = true;
     setLoading(true);
     setError('');
+    setComparisonError('');
+    setData(null);
+    setComparison(null);
     Promise.all([
       getAdsOverview({
         platform,
@@ -56,6 +60,12 @@ export default function AdsPage() {
         baselinePeriod: weeks.baselineWeek,
         analysisPeriod: weeks.analysisWeek,
         cacheBust: revision,
+      }).then((result) => {
+        if (live) {
+          setData(result);
+          setLoading(false);
+        }
+        return result;
       }),
       getAdsOverview({
         platform,
@@ -64,6 +74,9 @@ export default function AdsPage() {
         baselinePeriod: weeks.baselineWeek,
         analysisPeriod: weeks.analysisWeek,
         cacheBust: revision,
+      }).catch(() => {
+        if (live) setComparisonError('国家对比读取失败，请刷新重试');
+        return null;
       }),
     ])
       .then(([a, b]) => {
@@ -203,10 +216,15 @@ export default function AdsPage() {
     cacheBust: revision,
   };
   return (
-    <div className="v62-page v62-sheet-page operational-page ads-page">
+    <div
+      className="v62-page v62-sheet-page operational-page ads-page"
+      data-dashboard-ready={Boolean(data?.ready) && !error}
+    >
       <OperationalHeader title="付费广告" window={window} loading={loading} />
-      {error ? (
-        <PanelState state="error" reason={error} onRetry={window.refresh} />
+      {error || window.error ? (
+        <PanelState state="error" reason={error || window.error} onRetry={window.refresh} />
+      ) : window.coverageLoading ? (
+        <PanelState state="loading" />
       ) : !data && loading ? (
         <PanelState state="loading" />
       ) : !data?.ready ? (
@@ -334,6 +352,7 @@ export default function AdsPage() {
                 ]}
               />
             </div>
+            {comparisonError && <PanelState state="error" reason={comparisonError} onRetry={window.refresh} />}
             {table ? (
               <DataTable
                 rows={rows}

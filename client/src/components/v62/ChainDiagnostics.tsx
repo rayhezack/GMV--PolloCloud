@@ -197,19 +197,16 @@ export default function ChainDiagnostics({
               {
                 key: 'baseline',
                 minWidth: 150,
-                header: (
-                  <PeriodHeading
-                    label={`基准期${submission ? '提交率' : '提交支付率'}`}
-                    dates={data.comparisonDates?.baseline}
-                    mode={mode}
-                  />
-                ),
+                header: <PeriodHeading label="基准期" dates={data.comparisonDates?.baseline} mode={mode} />,
                 numeric: true,
                 render: (r) => (
-                  <span className="chain-channel-atom">
+                  <span
+                    className="chain-channel-atom"
+                    title={`${metricLabel}：${diagnosticCount(r.baseline.numerator)} / ${diagnosticCount(r.baseline.denominator)}`}
+                  >
                     <b>{r.rate0 == null ? '—' : `${(r.rate0 * 100).toFixed(2)}%`}</b>
                     <small>
-                      {diagnosticCount(r.baseline.numerator)} / {diagnosticCount(r.baseline.denominator)}
+                      {submission ? '曝光结构' : '提交结构'} {(r.w0 * 100).toFixed(2)}%
                     </small>
                   </span>
                 ),
@@ -217,19 +214,16 @@ export default function ChainDiagnostics({
               {
                 key: 'current',
                 minWidth: 150,
-                header: (
-                  <PeriodHeading
-                    label={`分析期${submission ? '提交率' : '提交支付率'}`}
-                    dates={data.comparisonDates?.analysis}
-                    mode={mode}
-                  />
-                ),
+                header: <PeriodHeading label="分析期" dates={data.comparisonDates?.analysis} mode={mode} />,
                 numeric: true,
                 render: (r) => (
-                  <span className="chain-channel-atom">
+                  <span
+                    className="chain-channel-atom"
+                    title={`${metricLabel}：${diagnosticCount(r.current.numerator)} / ${diagnosticCount(r.current.denominator)}`}
+                  >
                     <b>{r.rate1 == null ? '—' : `${(r.rate1 * 100).toFixed(2)}%`}</b>
                     <small>
-                      {diagnosticCount(r.current.numerator)} / {diagnosticCount(r.current.denominator)}
+                      {submission ? '曝光结构' : '提交结构'} {(r.w1 * 100).toFixed(2)}%
                     </small>
                   </span>
                 ),

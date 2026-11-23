@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getLatestSyncRun } from '@/api/sync';
-import { LOCAL_DATA_WINDOW } from '@/lib/local-data-window';
+import { useDataCoverage } from './useDataCoverage';
+import type { CoverageDataset } from '@shared/data-coverage';
 import { getBusinessWeekStart, isValidDateString } from '@shared/business-week';
 import { shiftDay } from '@/components/v62/trend-data';
 import type { DashboardPlatform, AppDeviceType } from '@shared/api.interface';
@@ -9,23 +9,28 @@ import type { DashboardPlatform, AppDeviceType } from '@shared/api.interface';
 /** The monitoring window is independent of each panel's business-week comparison. */
 export function useOperationalWindow(kind: 'creative' | 'ads' | 'details') {
   const [params, setParams] = useSearchParams();
-  const [coverage, setCoverage] = useState(LOCAL_DATA_WINDOW);
   const [revision, setRevision] = useState(0);
-  const [error, setError] = useState('');
-  useEffect(() => {
-    if (coverage) return;
-    let live = true;
-    void getLatestSyncRun()
-      .then((run) => {
-        if (live && run?.status === 'success') setCoverage({ startDate: '2026-01-01', endDate: run.endDate });
-      })
-      .catch(() => {
-        if (live) setError('最新可用日期读取失败');
-      });
-    return () => {
-      live = false;
-    };
-  }, [coverage]);
+  const platform: DashboardPlatform =
+    params.get('platform') === 'web' ? 'web' : params.get('platform') === 'app' ? 'app' : 'all';
+  const deviceType =
+    platform === 'app' && ['ios', 'android'].includes(params.get('deviceType') || '')
+      ? (params.get('deviceType') as AppDeviceType)
+      : undefined;
+  const requestedDataset = params.get('dataset') || 'pay_type';
+  const datasets = ['pay_type', 'chain', 'creative', 'creation_chain', 'renewal', 'ads'];
+  const dataset: CoverageDataset =
+    kind === 'creative'
+      ? 'creation_chain'
+      : kind === 'ads'
+        ? 'ads'
+        : datasets.includes(requestedDataset)
+          ? (requestedDataset as CoverageDataset)
+          : 'pay_type';
+  const {
+    coverage,
+    loading: coverageLoading,
+    error,
+  } = useDataCoverage(dataset, platform, kind === 'creative' ? deviceType : undefined, revision);
   const update = (values: Record<string, string>) =>
     setParams(
       (current) => {
@@ -47,9 +52,6 @@ export function useOperationalWindow(kind: 'creative' | 'ads' | 'details') {
   const endDate = clamp(paramDate(endKey, latest));
   const startDate = endDate ? clamp(paramDate(startKey, shiftDay(endDate, -29))) : '';
   const dateRange = { startDate: startDate > endDate ? endDate : startDate, endDate };
-  const platform: DashboardPlatform =
-    params.get('platform') === 'web' ? 'web' : params.get('platform') === 'app' ? 'app' : 'all';
-  const deviceType = platform === 'app' && ['ios', 'android'].includes(params.get('deviceType') || '') ? params.get('deviceType') as AppDeviceType : undefined;
   const analysis = latest ? getBusinessWeekStart(latest) : '';
   const weeks = (prefix: string) => ({
     analysisWeek: getBusinessWeekStart(paramDate(`${prefix}AnalysisWeek`, analysis || earliest)),
@@ -64,6 +66,7 @@ export function useOperationalWindow(kind: 'creative' | 'ads' | 'details') {
     params,
     update,
     coverage,
+    coverageLoading,
     latest,
     error,
     platform,

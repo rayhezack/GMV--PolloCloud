@@ -24,6 +24,8 @@ import type {
   WorkbookSheet,
 } from '@shared/api.interface';
 
+import type { CoverageDataset, DataCoverage } from '@shared/data-coverage';
+
 const dashboardReads = createRequestCache();
 export function invalidateDashboardCache() { dashboardReads.clear(); }
 
@@ -33,6 +35,11 @@ function readDashboard<T>(url: string): Promise<{ data: T }> {
   params.sort();
   const key = `${path}?${params}`;
   return dashboardReads.read(key, () => apiRequest<T>(url));
+}
+
+export async function getDataCoverage(params: { dataset: CoverageDataset; platform: DashboardPlatform; deviceType?: AppDeviceType; cacheBust?: number }): Promise<DataCoverage | null> {
+  if (STATIC_DEMO_MODE) return { startDate: '2026-01-01', endDate: '2026-10-09' };
+  return (await readDashboard<DataCoverage | null>(`/api/dashboard/data-coverage${buildQueryString(params)}`)).data;
 }
 
 export async function getAdsOverview(params: {
@@ -50,6 +57,7 @@ export async function getAdsOverview(params: {
 }
 
 export async function getCreativeOverview(params: {
+  view?: 'summary';
   platform: DashboardPlatform;
   deviceType?: AppDeviceType;
   startDate: string;
@@ -103,6 +111,7 @@ export async function getPaymentAnalysis(params: {
   analysisPeriod: string;
   attributionType: GmvAttributionType;
   cacheBust?: number;
+  registrationPayType?: string;
 }): Promise<PaymentAnalysisResponse> {
   if(STATIC_DEMO_MODE) return {attributionType:params.attributionType,source:'ads_v1',availableAttributionTypes:['NONE','CREATION_MODE','MODEL','ACTUAL_MODEL'],comparison:null,revenues:[],costs:[],costAvailable:false,registrationStatus:'source_missing'};
   const response = await readDashboard<PaymentAnalysisResponse>(`/api/dashboard/payment-analysis${buildQueryString(params)}`);

@@ -12,7 +12,21 @@ export async function readDailyData(
 ) {
   const params = dailyDataParams(search);
   let rows: Row[];
-  if (params.dataset === 'ads') {
+  if (params.dataset === 'pay_type') {
+    // The table exposes payment-result dimensions only. Aggregate hidden SKU /
+    // attribution dimensions in SQL; never transport fields_json to paginate.
+    rows = await query(
+      `SELECT period,platform,device_type,pay_category,pay_type,
+      CASE WHEN COUNT(order_equivalent)=COUNT(*) THEN SUM(order_equivalent) ELSE NULL END AS order_equivalent,
+      CASE WHEN COUNT(gmv_usd)=COUNT(*) THEN SUM(gmv_usd) ELSE NULL END AS gmv_usd
+      FROM pollo_da_fact_rows_read WHERE dataset='pay_type' AND dataset_kind='daily' AND platform=? AND period BETWEEN ? AND ?
+      AND (attribution_type IS NULL OR (attribution_type='NONE' AND pay_category IN ('ACTIVE_PAYMENT','AUTO_RENEWAL','API') AND pay_type<>'汇总'))
+      GROUP BY period,platform,device_type,pay_category,pay_type`,
+      params.platform,
+      params.startDate,
+      params.endDate,
+    );
+  } else if (params.dataset === 'ads') {
     rows = await query(
       `SELECT period,platform,channel,country,cost_usd,impressions,clicks,register_user_cnt,gmv_d0,gmv_d14,gmv_d30,gmv_d60,gmv_d90,gmv_d180 FROM pollo_da_ads_daily WHERE period BETWEEN ? AND ?${params.platform === 'all' ? '' : ' AND LOWER(platform)=?'}`,
       params.startDate,

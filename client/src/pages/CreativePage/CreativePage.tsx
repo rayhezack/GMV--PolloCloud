@@ -39,6 +39,9 @@ export default function CreativePage() {
     [tiers, setTiers] = useState<DashboardAttributionsResponse | null>(null),
     [loading, setLoading] = useState(false),
     [error, setError] = useState('');
+  const [tierError, setTierError] = useState('');
+  const [functionsLoading, setFunctionsLoading] = useState(false);
+  const [functionsError, setFunctionsError] = useState('');
   const [metric, setMetric] = useState('creationUserCnt'),
     [granularity, setGranularity] = useState<'day' | 'week' | 'month'>('day'),
     [horizon, setHorizon] = useState('3');
@@ -53,41 +56,41 @@ export default function CreativePage() {
     let live = true;
     setLoading(true);
     setError('');
-    Promise.all([
-      getCreativeOverview({
-        platform,
-        deviceType,
-        startDate: [shiftDay(dateRange.startDate, -7), featureWeeks.baselineWeek, featureWeeks.analysisWeek].sort()[0],
-        endDate: [dateRange.endDate, shiftDay(featureWeeks.analysisWeek, 6), shiftDay(featureWeeks.baselineWeek, 6)]
-          .sort()
-          .at(-1)!,
-        baselinePeriod: featureWeeks.baselineWeek,
-        analysisPeriod: featureWeeks.analysisWeek,
-        cacheBust: revision,
-      }),
-      getDashboardAttributions({
-        platform,
-        deviceType,
-        granularity: 'week',
-        dimension: 'creative',
-        startDate: [tierWeeks.baselineWeek, tierWeeks.analysisWeek].sort()[0],
-        endDate: shiftDay([tierWeeks.baselineWeek, tierWeeks.analysisWeek].sort().at(-1)!, 6),
-        baselinePeriod: tierWeeks.baselineWeek,
-        analysisPeriod: tierWeeks.analysisWeek,
-        cacheBust: revision,
-      }),
-    ])
-      .then(([c, t]) => {
-        if (live) {
-          setChain(c);
-          setTiers(t);
+    setFunctionsLoading(true);
+    setFunctionsError('');
+    const request = {
+      platform,
+      deviceType,
+      startDate: [shiftDay(dateRange.startDate, -7), featureWeeks.baselineWeek, featureWeeks.analysisWeek].sort()[0],
+      endDate: [dateRange.endDate, shiftDay(featureWeeks.analysisWeek, 6), shiftDay(featureWeeks.baselineWeek, 6)]
+        .sort()
+        .at(-1)!,
+      baselinePeriod: featureWeeks.baselineWeek,
+      analysisPeriod: featureWeeks.analysisWeek,
+      cacheBust: revision,
+    };
+    void getCreativeOverview({ ...request, view: 'summary' })
+      .then(async (summary) => {
+        if (!live) return;
+        setChain(summary);
+        setLoading(false);
+        if (!summary.ready) return;
+        try {
+          const full = await getCreativeOverview(request);
+          if (live && full.ready) setChain(full);
+          else if (live) setFunctionsError('功能明细暂不可用，请刷新重试');
+        } catch {
+          if (live) setFunctionsError('功能明细读取失败，请刷新重试');
         }
       })
       .catch(() => {
         if (live) setError('创作数据读取失败');
       })
       .finally(() => {
-        if (live) setLoading(false);
+        if (live) {
+          setLoading(false);
+          setFunctionsLoading(false);
+        }
       });
     return () => {
       live = false;
@@ -101,9 +104,33 @@ export default function CreativePage() {
     revision,
     featureWeeks.baselineWeek,
     featureWeeks.analysisWeek,
-    tierWeeks.baselineWeek,
-    tierWeeks.analysisWeek,
   ]);
+  useEffect(() => {
+    if (!latest) return;
+    let live = true;
+    setTiers(null);
+    setTierError('');
+    void getDashboardAttributions({
+      platform,
+      deviceType,
+      granularity: 'week',
+      dimension: 'creative',
+      startDate: [tierWeeks.baselineWeek, tierWeeks.analysisWeek].sort()[0],
+      endDate: shiftDay([tierWeeks.baselineWeek, tierWeeks.analysisWeek].sort().at(-1)!, 6),
+      baselinePeriod: tierWeeks.baselineWeek,
+      analysisPeriod: tierWeeks.analysisWeek,
+      cacheBust: revision,
+    })
+      .then((result) => {
+        if (live) setTiers(result);
+      })
+      .catch(() => {
+        if (live) setTierError('创作分层读取失败，请刷新重试');
+      });
+    return () => {
+      live = false;
+    };
+  }, [platform, deviceType, latest, revision, tierWeeks.baselineWeek, tierWeeks.analysisWeek]);
   const asOf = chain?.observedThrough || latest;
   const all = [...(chain?.trend || [])].sort((a, b) => a.period.localeCompare(b.period)).map((p) => withRates(p, asOf));
   const visible = all.filter((p) => p.period >= dateRange.startDate && p.period <= dateRange.endDate);
@@ -201,10 +228,12 @@ export default function CreativePage() {
     );
   };
   return (
-    <div className="v62-page v62-sheet-page operational-page">
+    <div className="v62-page v62-sheet-page operational-page" data-dashboard-ready={Boolean(chain?.ready) && !error}>
       <OperationalHeader title="创作积极性" window={window} loading={loading} />
-      {error ? (
-        <PanelState state="error" reason={error} onRetry={window.refresh} />
+      {error || window.error ? (
+        <PanelState state="error" reason={error || window.error} onRetry={window.refresh} />
+      ) : window.coverageLoading ? (
+        <PanelState state="loading" />
       ) : !chain && loading ? (
         <PanelState state="loading" />
       ) : !chain?.ready ? (
@@ -306,6 +335,13 @@ export default function CreativePage() {
                 }
               />
               <div className="ops-panel-controls">{weekTools('tier')}</div>
+              {!tiers && (
+                <PanelState
+                  state={tierError ? 'error' : 'loading'}
+                  reason={tierError || undefined}
+                  onRetry={window.refresh}
+                />
+              )}
               <DataTable
                 rows={[...(tiers?.items || [])]
                   .sort(
@@ -367,6 +403,13 @@ export default function CreativePage() {
             </section>
           </div>
           <section className="ops-panel ops-feature">
+            {(functionsLoading || functionsError) && (
+              <PanelState
+                state={functionsError ? 'error' : 'loading'}
+                reason={functionsError || undefined}
+                onRetry={window.refresh}
+              />
+            )}
             <PanelHeader
               title={`功能表现 · ${mode === 'week' ? '全部功能' : feature === '__overall__' ? '汇总' : feature}`}
               tools={
