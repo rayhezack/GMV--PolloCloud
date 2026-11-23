@@ -1310,6 +1310,11 @@
   border-left: 1px solid var(--line);
   border-top: 1px solid var(--line);
 }
+.v62-payment-page .payment-financial-trends[data-charts],
+.v62-payment-page .payment-financial-trends[data-charts] > [data-slot='financial-trends-chart-panel'] {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
 
 .v62-payment-page .payment-viz-head,
 .v62-payment-page .payment-trend-head {

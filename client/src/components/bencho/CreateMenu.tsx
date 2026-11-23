@@ -65,7 +65,7 @@ export function CreateMenu({
     <div ref={root} className="create-menu-root" data-open={open || undefined} data-pressed={pressed || undefined}>
       <motion.div
         className="create-menu-surface"
-        animate={{ width: open ? 292 : 92, height: open ? 58 : 38, borderRadius: open ? 20 : 19 }}
+        animate={{ width: open ? 256 : 92, height: open ? 48 : 38, borderRadius: open ? 24 : 19 }}
         transition={LIQUID}
         aria-hidden="true"
       />
