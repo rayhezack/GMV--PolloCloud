@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {calendarDates} from './calendar-display.ts';
+import {calendarDates, calendarPeak} from './calendar-display.ts';
 test('date range reads Monday–Sunday with October 6 on Tuesday, not under a week-start label',()=>{
  const {dates,rows}=calendarDates('2026-10-06','2026-11-30','2026-11-04');
  assert.equal(rows,5);assert.equal(dates[0],null);assert.equal(dates[1],'2026-10-06');
@@ -17,4 +17,17 @@ test('calendar preserves the entire selected range, missing range and year bound
 test('four-month selection includes every selected date',()=>{
  const result=calendarDates('2026-07-05','2026-11-04');
  assert.equal(result.dates.filter(Boolean).length,123);assert.equal(result.dates.find(Boolean),'2026-07-05');
+});
+
+test('peak considers only visible finite observations, keeping zero and preferring the latest tie',()=>{
+ const values=new Map([['2026-11-01',999],['2026-11-02',0],['2026-11-03',null],['2026-11-04',8],['2026-11-05',8],['2026-11-06',NaN]]);
+ assert.deepEqual(calendarPeak(values,['2026-11-02']),{date:'2026-11-02',value:0});
+ assert.deepEqual(calendarPeak(values,['2026-11-02','2026-11-03','2026-11-04','2026-11-05','2026-11-06']),{date:'2026-11-05',value:8});
+ assert.equal(calendarPeak(values,['2026-11-03','2026-11-06','2026-11-07']),null);
+});
+test('GMV and order-count peaks are computed from their own observations, never estimated from money',()=>{
+ const rows=[{date:'2026-11-03',gmv:90,orders:2},{date:'2026-11-04',gmv:80,orders:3},{date:'2026-11-05',gmv:100,orders:null}];
+ const dates=rows.map(r=>r.date);
+ assert.equal(calendarPeak(new Map(rows.map(r=>[r.date,r.gmv])),dates).date,'2026-11-05');
+ assert.equal(calendarPeak(new Map(rows.map(r=>[r.date,r.orders])),dates).date,'2026-11-04');
 });

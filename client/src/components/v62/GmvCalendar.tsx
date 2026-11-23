@@ -1,17 +1,24 @@
 import { useRef, useState, type CSSProperties } from 'react';
 import type { ProductAction } from '@shared/product-actions';
-import { signedMoney } from '@shared/format';
-import type { GmvAnomalyMetric, OverviewTrendPoint } from '@shared/api.interface';
+import { metricDifference, count } from '@shared/format';
+import type { OverviewTrendPoint } from '@shared/api.interface';
 import { Tooltip } from '@astryxdesign/core/Tooltip';
-import { calendarColor, calendarDates } from '@shared/calendar-display';
+import { calendarColor, calendarDates, calendarPeak } from '@shared/calendar-display';
 import { day, money, changePct, range } from '@shared/format';
 import { PanelHeader } from '../system';
-import { Segment } from './primitives';
+import { WorkbenchIcon } from '../icons/WorkbenchIcon';
+import { ChevronDown } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from '../ui/dropdown-menu';
 import { shiftDay } from './trend-data';
 
 type Props = {
   rows: OverviewTrendPoint[];
-  metric: GmvAnomalyMetric;
   selected: string;
   onSelect: (date: string) => void;
   actions: Set<string>;
@@ -25,7 +32,6 @@ type Props = {
 };
 export default function GmvCalendar({
   rows,
-  metric,
   selected,
   onSelect,
   actions,
@@ -36,36 +42,72 @@ export default function GmvCalendar({
   latest,
   actionsStatus = 'ready',
 }: Props) {
-  const [mode, setMode] = useState<'amount' | 'change'>('amount');
+  const [measure, setMeasure] = useState<'gmv' | 'orders'>('gmv');
+  const metricLabel = measure === 'orders' ? '订单量' : '大盘 GMV';
+  const formatValue = measure === 'orders' ? count : money;
   const refs = useRef(new Map<string, HTMLButtonElement>());
   const { dates: cells, rows: weekRows, truncated } = calendarDates(start, end, latest);
-  const values = new Map(rows.map((row) => [row.period, row[metric]]));
-  const dates = cells.filter((d): d is string => d != null && values.has(d));
+  const values = new Map(rows.map((row) => [row.period, measure === 'orders' ? row.totalOrders : row.totalGmv]));
+  const dates = cells.filter((d): d is string => d != null && values.get(d) != null && Number.isFinite(values.get(d)));
   const amounts = dates.map((d) => values.get(d)!).filter(Number.isFinite),
     min = Math.min(...amounts),
     max = Math.max(...amounts);
+  const peak = calendarPeak(values, dates);
+  const peakWeekday = peak
+    ? ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date(peak.date + 'T00:00:00Z').getUTCDay()]
+    : '';
   const current = dates.includes(selected) ? selected : dates.at(-1);
   return (
     <section
       className="gmv-calendar gmv-heatmap"
-      aria-label="GMV 日历"
+      aria-label={measure === 'orders' ? '订单量日历' : 'GMV 日历'}
       style={{ '--gmv-weeks': Math.max(1, weekRows) } as CSSProperties}
     >
       <PanelHeader
-        title={{ totalGmv: 'GMV 日历', activeGmv: '主动付费日历', renewalGmv: '自动续订日历' }[metric]}
+        title={measure === 'orders' ? '订单量日历' : 'GMV 日历'}
         unit={range(start, [end, latest || end].sort()[0])}
         inlineUnit
-        info="一格代表一天，每列为自然周，每行为周一至周日，范围外和缺失日期留空。金额按色阶呈现，较上周同日按±5%、±10%、±20%分档。红圈表示异动；悬浮或键盘聚焦查看当日数据与产品动作。同期动作不代表变化原因。方向键选日。"
+        info="一格代表一天，每列为自然周，每行为周一至周日，范围外和缺失日期留空。按所选指标每日数值着色，缺失订单数不补零。红圈表示异动；悬浮或键盘聚焦查看当日数据与产品动作。同期动作不代表变化原因。方向键选日。"
         tools={
-          <Segment<'amount' | 'change'>
-            label="日历着色"
-            value={mode}
-            onChange={setMode}
-            items={[
-              { value: 'amount', label: '金额' },
-              { value: 'change', label: '较上周同日' },
-            ]}
-          />
+          <div className="gmv-calendar-tools">
+            {peak && (
+              <button
+                type="button"
+                className="gmv-calendar-peak"
+                onClick={() => onSelect(peak.date)}
+                aria-label={`最高${metricLabel}：${day(peak.date)}，${formatValue(peak.value)}`}
+              >
+                <WorkbenchIcon name="star" active />
+                <span>
+                  最高：{peakWeekday} {peak.date.slice(5).replace('-', '/')}
+                </span>
+              </button>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className="gmv-calendar-measure" aria-label={`日历指标：${metricLabel}`}>
+                  <WorkbenchIcon name={measure === 'orders' ? 'receipt' : 'layers'} />
+                  {metricLabel}
+                  <ChevronDown size={14} aria-hidden="true" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="gmv-calendar-menu">
+                <DropdownMenuRadioGroup
+                  value={measure}
+                  onValueChange={(value) => setMeasure(value as 'gmv' | 'orders')}
+                >
+                  <DropdownMenuRadioItem showIndicator={false} value="gmv">
+                    <WorkbenchIcon name="layers" />
+                    大盘 GMV
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem showIndicator={false} value="orders">
+                    <WorkbenchIcon name="receipt" />
+                    订单量
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         }
       />
       {truncated && <span className="sys-meta">更早</span>}
@@ -99,8 +141,7 @@ export default function GmvCalendar({
               );
             const change = before != null && before !== 0 ? value / before - 1 : null,
               count = actionCounts?.get(date) ?? (actions.has(date) ? 1 : 0);
-            const description = `${day(date)} · ${money(value)} · 较上周同日 ${changePct(change)}${anomalies.has(date) ? ' · 异动' : ''}${count ? ` · 产品动作 ${count} 条` : ''}`;
-            const metricLabel = { totalGmv: '大盘 GMV', activeGmv: '主动付费', renewalGmv: '自动续订' }[metric];
+            const description = `${day(date)} · ${formatValue(value)} · 较上周同日 ${changePct(change)}${anomalies.has(date) ? ' · 异动' : ''}${count ? ` · 产品动作 ${count} 条` : ''}`;
             const detail = (
               <div className="gmv-day-preview">
                 <header>
@@ -109,14 +150,18 @@ export default function GmvCalendar({
                 </header>
                 <div>
                   <span>{metricLabel}</span>
-                  <b>{money(value)}</b>
+                  <b>{formatValue(value)}</b>
                 </div>
                 <div>
                   <span>上周同日</span>
-                  <b>{money(before)}</b>
+                  <b>{formatValue(before)}</b>
                 </div>
                 <div data-direction={change == null ? 'neutral' : change < 0 ? 'negative' : 'positive'}>
-                  <span>{before == null ? '—' : signedMoney(value - before)}</span>
+                  <span>
+                    {before == null
+                      ? '—'
+                      : metricDifference(before, value, measure === 'orders' ? 'count' : 'currency')}
+                  </span>
                   <b>{changePct(change)}</b>
                 </div>
                 <footer>
@@ -144,7 +189,7 @@ export default function GmvCalendar({
                   }}
                   style={
                     {
-                      '--cell-color': calendarColor(value, [min, max], change, mode),
+                      '--cell-color': calendarColor(value, [min, max], change, 'amount'),
                       gridColumn: Math.floor(i / 7) + 1,
                       gridRow: (i % 7) + 1,
                     } as CSSProperties
@@ -192,14 +237,11 @@ export default function GmvCalendar({
       </div>
       <footer>
         <span className="gmv-heatmap-scale">
-          {mode === 'amount' ? '低' : '下降'}
-          {(mode === 'amount'
-            ? ['seq-1', 'seq-2', 'seq-3', 'seq-4', 'seq-5']
-            : ['div-neg-3', 'div-neg-2', 'div-0', 'div-pos-2', 'div-pos-3']
-          ).map((token) => (
+          低
+          {['seq-1', 'seq-2', 'seq-3', 'seq-4', 'seq-5'].map((token) => (
             <i key={token} style={{ background: `var(--${token})` }} />
           ))}
-          {mode === 'amount' ? '高' : '上升'}
+          高
         </span>
         <span>
           <i className="gmv-anomaly-ring" />

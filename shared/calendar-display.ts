@@ -32,3 +32,14 @@ export function calendarDates(start: string, end: string, latest = end) {
     dates.push(date >= start && date <= through ? date : null);
   return { dates, rows: dates.length / 7, truncated: first < visible };
 }
+
+/** The peak is selected only from visible observations; ties prefer the latest day. */
+export function calendarPeak(values: ReadonlyMap<string, number | null | undefined>, dates: readonly string[]) {
+  let peak: { date: string; value: number } | null = null;
+  for (const date of dates) {
+    const value = values.get(date);
+    if (value == null || !Number.isFinite(value)) continue;
+    if (!peak || value > peak.value || (value === peak.value && date > peak.date)) peak = { date, value };
+  }
+  return peak;
+}

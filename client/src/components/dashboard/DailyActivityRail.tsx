@@ -27,7 +27,7 @@ import { dailyDiagnosisScopes } from '@/lib/daily-diagnosis-scope';
 import { Definition } from '@/components/v62/primitives';
 import GmvCalendar from '@/components/v62/GmvCalendar';
 import { shiftDay } from '@/components/v62/trend-data';
-import type { OverviewTrendPoint, GmvAnomalyMetric } from '@shared/api.interface';
+import type { OverviewTrendPoint } from '@shared/api.interface';
 import { WorkbenchIcon } from '@/components/icons/WorkbenchIcon';
 import { anomalyDashboardHref } from './navigation';
 
@@ -64,7 +64,6 @@ export default function DailyActivityRail({
   renderProcess,
   calendarRows,
   calendarWindow = trendWindow,
-  calendarMetric,
   renderHeader,
 }: {
   platform: DashboardPlatform;
@@ -77,7 +76,6 @@ export default function DailyActivityRail({
   onActionsChange?: (value: ProductActionSource | null) => void;
   calendarWindow?: { startDate: string; endDate: string };
   calendarRows?: OverviewTrendPoint[];
-  calendarMetric?: GmvAnomalyMetric;
   children?: ReactNode;
   renderHeader?: (freshness: ReactNode) => ReactNode;
   renderProcess?: (state: {
@@ -280,7 +278,6 @@ export default function DailyActivityRail({
           {calendarRows && onSelectedDayChange ? (
             <GmvCalendar
               rows={calendarRows}
-              metric={calendarMetric || 'totalGmv'}
               latest={trendWindow.endDate}
               selected={latestDate}
               onSelect={onSelectedDayChange}

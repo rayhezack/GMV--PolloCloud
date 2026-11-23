@@ -1,5 +1,6 @@
+import { Search, useSearchSpring } from '@/components/bencho/Search';
 import { getGmvAnomalies } from '@/api/dashboard';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, type CSSProperties } from 'react';
 import { publishActivity, readActivities, useActivities } from '@/lib/activity-notifications';
 import { Link } from 'react-router-dom';
 import { WorkbenchIcon } from '@/components/icons/WorkbenchIcon';
@@ -32,6 +33,11 @@ export function WorkspaceHeader({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const searchHost = useRef<HTMLDivElement>(null);
+  const still =
+    typeof window !== 'undefined' && Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+  const arrival = useSearchSpring(open ? 100 : 0, still, 20);
+  const results = DASHBOARD_VIEWS.filter((view) => view.label.toLowerCase().includes(query.trim().toLowerCase()));
   const activities = useActivities();
   const unread = activities.filter((item) => !item.read).length;
   useEffect(() => {
@@ -88,14 +94,24 @@ export function WorkspaceHeader({
       </nav>
       {STATIC_DEMO_MODE && <span className="v62-preview-tag">示例数据</span>}
       <div className="v62-header-actions">
-        <button className="v62-icon-button" aria-label="搜索页面" onClick={() => setOpen(true)}>
-          <WorkbenchIcon name="搜索" />
-        </button>
+        <div ref={searchHost} className="v62-header-search">
+          <Search
+            alwaysOpen
+            width={260}
+            placeholder="搜索分析页面…"
+            value={query}
+            onActivate={() => setOpen(true)}
+            onChange={(value) => {
+              setQuery(value);
+              setOpen(true);
+            }}
+          />
+        </div>
         <Popover>
           <PopoverTrigger asChild>
-            <button className="v62-icon-button" aria-label={`更新通知，${unread} 条未读`}>
+            <button className="v62-icon-button v62-notification-button" aria-label={`更新通知，${unread} 条未读`}>
               <WorkbenchIcon name="bell" />
-              {unread > 0 && <span className="activity-count">{unread > 99 ? '99+' : unread}</span>}
+              {unread > 0 && <span className="activity-unread-dot" aria-hidden="true" />}
             </button>
           </PopoverTrigger>
           <PopoverContent align="end" className="v62-notifications">
@@ -122,14 +138,21 @@ export function WorkspaceHeader({
           aria-label={`个人账号：${displayName}`}
           title={displayName}
         >
-          <Avatar className="size-7">
+          <Avatar className="v62-account-avatar">
             {avatarUrl && <AvatarImage src={avatarUrl} />}
             <AvatarFallback>{displayName.slice(0, 1)}</AvatarFallback>
           </Avatar>
         </Link>
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="v62-search-dialog">
+        <DialogContent
+          className="v62-search-dialog"
+          style={{ '--search-arrival': arrival / 100 } as CSSProperties}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            searchHost.current?.querySelector('input')?.focus();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>搜索页面</DialogTitle>
             <DialogDescription className="sr-only">输入页面名称，选择要打开的页面。</DialogDescription>
@@ -141,17 +164,20 @@ export function WorkspaceHeader({
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索分析页面…"
           />
-          {DASHBOARD_VIEWS.filter((view) => view.label.includes(query.trim())).map((view) => (
-            <Link
-              className="v62-search-result"
-              key={view.id}
-              to={dashboardHref(view.id, search)}
-              onClick={() => setOpen(false)}
-            >
-              <WorkbenchIcon name={view.icon} />
-              {view.label}
-            </Link>
-          ))}
+          <div className="v62-search-results">
+            {!results.length && <p className="v62-search-empty">未找到匹配页面</p>}
+            {results.map((view) => (
+              <Link
+                className="v62-search-result"
+                key={view.id}
+                to={dashboardHref(view.id, search)}
+                onClick={() => setOpen(false)}
+              >
+                <WorkbenchIcon name={view.icon} />
+                {view.label}
+              </Link>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
     </header>

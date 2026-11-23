@@ -71,7 +71,7 @@ export function PopulationPicker({
                 onChange={onDimensionChange}
                 items={[
                   { value: 'creation', label: '创作分层', icon: 'blocks' },
-                  { value: 'country', label: '国家分层', icon: 'workspace' },
+                  { value: 'country', label: '国家分层', icon: 'globe' },
                 ]}
               />
             )}

@@ -199,8 +199,8 @@
   color: var(--text-1);
 }
 .home-source-links .home-primary-link {
-  background: var(--accent);
-  color: var(--surface);
+  background: var(--selected);
+  color: var(--text-1);
 }
 [data-page='gmv-trend'] .v62-calendar-diagnosis {
   margin-top: var(--space-12);
@@ -353,7 +353,10 @@
 [data-page='gmv-trend'] .home-calendar-panel .sys-panel-header button {
   width: auto;
 }
-[data-page='gmv-trend'] .home-calendar-panel .sys-panel-header button:not([role='radio']) {
+[data-page='gmv-trend']
+  .home-calendar-panel
+  .sys-panel-header
+  button:not([role='radio']):not(.gmv-calendar-peak):not(.gmv-calendar-measure) {
   width: 20px;
 }
 @media (max-width: 850px) {
@@ -494,6 +497,7 @@ html[data-astryx-theme='pollo-v62'] .astryx-tooltip:has(.gmv-day-preview) {
 
 /* A single sheet: trend with sources, then calendar with daily activity. */
 [data-page='gmv-trend'] .v62-home-sheet.daily-rail {
+  grid-template-columns: minmax(0, 7fr) minmax(320px, 3fr);
   align-items: stretch;
   background: var(--surface);
   overflow: clip;
@@ -608,6 +612,9 @@ html[data-astryx-theme='pollo-v62'] .astryx-tooltip:has(.gmv-day-preview) {
   right: var(--space-8);
 }
 @media (max-width: 850px) {
+  [data-page='gmv-trend'] .v62-home-sheet.daily-rail {
+    grid-template-columns: minmax(0, 1fr);
+  }
   [data-page='gmv-trend'] .v62-home-main > .home-trend-stack,
   [data-page='gmv-trend'] .v62-home-rail .daily-bento-anomaly,
   [data-page='gmv-trend'] .v62-home-main .home-calendar-panel,
@@ -713,4 +720,55 @@ html[data-astryx-theme='pollo-v62'] .astryx-tooltip:has(.gmv-day-preview) {
 }
 [data-page='gmv-trend'] .v62-day-actions {
   min-height: 0;
+}
+
+.gmv-calendar-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.gmv-calendar-peak,
+.gmv-calendar-measure {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  border: 0;
+  font: inherit;
+  font-size: var(--fs-meta);
+  min-height: 30px;
+  padding: var(--space-4) var(--space-8);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.gmv-calendar-peak {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: var(--radius-full);
+}
+.gmv-calendar-measure {
+  background: var(--surface);
+  color: var(--text-1);
+  border-radius: var(--radius-element);
+}
+.gmv-calendar-measure:hover,
+.gmv-calendar-measure[data-state='open'] {
+  background: var(--selected);
+}
+.gmv-calendar-tools .workbench-icon,
+.gmv-calendar-menu .workbench-icon {
+  width: 18px;
+  height: 18px;
+  flex-basis: 18px;
+}
+.gmv-calendar-peak:focus-visible,
+.gmv-calendar-measure:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.gmv-calendar-menu {
+  background: var(--surface);
+  border: 0;
+  box-shadow: var(--shadow-floating);
 }

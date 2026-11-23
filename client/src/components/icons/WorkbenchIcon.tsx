@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { mountWorkbenchIcon } from './kubai-runtime';
 import './workbench-icon.css';
 
-export type WorkbenchIconName = 'rotate-cw' | 'banknote' | 'receipt' | 'coins' | 'target' | 'clapperboard' | 'table' | 'chart-pie' | 'blocks' | 'cpu' | 'workflow' | 'workspace' | 'chart-line' | 'credit-card' | 'link' | 'paintbrush' |
+export type WorkbenchIconName = 'globe' | 'layers' | 'star' | 'rotate-cw' | 'banknote' | 'receipt' | 'coins' | 'target' | 'clapperboard' | 'table' | 'chart-pie' | 'blocks' | 'cpu' | 'workflow' | 'workspace' | 'chart-line' | 'credit-card' | 'link' | 'paintbrush' |
   'megaphone' | 'file-chart' | 'database' | 'shield-check' | '日历' | '文件夹' | '下载' | '邮件' | '搜索' | 'bell';
 
 export function WorkbenchIcon({ name, active = false }: {

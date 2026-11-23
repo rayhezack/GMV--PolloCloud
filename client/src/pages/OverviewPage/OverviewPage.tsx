@@ -255,7 +255,6 @@ export default function OverviewPage() {
           trendWindow={{ startDate, endDate }}
           calendarWindow={calendarWindow}
           calendarRows={rows}
-          calendarMetric={financialMetric}
           onMonitoringChange={(value) => setMonitor(deviceType ? null : value)}
           renderProcess={(state) => (
             <ActiveProcess

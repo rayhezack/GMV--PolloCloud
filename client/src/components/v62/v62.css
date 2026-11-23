@@ -139,6 +139,7 @@
 }
 .v62-header-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 .v62-icon-button,
@@ -2344,10 +2345,13 @@ html[data-astryx-theme='pollo-v62']
 .v62-breadcrumb b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v62-breadcrumb > span { white-space: nowrap; }
 .v62-header-actions { margin-left: auto; align-items: center; flex-shrink: 0; }
-.v62-account-button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--radius-full); color: var(--text-1); }
+.v62-account-button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: var(--radius-full); color: var(--accent); }
 .v62-account-button:hover { background: var(--selected); }
 .v62-account-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.v62-account-button [data-slot="avatar-fallback"] { background: var(--selected); font-size: var(--fs-meta); }
+.v62-account-button .v62-account-avatar { width: 32px; height: 32px; }
+.v62-account-button [data-slot="avatar-fallback"] { background: var(--accent-pale); color: var(--accent); font-size: var(--fs-panel); font-weight: 600; }
+.v62-header-actions .v62-notification-button { position: relative; width: 36px; height: 36px; background: var(--surface); box-shadow: 0 1px 4px color-mix(in srgb, var(--text-1) 6%, transparent); }
+.v62-notification-button .activity-unread-dot { position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: var(--radius-full); background: var(--negative); box-shadow: 0 0 0 2px var(--surface); pointer-events: none; }
 @media (max-width: 600px) { .v62-breadcrumb > span { display: none; } }
 
 .v62-device-unavailable { max-width: 220px; margin: var(--space-8) var(--space-12); color: var(--text-2); font-size: var(--fs-meta); line-height: 1.5; }
@@ -2358,3 +2362,15 @@ html[data-astryx-theme='pollo-v62']
 .dashboard-shell.v62-shell .dock-group-divider { display: block; width: 24px; height: 1px; flex: 0 0 1px; margin: 7px auto; background: var(--line); }
 
 .dashboard-shell.v62-shell { --ui-table-header: var(--surface); }
+
+.v62-header-search { display: flex; align-items: center; min-width: 0; }
+/* The spring settles in 0..100; only the floating pane moves. The input
+   stays usable at its full width throughout the motion. */
+.v62-search-dialog {
+  animation: none;
+  transform: translateY(calc((1 - var(--search-arrival, 1)) * 8px)) scale(calc(.97 + var(--search-arrival, 1) * .03));
+  opacity: var(--search-arrival, 1);
+}
+.v62-search-results { max-height: min(56vh, 480px); overflow-y: auto; }
+.v62-search-empty { padding: var(--space-16); color: var(--text-3); font-size: var(--fs-body); }
+@media (max-width: 600px) { .v62-header-search .bencho-search { max-width: clamp(120px, 32vw, 180px); } }
