@@ -338,3 +338,13 @@ test('country population drilldown keeps lifecycle separate and conserves GMV an
   close(selected.factors.reduce((sum, factor) => sum + factor.effect, 0), selected.total.delta);
   assert.equal(selected.residual, null);
 });
+
+test('country dimension is carried into the request scope and cannot reuse creation selection', () => {
+  const country = comparisonParams(new URLSearchParams('mode=day&baseline=2026-10-27&analysis=2026-11-03&populationDimension=country&lifecycle=NEW&countryTier=T1'));
+  assert.equal(country.populationDimension, 'country');
+  assert.equal(country.countryTier, 'T1');
+  assert.throws(
+    () => comparisonParams(new URLSearchParams('mode=day&baseline=2026-10-27&analysis=2026-11-03&populationDimension=country&creationTier=create_cnt_30d_0&lifecycle=NEW')),
+    /创作分层/,
+  );
+});

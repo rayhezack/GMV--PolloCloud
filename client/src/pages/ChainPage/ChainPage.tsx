@@ -41,6 +41,8 @@ export default function ChainPage() {
   const chainType = params.get('chainType') === 'renewal' ? 'renewal' : 'active';
   const lifecycle = params.get('lifecycle') || undefined;
   const creationTier = lifecycle ? params.get('creationTier') || undefined : undefined;
+  const countryTier = lifecycle ? params.get('countryTier') || undefined : undefined;
+  const populationDimension = params.get('populationDimension') === 'country' ? 'country' : 'creation';
   const planTier = params.get('planTier') || undefined;
   const platform = params.get('platform') === 'web' ? 'web' : params.get('platform') === 'app' ? 'app' : 'all';
   const deviceType =
@@ -87,8 +89,10 @@ export default function ChainPage() {
       analysis,
       baseline,
       revision,
+      populationDimension,
       lifecycle,
       creationTier,
+      countryTier,
       planTier,
     })
       .then((result) => {
@@ -103,7 +107,7 @@ export default function ChainPage() {
     return () => {
       live = false;
     };
-  }, [platform, deviceType, mode, chainType, analysis, baseline, revision, lifecycle, creationTier, planTier]);
+  }, [platform, deviceType, mode, chainType, analysis, baseline, revision, populationDimension, lifecycle, creationTier, countryTier, planTier]);
   const factor = data ? preferredFactor(data.factors, params.get('factor')) : undefined;
   const trendEnd = analysis ? (mode === 'week' ? [shiftDay(analysis, 6), latest || analysis].sort()[0] : analysis) : '';
   const trend = useMemo(
