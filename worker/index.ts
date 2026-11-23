@@ -1561,6 +1561,7 @@ async function chainFunnel(env: Env, request: Request) {
   const periodKey = mode === 'day' ? 'period' : 'week_start';
   const creationTier = url.searchParams.get('creationTier') || undefined;
   const userLifecycle = url.searchParams.get('userLifecycle') || undefined;
+  const countryTier = url.searchParams.get('countryTier') || undefined;
   if (!DASHBOARD_PLATFORMS.has(platform)) return errorResponse('platform 必须是 all / web / app 之一');
   if (![startDate, endDate, baselinePeriod, analysisPeriod].every((value) => /^\d{4}-\d{2}-\d{2}$/u.test(value))) {
     return errorResponse('支付链路比较窗口无效');
@@ -1575,6 +1576,7 @@ async function chainFunnel(env: Env, request: Request) {
     const calendar = matchedComparisonCalendar(await queryRows(env, `SELECT DISTINCT period, ${periodKey} AS week_start FROM pollo_da_chain_funnel WHERE ${conditions.join(' AND ')}`, ...binds), baselinePeriod, analysisPeriod);
     if (creationTier && creationTier !== 'all') { conditions.push('creation_cnt_30d_label = ?'); binds.push(creationTier); }
     if (userLifecycle && userLifecycle !== 'all') { conditions.push("COALESCE(NULLIF(TRIM(user_lifecycle), ''), '未知') = ?"); binds.push(userLifecycle); }
+    if (countryTier) { conditions.push("COALESCE(NULLIF(TRIM(country_tier), ''), 'UNKNOWN') = ?"); binds.push(countryTier); }
     const where = conditions.join(' AND ');
     const [rawFunnelRows, rawBreakdownRows] = await Promise.all([
       queryRows(env, `

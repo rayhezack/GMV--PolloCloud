@@ -26,6 +26,7 @@ export default function ChainDiagnostics({
   revision,
   lifecycle,
   creationTier,
+  countryTier,
 }: {
   factorKey: string;
   mode?: 'day' | 'week';
@@ -36,6 +37,7 @@ export default function ChainDiagnostics({
   revision: number;
   lifecycle?: string;
   creationTier?: string;
+  countryTier?: string;
 }) {
   const [data, setData] = useState<ChainFunnelResponse | null>(null),
     [error, setError] = useState(''),
@@ -57,6 +59,7 @@ export default function ChainDiagnostics({
       cacheBust: revision + retry,
       userLifecycle: lifecycle,
       creationTier,
+      countryTier,
     })
       .then((value) => {
         if (live) setData(value);
@@ -67,7 +70,7 @@ export default function ChainDiagnostics({
     return () => {
       live = false;
     };
-  }, [mode, platform, deviceType, baseline, analysis, revision, retry, lifecycle, creationTier]);
+  }, [mode, platform, deviceType, baseline, analysis, revision, retry, lifecycle, creationTier, countryTier]);
   const dimension =
     factorKey === 'subExposeRate' ? 'exposure' : factorKey === 'chainPaySuccessRate' ? payDimension : 'country';
   const submission = factorKey === 'subSubmitRate';

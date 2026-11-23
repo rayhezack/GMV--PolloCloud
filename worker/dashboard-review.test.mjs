@@ -21,7 +21,7 @@ const { chainFunnel, paymentTrend } = await import(
 function fixture() {
   const db = new DatabaseSync(':memory:');
   db.exec(`CREATE TABLE pollo_da_chain_funnel(period TEXT,week_start TEXT,platform TEXT,device_type TEXT,country_tier TEXT,user_lifecycle TEXT,creation_cnt_30d_label TEXT,active_uv REAL,paywall_expose_uv REAL,paywall_submit_uv REAL,pay_uv REAL,gmv_usd REAL,pay_fail_order_cnt REAL,pay_fail_amount_usd REAL);
- CREATE TABLE pollo_da_chain_breakdown(period TEXT,week_start TEXT,platform TEXT,device_type TEXT,user_lifecycle TEXT,creation_cnt_30d_label TEXT,breakdown_type TEXT,breakdown_value TEXT,expose_uv REAL,submit_uv REAL,pay_uv REAL,gmv_usd REAL);
+ CREATE TABLE pollo_da_chain_breakdown(period TEXT,week_start TEXT,platform TEXT,device_type TEXT,user_lifecycle TEXT,creation_cnt_30d_label TEXT,breakdown_type TEXT,breakdown_value TEXT,expose_uv REAL,submit_uv REAL,pay_uv REAL,gmv_usd REAL,country_tier TEXT);
  CREATE TABLE pollo_da_fact_rows(period TEXT,week_start TEXT,platform TEXT,device_type TEXT,dataset TEXT,dataset_kind TEXT,attribution_type TEXT,pay_category TEXT,pay_type TEXT,gmv_usd REAL,function_name TEXT,user_tag TEXT,subscription_tier TEXT,attribution_name TEXT,actual_supplier TEXT,actual_provider TEXT,model_cost_usd REAL);`);
   const cols = db.prepare('PRAGMA table_info(pollo_da_fact_rows)').all().map(c => c.name);
   db.exec(`CREATE VIEW pollo_da_fact_rows_read AS SELECT * FROM pollo_da_fact_rows UNION ALL SELECT ${cols.map(c => c === 'platform' ? "CASE WHEN device_type='web' THEN 'web' ELSE 'app' END AS platform" : c).join(',')} FROM pollo_da_fact_rows WHERE platform='all' AND device_type IN ('web','ios','android')`);
@@ -64,7 +64,7 @@ test('single-day diagnostics select only the exact dates including same-week com
         0,
         0,
       );
-      db.prepare('INSERT INTO pollo_da_chain_breakdown VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(
+      db.prepare('INSERT INTO pollo_da_chain_breakdown VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
         date,
         week,
         'web',
@@ -77,6 +77,7 @@ test('single-day diagnostics select only the exact dates including same-week com
         20 * factor,
         10 * factor,
         n * factor,
+        'T1',
       );
     }
   }
@@ -121,6 +122,26 @@ test('single-day diagnostics select only the exact dates including same-week com
   assert.equal(week.ready, true);
   assert.equal(week.totals.current.activeUv, 600);
   assert.equal(week.comparison.analysisPeriodDays, 1);
+  db.close();
+});
+test('country selection scopes diagnostic funnel and channel atoms to the same lifecycle and country', async () => {
+  const { db, env } = fixture();
+  for (const [period, week, multiplier] of [['2026-11-14','2026-11-14',1],['2026-11-21','2026-11-21',2]]) {
+    for (const [life, country, amount] of [['NEW','T1',10],['OLD','T1',20],['OLD','T2',30]]) {
+      const n = amount * multiplier;
+      db.prepare('INSERT INTO pollo_da_chain_funnel VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(period,week,'web','web',country,life,'tier',n*10,n*5,n*2,n,n*10,0,0);
+      db.prepare('INSERT INTO pollo_da_chain_breakdown VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(period,week,'web','web',life,'tier','SUBMIT_CHANNEL','Stripe',n*5,n*2,n,n*10,country);
+    }
+  }
+  const data = await (await chainFunnel(env, request({platform:'web',mode:'day',startDate:'2026-11-14',endDate:'2026-11-21',baselinePeriod:'2026-11-14',analysisPeriod:'2026-11-21',userLifecycle:'OLD',countryTier:'T1'}))).json();
+  assert.equal(data.ready,true);
+  assert.equal(data.totals.current.activeUv,400);
+  assert.equal(data.totals.current.gmvUsd,400);
+  assert.deepEqual(data.countries.map(row=>row.key),['T1']);
+  assert.equal(data.breakdowns.SUBMIT_CHANNEL[0].current.gmvUsd,400);
+  assert.equal(data.breakdowns.SUBMIT_CHANNEL[0].current.payUv,40);
   db.close();
 });
 test('payment trends use the latest source date, preserve missing days and never extend into future weeks', async () => {

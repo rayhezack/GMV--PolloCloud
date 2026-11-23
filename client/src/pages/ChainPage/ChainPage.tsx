@@ -279,6 +279,7 @@ export default function ChainPage() {
                 revision={revision}
                 lifecycle={lifecycle}
                 creationTier={creationTier}
+                countryTier={countryTier}
               />
             )}
           </div>

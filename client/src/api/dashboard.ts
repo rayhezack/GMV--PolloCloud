@@ -80,6 +80,7 @@ export async function getChainFunnel(params: {
   analysisPeriod: string;
   creationTier?: string;
   userLifecycle?: string;
+  countryTier?: string;
   cacheBust?: number;
 }): Promise<ChainFunnelResponse> {
   const response = await readDashboard<ChainFunnelResponse>(`/api/dashboard/chain-funnel${buildQueryString(params)}`);
