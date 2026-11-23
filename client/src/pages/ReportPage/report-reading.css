@@ -104,7 +104,7 @@
 }
 .report-conclusion {
   padding-left: 18px;
-  border-left: 3px solid var(--ui-purple);
+  border-left: 3px solid var(--accent);
 }
 .report-section-heading {
   display: flex;
@@ -147,7 +147,7 @@
   font-weight: 600;
 }
 .report-prose em {
-  color: var(--ui-purple-hover);
+  color: var(--accent);
   font-style: normal;
   font-weight: 600;
 }
@@ -173,7 +173,7 @@
   margin-bottom: 16px;
 }
 .report-prose li::marker {
-  color: var(--ui-purple);
+  color: var(--accent);
   font-size: var(--fs-meta);
   font-weight: 600;
 }
@@ -254,7 +254,7 @@
   font-weight: 600;
 }
 .report-evidence-item[open] > summary > span > strong {
-  color: var(--ui-purple-hover);
+  color: var(--accent);
 }
 .report-evidence-item > .report-prose {
   padding-bottom: 26px;

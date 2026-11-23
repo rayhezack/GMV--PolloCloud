@@ -108,7 +108,7 @@ export default function ChainPage() {
   const trendEnd = analysis ? (mode === 'week' ? [shiftDay(analysis, 6), latest || analysis].sort()[0] : analysis) : '';
   const trend = useMemo(
     () =>
-      factor && data
+      factor && data && analysis && baseline && trendEnd
         ? revenueBuckets(
             data.trend.map(
               (row) =>
@@ -157,7 +157,7 @@ export default function ChainPage() {
     <div
       className="v62-page v62-sheet-page chain-page"
       aria-busy={loading}
-      data-dashboard-ready={!loading && Boolean(data?.ready) && !error}
+      data-dashboard-ready={!coverageLoading && !loading && Boolean(data?.ready) && !error && !coverageError}
     >
       <PageHeader
         title="支付链路"

@@ -25,6 +25,9 @@ export default function ComparisonPicker({
   compactDay?: boolean;
   onChange: (value: { baseline: string; analysis: string }) => void;
 }) {
+  // Deep links can supply comparison dates before async dataset coverage arrives.
+  // Never mount strict ISO date fields with an empty date or upper bound.
+  if (!baseline || !analysis || !maxDate) return null;
   if (mode === 'week') {
     const minimum = LOCAL_DATA_WINDOW?.startDate ?? '2026-01-01';
     const weeks: string[] = [];

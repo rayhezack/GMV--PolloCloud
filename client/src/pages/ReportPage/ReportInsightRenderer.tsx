@@ -141,7 +141,11 @@ export function ReportInsightArticle({
   const evidence = sections.filter((section) => section !== cause && section !== advice);
   const causeParts = causeLeadAndDetail(cause?.body || '');
   return (
-    <article className="report-reading" key={`${report.platform}-${report.periodStart}-${report.generatedAt}`}>
+    <article
+      className="report-reading"
+      data-astryx-theme="pollo-v62"
+      key={`${report.platform}-${report.periodStart}-${report.generatedAt}`}
+    >
       <aside className="report-reading-rail">
         <div className="report-edition">
           {mode === 'day' ? (
