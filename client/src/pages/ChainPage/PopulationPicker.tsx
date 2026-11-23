@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ChainComparison, ChainGroup } from '@shared/chain-comparison';
-import { money, signedMoney } from '@shared/format';
-import { DataTable, DeltaBadge, PanelHeader, DivergingBar, PeriodHeading } from '@/components/system';
+import { money, share, signedMoney } from '@shared/format';
+import { DataTable, PanelHeader, DivergingBar, PeriodHeading } from '@/components/system';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 type Scope = { lifecycle?: string; creationTier?: string; planTier?: string };
@@ -121,7 +121,7 @@ export function PopulationPicker({ data, onSelect }: { data: ChainComparison; on
             minWidth: 100,
             header: '变化率',
             numeric: true,
-            render: (r) => <DeltaBadge value={r.baseline ? (r.current - r.baseline) / r.baseline : null} />,
+            render: (r) => share(r.baseline ? (r.current - r.baseline) / r.baseline : null),
           },
           {
             key: 'contribution',
