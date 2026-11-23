@@ -288,7 +288,7 @@ export default function ChainDiagnostics({
                   delta: after - before,
                   contribution: result.valid && total !== 0 ? (after - before) / total : null,
                 };
-              })}
+              }).sort((a, b) => b.before - a.before || a.label.localeCompare(b.label))}
               columns={[
                 {
                   key: 'label',

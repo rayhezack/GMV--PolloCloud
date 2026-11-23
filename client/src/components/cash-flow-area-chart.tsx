@@ -85,6 +85,8 @@ type CashFlowAreaChartProps = Omit<React.ComponentProps<'div'>, 'children'> & {
   /** The selected point (an index into `data`). */
   index?: number;
   defaultIndex?: number;
+  /** Keep the selected cursor hidden until the user interacts with the chart. */
+  hideCursorUntilInteraction?: boolean;
   onIndexChange?: (index: number, point: CashFlowPoint) => void;
   /** Commit a clicked point (including the selected point), or Enter/Space. Hover only previews. */
   onPointActivate?: (index: number, point: CashFlowPoint) => void;
@@ -324,6 +326,7 @@ function CashFlowAreaChart({
   ticks: ticksProp,
   index: indexProp,
   defaultIndex,
+  hideCursorUntilInteraction = false,
   onIndexChange,
   onPointActivate,
   formatDate,
@@ -356,7 +359,7 @@ function CashFlowAreaChart({
   };
   const gapped = data.some((p) => !Number.isFinite(p.value)) || paired.some((v) => !Number.isFinite(v));
   const [focused, setFocused] = React.useState(false);
-  const [escaped, setEscaped] = React.useState(false);
+  const [escaped, setEscaped] = React.useState(hideCursorUntilInteraction);
   const [indexValue, setIndex] = useControllableState({
     value: indexProp,
     defaultValue: defaultIndex ?? Math.max(0, Math.floor((n - 1) / 2)),

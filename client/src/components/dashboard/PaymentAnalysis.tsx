@@ -8,7 +8,7 @@ import { DetailComparison } from '@/components/system/DetailComparison';
 import { paymentDayComparison, toggleComparisonDay } from './detail-comparison';
 import { shiftDay } from '@/components/v62/trend-data';
 
-import { Segment, Definition } from '@/components/v62/primitives';
+import { Segment } from '@/components/v62/primitives';
 import { paymentMonthTrend } from './payment-history';
 import { relativeChange, changeContributions } from '@/lib/metric-change';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -88,6 +88,36 @@ function CostInfo() {
       模型成本覆盖当日全部创作用户，不随付费类型筛选分摊。成本 / GMV
       以当前收入范围为分母，不能解释为利润率。模型成本按任务端、GMV 按付费端统计。
     </InfoTip>
+  );
+}
+
+function PaymentPeriodHeader({
+  label,
+  period,
+  day,
+}: {
+  label: string;
+  period: string;
+  day?: string | null;
+}) {
+  const from = day || period;
+  const to = day || shiftDay(period, 6);
+  return (
+    <span className="payment-period-header">
+      {label}
+      {!day && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" aria-label={`${label}日期范围`}>
+              <Info size={12} aria-hidden="true" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={6}>
+            {label.replace('日均', '')}：{from} 至 {to}；日均按期间内可比业务日计算。
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </span>
   );
 }
 
@@ -205,6 +235,7 @@ function RevenueTrend({
         compare={values.flatMap((p) => (p.baseline == null ? [] : [p.baseline]))}
         compareIndices={values.flatMap((p, index) => (p.baseline == null ? [] : [index]))}
         compareLabel={comparisonDay ? '上周同日' : '基准同期值'}
+        hideCursorUntilInteraction
         onPointActivate={onActivate ? (_, point) => onActivate(point.date) : undefined}
         totalLabel={comparisonDay ? '分析日' : ratio ? '分析周成本 / GMV' : '分析周日均'}
         total={comparisonDay && !summaryObserved.length ? NaN : total}
@@ -1242,17 +1273,6 @@ export default function PaymentAnalysis({
                             )}
                           </header>
                           {registrationRows ? (
-                            <Definition label="付费下钻口径">
-                              {registrationDimension === 'regPlatform'
-                                ? '注册端取自支付订单；页面筛选按支付端，可据此区分同端与跨端付费。'
-                                : ['upgradeCombination', 'cycleTransition'].includes(registrationDimension)
-                                  ? '变更前取同一订阅、同一支付端的上一笔有效实付；无法关联时保留未知。拆分金额已按日、付费类型核对。'
-                                  : ['sku', 'creditAmount'].includes(registrationDimension)
-                                    ? 'SKU 与积分额度取自支付订单；拆分金额已按日、付费类型核对。'
-                                    : '国家层级按数仓 T1/T2/T3 映射（清单外及未知归 T2），注册新老按账户注册日期计算；拆分金额已按日、付费类型核对。'}
-                            </Definition>
-                          ) : null}
-                          {registrationRows ? (
                             <DataTable
                               stickyFirst
                               rows={visibleRegistrationRows ?? []}
@@ -1279,13 +1299,13 @@ export default function PaymentAnalysis({
                                 },
                                 {
                                   key: 'baseline',
-                                  header: detailDay ? '基准日' : '基准周日均',
+                                  header: <PaymentPeriodHeader label={detailDay ? '基准日' : '基准周日均'} period={baselinePeriod} day={detailDay} />,
                                   numeric: true,
                                   render: (r) => detailValueText(r.baseline),
                                 },
                                 {
                                   key: 'analysis',
-                                  header: detailDay ? '分析日' : '分析周日均',
+                                  header: <PaymentPeriodHeader label={detailDay ? '分析日' : '分析周日均'} period={analysisPeriod} day={detailDay} />,
                                   numeric: true,
                                   render: (r) => detailValueText(r.analysis),
                                 },
@@ -1337,13 +1357,6 @@ export default function PaymentAnalysis({
                                       : '此付费类型的注册明细缺失或与归因表按日金额不一致，无法下钻；请核对数据源。'}
                             </p>
                           )}
-                          {registrationRows && (
-                            <Definition label="付费下钻口径">
-                              {registrationDimension === 'userLifecycle' ? '新用户指所在业务周内注册；' : ''}贡献度 =
-                              该分层{detailDay ? '当日' : '日均'}变化 ÷ 此付费类型{detailDay ? '当日' : '日均'}
-                              总变化，抵消整体变化的分层为负。
-                            </Definition>
-                          )}
                         </section>
                       )}
                       {(!detailDay || detailData) && grouping !== 'payType' && (
@@ -1378,13 +1391,13 @@ export default function PaymentAnalysis({
                               },
                               {
                                 key: 'baseline',
-                                header: detailDay ? '基准日' : '基准周日均',
+                                header: <PaymentPeriodHeader label={detailDay ? '基准日' : '基准周日均'} period={baselinePeriod} day={detailDay} />,
                                 numeric: true,
                                 render: (r) => detailValueText(r.baseline),
                               },
                               {
                                 key: 'analysis',
-                                header: detailDay ? '分析日' : '分析周日均',
+                                header: <PaymentPeriodHeader label={detailDay ? '分析日' : '分析周日均'} period={analysisPeriod} day={detailDay} />,
                                 numeric: true,
                                 render: (r) => detailValueText(r.analysis),
                               },
