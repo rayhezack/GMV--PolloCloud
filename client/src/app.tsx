@@ -10,13 +10,30 @@ import { usePollocloudUser } from '@/hooks/use-pollocloud-user';
 import { canManagePollocloudApp } from '@/lib/pollocloud';
 
 import Layout from './components/Layout';
-const DataPage = React.lazy(() => import('./pages/DataPage/DataPage'));
-const OverviewPage = React.lazy(() => import('./pages/OverviewPage/OverviewPage'));
-const ChainPage = React.lazy(() => import('./pages/ChainPage/ChainPage'));
-const PaymentPage = React.lazy(() => import('./pages/PaymentPage/PaymentPage'));
-const CreativePage = React.lazy(() => import('./pages/CreativePage/CreativePage'));
-const AdsPage = React.lazy(() => import('./pages/AdsPage/AdsPage'));
-const DetailsPage = React.lazy(() => import('./pages/DetailsPage/DetailsPage'));
+const lazyPage = <T extends React.ComponentType<any>>(load: () => Promise<{ default: T }>, name: string) =>
+  React.lazy(async () => {
+    const key = `pollo-chunk-retry:${name}`;
+    try {
+      const page = await load();
+      window.sessionStorage.removeItem(key);
+      return page;
+    } catch (error) {
+      if (!window.sessionStorage.getItem(key)) {
+        window.sessionStorage.setItem(key, '1');
+        window.location.reload();
+      } else {
+        window.sessionStorage.removeItem(key);
+      }
+      throw error;
+    }
+  });
+const DataPage = lazyPage(() => import('./pages/DataPage/DataPage'), 'data');
+const OverviewPage = lazyPage(() => import('./pages/OverviewPage/OverviewPage'), 'overview');
+const ChainPage = lazyPage(() => import('./pages/ChainPage/ChainPage'), 'chain');
+const PaymentPage = lazyPage(() => import('./pages/PaymentPage/PaymentPage'), 'payment');
+const CreativePage = lazyPage(() => import('./pages/CreativePage/CreativePage'), 'creative');
+const AdsPage = lazyPage(() => import('./pages/AdsPage/AdsPage'), 'ads');
+const DetailsPage = lazyPage(() => import('./pages/DetailsPage/DetailsPage'), 'details');
 import { dashboardView } from './components/dashboard/navigation';
 
 function DashboardRoute() {
@@ -40,9 +57,9 @@ function DashboardRoute() {
 }
 import NotFound from './pages/NotFound/NotFound';
 
-const ReportPage = React.lazy(() => import('./pages/ReportPage/ReportPage'));
-const AdminManagementPage = React.lazy(() => import('./pages/AdminManagementPage/AdminManagementPage'));
-const PermissionsPage = React.lazy(() => import('./pages/PermissionsPage/PermissionsPage'));
+const ReportPage = lazyPage(() => import('./pages/ReportPage/ReportPage'), 'report');
+const AdminManagementPage = lazyPage(() => import('./pages/AdminManagementPage/AdminManagementPage'), 'admin');
+const PermissionsPage = lazyPage(() => import('./pages/PermissionsPage/PermissionsPage'), 'permissions');
 
 if (new URLSearchParams(location.search).has('perf')) {
   void import('./lib/dashboard-performance');
