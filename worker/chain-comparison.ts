@@ -342,7 +342,7 @@ export async function readChainComparison(params: ChainComparisonParams, query: 
   const source =
     params.chainType === 'active'
       ? await query(
-          `SELECT period,platform,creation_cnt_30d_label,user_lifecycle,active_uv,paywall_expose_uv,paywall_submit_uv,pay_uv,gmv_usd FROM pollo_da_chain_funnel WHERE period BETWEEN ? AND ? AND platform IN (${slots})${deviceClause}`,
+          `SELECT period,platform,country_tier,creation_cnt_30d_label,user_lifecycle,active_uv,paywall_expose_uv,paywall_submit_uv,pay_uv,gmv_usd FROM pollo_da_chain_funnel WHERE period BETWEEN ? AND ? AND platform IN (${slots})${deviceClause}`,
           start,
           end,
           ...scopes,

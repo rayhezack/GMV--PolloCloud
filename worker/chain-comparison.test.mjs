@@ -103,6 +103,7 @@ test('read queries keep the pay result scope and selected process source indepen
     return [];
   });
   assert.match(queries[0].sql, /pollo_da_chain_funnel/);
+  assert.match(queries[0].sql, /SELECT period,platform,country_tier,creation_cnt_30d_label/);
   assert.deepEqual(queries[0].binds.slice(-2), ['web', 'app']);
   assert.match(queries[1].sql, /attribution_type='NONE'/);
   assert.equal(queries[1].binds[1], 'all');
