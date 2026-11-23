@@ -1,3 +1,4 @@
+import { share } from '@shared/format';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { MoreHorizontal, ArrowDownToLine } from 'lucide-react';
 import {
@@ -494,9 +495,19 @@ export default function RevenueTrend({
             { key: 'baseline', header: '上周同日', numeric: true, render: (b) => showValue(b.baseline) },
             {
               key: 'delta',
-              header: '变化',
+              header: '绝对变化',
               numeric: true,
               render: (b) => (b.baseline == null ? '—' : showChange(b.value - b.baseline)),
+            },
+            {
+              key: 'relativeChange',
+              header: '相对变化',
+              numeric: true,
+              minWidth: 104,
+              render: (b) =>
+                unit === 'rate'
+                  ? '—'
+                  : share(b.baseline != null && b.baseline !== 0 ? (b.value - b.baseline) / b.baseline : null),
             },
           ]}
         />

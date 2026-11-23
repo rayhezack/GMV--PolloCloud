@@ -1,7 +1,7 @@
 import { ArrowDownToLine } from 'lucide-react';
 import { Modal, DataTable, PeriodHeading, InfoTip } from '@/components/system';
 import { decomposeRate, netChangeShare } from '@shared/rate-attribution';
-import { rate, changePp, share } from '@shared/format';
+import { rate, signedPp, share } from '@shared/format';
 import { exportCsv } from '@/components/v62/primitives';
 
 export function RateAnalysisDetails({
@@ -79,9 +79,9 @@ export function RateAnalysisDetails({
         {[
           { label: `基准${metric}`, value: rate(result.baselineRate) },
           { label: `分析${metric}`, value: rate(result.currentRate) },
-          { label: `${efficiency}贡献`, value: changePp(result.efficiency) },
-          { label: `${structure}贡献`, value: changePp(result.structure) },
-          { label: '未归因', value: changePp(result.unresolved) },
+          { label: `${efficiency}贡献`, value: signedPp(result.efficiency) },
+          { label: `${structure}贡献`, value: signedPp(result.structure) },
+          { label: '未归因', value: signedPp(result.unresolved) },
         ].map((item) => (
           <div key={item.label}>
             <span>{item.label}</span>
@@ -115,21 +115,21 @@ export function RateAnalysisDetails({
               header: `${efficiency} · pp`,
               numeric: true,
               minWidth: 100,
-              render: (r) => changePp(r.efficiency),
+              render: (r) => signedPp(r.efficiency),
             },
             {
               key: 'structure',
               header: `${structure} · pp`,
               numeric: true,
               minWidth: 100,
-              render: (r) => changePp(r.structure),
+              render: (r) => signedPp(r.structure),
             },
             {
               key: 'unresolved',
               header: '未归因 · pp',
               numeric: true,
               minWidth: 84,
-              render: (r) => changePp(r.unresolvedEffect),
+              render: (r) => signedPp(r.unresolvedEffect),
             },
             {
               key: 'share',

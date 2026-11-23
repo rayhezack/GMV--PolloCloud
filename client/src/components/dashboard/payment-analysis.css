@@ -386,3 +386,17 @@
 .payment-model-table .sys-diverging b {
   min-width: 56px;
 }
+
+.payment-detail-sheet .sys-table-cell {
+  white-space: nowrap;
+}
+.payment-detail-sheet .sys-diverging {
+  min-width: 136px;
+}
+.payment-detail-sheet .sys-diverging-track {
+  width: 64px;
+  flex-basis: 64px;
+}
+.payment-detail-sheet .payment-brand-label {
+  white-space: normal;
+}

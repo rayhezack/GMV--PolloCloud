@@ -391,3 +391,20 @@ html[data-astryx-theme='pollo-v62']
 .sys-detail-comparison button {
   color: var(--text-1);
 }
+.sys-page-loading,
+.sys-panel-loading {
+  display: grid;
+  place-items: center;
+  padding: var(--space-24);
+}
+.sys-page-loading {
+  min-height: calc(100dvh - 160px);
+}
+.sys-panel-loading {
+  min-height: 180px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-wave-loader-motion * {
+    animation: none !important;
+  }
+}

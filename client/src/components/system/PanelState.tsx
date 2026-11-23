@@ -1,4 +1,4 @@
-import { Skeleton } from '@astryxdesign/core/Skeleton';
+import LoadingWave from '../dashboard/LoadingWave';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Button } from '@astryxdesign/core/Button';
@@ -17,10 +17,8 @@ export function PanelState({
   if (state === 'partial') return <Badge variant="warning" label={`不完整周 ${days ?? '—'}/7 天`} />;
   if (state === 'loading')
     return (
-      <div className="sys-skeleton" role="status" aria-label="正在读取数据">
-        <Skeleton width="36%" height={24} />
-        <Skeleton width="70%" height={16} />
-        <Skeleton width="100%" height={144} />
+      <div className="sys-panel-loading" role="status" aria-label="正在读取数据">
+        <LoadingWave label="正在读取数据…" />
       </div>
     );
   return (

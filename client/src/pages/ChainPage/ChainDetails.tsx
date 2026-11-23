@@ -1,6 +1,6 @@
 import { ArrowDownToLine } from 'lucide-react';
 import type { ChainComparison } from '@shared/chain-comparison';
-import { metricValue, metricChange, signedMoney, share } from '@shared/format';
+import { metricValue, metricDifference, signedMoney, share } from '@shared/format';
 import { Modal, DataTable, PeriodHeading } from '@/components/system';
 
 export function ChainDetails({
@@ -49,10 +49,20 @@ export function ChainDetails({
             },
             {
               key: 'change',
-              header: '变化',
+              header: '绝对变化',
               numeric: true,
               minWidth: 100,
-              render: (row) => (row.residual ? '—' : metricChange(row.baseline, row.current, row.unit)),
+              render: (row) => (row.residual ? '—' : metricDifference(row.baseline, row.current, row.unit)),
+            },
+            {
+              key: 'relativeChange',
+              header: '相对变化',
+              numeric: true,
+              minWidth: 104,
+              render: (row) =>
+                row.residual || row.unit === 'rate'
+                  ? '—'
+                  : share(row.baseline ? (row.current - row.baseline) / row.baseline : null),
             },
             {
               key: 'effect',

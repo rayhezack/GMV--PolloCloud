@@ -1,7 +1,7 @@
 import { Drawer, DrawerHeader } from '@astryxdesign/core/Drawer';
 import { Selector } from '@astryxdesign/core/Selector';
 import { DataTable, DivergingBar, InfoTip, DeltaBadge } from '@/components/system';
-import { share } from '@shared/format';
+import { share, signedPp } from '@shared/format';
 import { DetailComparison } from '@/components/system/DetailComparison';
 import { paymentDayComparison, toggleComparisonDay } from './detail-comparison';
 import { shiftDay } from '@/components/v62/trend-data';
@@ -89,7 +89,8 @@ function CostInfo() {
   );
 }
 
-function Change({ value }: { value: number | null }) {
+function Change({ value, plain = false }: { value: number | null; plain?: boolean }) {
+  if (plain) return <span>{share(value)}</span>;
   return (
     <span className={`payment-change ${value == null || value === 0 ? '' : value > 0 ? 'is-up' : 'is-down'}`}>
       {value != null && value !== 0 && (value > 0 ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
@@ -99,18 +100,7 @@ function Change({ value }: { value: number | null }) {
 }
 
 function RatioChange({ value }: { value: number | null }) {
-  return (
-    <span className="payment-change payment-cost-change">
-      {value == null ? (
-        '—'
-      ) : (
-        <>
-          {value > 0 ? <ArrowUp size={12} /> : value < 0 ? <ArrowDown size={12} /> : null}
-          {(Math.abs(value) * 100).toFixed(1)} pp
-        </>
-      )}
-    </span>
-  );
+  return <span>{signedPp(value, 1)}</span>;
 }
 
 function RevenueTrend({
@@ -1104,7 +1094,7 @@ export default function PaymentAnalysis({
                 isOpen={detailOpen && Boolean(selectedItem)}
                 onOpenChange={setDetailOpen}
                 label="收入归因明细"
-                width={680}
+                width={960}
                 padding={0}
               >
                 <div className="payment-detail-sheet">
@@ -1142,7 +1132,7 @@ export default function PaymentAnalysis({
                           <div>
                             <span>GMV</span>
                             <strong>{selectedMetrics ? money(selectedMetrics.gmv) : '—'}</strong>
-                            <Change value={selectedMetrics?.changeRate ?? null} />
+                            <Change value={selectedMetrics?.changeRate ?? null} plain />
                           </div>
                           {entityCosts && (
                             <>
@@ -1151,7 +1141,7 @@ export default function PaymentAnalysis({
                                   模型成本 <CostInfo />
                                 </span>
                                 <strong>{selectedMetrics?.cost == null ? '—' : money(selectedMetrics.cost)}</strong>
-                                <Change value={selectedMetrics?.costChangeRate ?? null} />
+                                <Change value={selectedMetrics?.costChangeRate ?? null} plain />
                               </div>
                               <div>
                                 <span>成本 / GMV</span>
@@ -1240,6 +1230,7 @@ export default function PaymentAnalysis({
                           ) : null}
                           {registrationRows ? (
                             <DataTable
+                              stickyFirst
                               rows={visibleRegistrationRows ?? []}
                               columns={[
                                 {
@@ -1276,20 +1267,23 @@ export default function PaymentAnalysis({
                                 },
                                 {
                                   key: 'change',
-                                  header: '变化',
+                                  header: '绝对变化',
                                   numeric: true,
-                                  render: (r) => (
-                                    <div>
-                                      {signedMoney(r.analysis - r.baseline)}
-                                      <DeltaBadge value={relativeChange(r.analysis, r.baseline)} />
-                                    </div>
-                                  ),
+                                  minWidth: 112,
+                                  render: (r) => signedMoney(r.analysis - r.baseline),
+                                },
+                                {
+                                  key: 'relativeChange',
+                                  header: '相对变化',
+                                  numeric: true,
+                                  minWidth: 104,
+                                  render: (r) => share(relativeChange(r.analysis, r.baseline)),
                                 },
                                 {
                                   key: 'contribution',
                                   header: '贡献度',
                                   numeric: true,
-                                  minWidth: 184,
+                                  minWidth: 168,
                                   render: (r) => (
                                     <DivergingBar
                                       value={r.contribution}
@@ -1335,6 +1329,7 @@ export default function PaymentAnalysis({
                               : '付费构成'}
                           </h3>
                           <DataTable
+                            stickyFirst
                             rows={detailTypes.map((row, index) => ({
                               ...row,
                               id: row.key,
@@ -1370,20 +1365,23 @@ export default function PaymentAnalysis({
                               },
                               {
                                 key: 'change',
-                                header: '变化',
+                                header: '绝对变化',
                                 numeric: true,
-                                render: (r) => (
-                                  <div>
-                                    {signedMoney(r.analysis - r.baseline)}
-                                    <DeltaBadge value={relativeChange(r.analysis, r.baseline)} />
-                                  </div>
-                                ),
+                                minWidth: 112,
+                                render: (r) => signedMoney(r.analysis - r.baseline),
+                              },
+                              {
+                                key: 'relativeChange',
+                                header: '相对变化',
+                                numeric: true,
+                                minWidth: 104,
+                                render: (r) => share(relativeChange(r.analysis, r.baseline)),
                               },
                               {
                                 key: 'contribution',
                                 header: '贡献度',
                                 numeric: true,
-                                minWidth: 184,
+                                minWidth: 168,
                                 render: (r) => (
                                   <DivergingBar
                                     value={r.contribution}

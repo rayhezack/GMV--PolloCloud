@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { Selector } from '@astryxdesign/core/Selector';
 import { getAdsOverview } from '@/api/dashboard';
 import type { AdsCountryDetail, AdsChannelRow } from '@shared/api.interface';
-import { DataTable, Modal, PanelState, DeltaBadge } from '@/components/system';
+import { DataTable, Modal, PanelState } from '@/components/system';
 import { FinanceOverviewAreaChart } from '@/components/finance-overview-area-chart';
-import { money, count, rate } from '@shared/format';
+import { money, count, rate, share, signedPp } from '@shared/format';
 import { adsBuckets, adsValue, type AdsMetric } from './ads-data';
 import { DetailComparison } from '@/components/system/DetailComparison';
 import { toggleComparisonDay } from '@/components/dashboard/detail-comparison';
@@ -233,22 +233,23 @@ export function CountryChannels({
                 },
                 {
                   key: 'delta',
-                  header: '变化',
+                  header: '绝对变化',
                   numeric: true,
-                  render: (r) => (
-                    <DeltaBadge
-                      unit={r.id === 'ctr' ? 'pp' : 'pct'}
-                      value={
-                        r.b != null && r.v != null
-                          ? r.id === 'ctr'
-                            ? r.v - r.b
-                            : r.b !== 0
-                              ? (r.v - r.b) / r.b
-                              : null
-                          : null
-                      }
-                    />
-                  ),
+                  minWidth: 112,
+                  render: (r) =>
+                    r.b == null || r.v == null
+                      ? '—'
+                      : r.id === 'ctr'
+                        ? signedPp(r.v - r.b)
+                        : `${r.v > r.b ? '+' : ''}${r.format(r.v - r.b)}`,
+                },
+                {
+                  key: 'relativeChange',
+                  header: '相对变化',
+                  numeric: true,
+                  minWidth: 104,
+                  render: (r) =>
+                    r.id === 'ctr' ? '—' : share(r.b != null && r.v != null && r.b !== 0 ? (r.v - r.b) / r.b : null),
                 },
               ]}
             />

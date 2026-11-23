@@ -18,6 +18,7 @@ import { getDailyDiagnosis } from '@/api/daily-diagnosis';
 import type { DailyDiagnosisStatus, SyncRunStatus } from '@shared/api.interface';
 import { executeSyncRun, getLatestSyncRun } from '@/api/sync';
 import { ReportTask } from './dashboard/ReportTask';
+import LoadingWave from './dashboard/LoadingWave';
 
 const REPORT_GENERATION_KEEPALIVE_INTERVAL_MS = 10_000;
 const REPORT_GENERATION_PLATFORMS: Platform[] = ['web', 'app'];
@@ -408,8 +409,8 @@ const Layout = () => {
         <main id="main-content">
           <Suspense
             fallback={
-              <div className="px-8 py-12 text-sm text-muted-foreground" role="status">
-                正在打开页面…
+              <div className="sys-page-loading" role="status" aria-label="正在打开页面">
+                <LoadingWave label="正在打开页面…" />
               </div>
             }
           >
