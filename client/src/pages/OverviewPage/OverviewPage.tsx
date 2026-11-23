@@ -1,3 +1,4 @@
+import { Tooltip } from '@astryxdesign/core/Tooltip';
 import { RefreshButton } from '@/components/system/RefreshButton';
 import './home.css';
 import { PageHeader, PanelState, Modal } from '@/components/system';
@@ -115,7 +116,7 @@ export default function OverviewPage() {
     let live = true;
     setLoading(true);
     setError('');
-    const scope = [platform,deviceType,readStart,endDate].join('|');
+    const scope = [platform, deviceType, readStart, endDate].join('|');
     if (rowsScope.current !== scope) setRows([]);
     rowsScope.current = scope;
     void getDashboardOverview({
@@ -215,14 +216,24 @@ export default function OverviewPage() {
               />
             )}
             <PlatformSelect value={platform} onChange={(value) => update({ platform: value })} />
-            <RefreshButton loading={loading || coverageLoading} onRefresh={() => { setLoading(true); invalidateDashboardCache(); setRevision(value => value + 1); }} label="刷新数据" />
-            <Link
-              className="v62-icon-button"
-              aria-label="诊断报告"
-              to={`/report?platform=${platform === 'all' ? 'web' : platform}`}
-            >
-              <WorkbenchIcon name="file-chart" />
-            </Link>
+            <RefreshButton
+              loading={loading || coverageLoading}
+              onRefresh={() => {
+                setLoading(true);
+                invalidateDashboardCache();
+                setRevision((value) => value + 1);
+              }}
+              label="刷新数据"
+            />
+            <Tooltip content="诊断报告" hasHoverIndication={false} focusTrigger="always" placement="below">
+              <Link
+                className="v62-icon-button"
+                aria-label="诊断报告"
+                to={`/report?platform=${platform === 'all' ? 'web' : platform}`}
+              >
+                <WorkbenchIcon name="file-chart" />
+              </Link>
+            </Tooltip>
           </>
         }
       />

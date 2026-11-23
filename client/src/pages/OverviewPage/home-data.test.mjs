@@ -31,7 +31,7 @@ test('missing renewal data or zero eligible users never becomes a zero rate', ()
 
 test('calendar defaults to a quarter independently of the trend and follows an explicitly chosen range', () => {
   assert.deepEqual(homeCalendarWindow('2026-10-06', '2026-11-04', false), {
-    startDate: '2026-08-07',
+    startDate: '2026-08-03',
     endDate: '2026-11-04',
   });
   assert.deepEqual(homeCalendarWindow('2026-07-05', '2026-11-04', true), {
@@ -42,4 +42,15 @@ test('calendar defaults to a quarter independently of the trend and follows an e
     startDate: '2026-10-28',
     endDate: '2026-11-04',
   });
+});
+
+test('default quarter expands backwards through Monday, including the missing top-left day',()=>{
+ assert.deepEqual(homeCalendarWindow('2026-10-24','2026-11-22',false),{startDate:'2026-08-24',endDate:'2026-11-22'});
+ for(let offset=0;offset<7;offset++) {
+  const end=new Date(Date.UTC(2026,10,22+offset)).toISOString().slice(0,10);
+  const result=homeCalendarWindow('',end,false);
+  assert.equal(new Date(result.startDate+'T00:00:00Z').getUTCDay(),1);
+  const length=(Date.parse(end)-Date.parse(result.startDate))/86400000+1;
+  assert.ok(length>=90&&length<=96);
+ }
 });

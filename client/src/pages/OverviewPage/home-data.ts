@@ -60,5 +60,9 @@ export function homeBuckets(
 
 /** The calendar defaults to a quarter until the header range is explicitly set. */
 export function homeCalendarWindow(startDate: string, endDate: string, explicitRange: boolean) {
-  return { startDate: explicitRange ? startDate : endDate ? shiftDay(endDate, -89) : '', endDate };
+  if (explicitRange || !endDate) return { startDate: explicitRange ? startDate : '', endDate };
+  const quarterStart = shiftDay(endDate, -89);
+  const weekday = new Date(quarterStart + 'T00:00:00Z').getUTCDay();
+  // Include the real days before the quarter cutoff so the first column is complete.
+  return { startDate: shiftDay(quarterStart, -((weekday + 6) % 7)), endDate };
 }

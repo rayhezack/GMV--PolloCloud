@@ -1,7 +1,7 @@
 import { Search, useSearchSpring } from '@/components/bencho/Search';
 import { getGmvAnomalies } from '@/api/dashboard';
 import { useEffect, useState, useRef, type CSSProperties } from 'react';
-import { publishActivity, readActivities, useActivities } from '@/lib/activity-notifications';
+import { publishActivity, readActivities, readActivity, useActivities } from '@/lib/activity-notifications';
 import { Link } from 'react-router-dom';
 import { WorkbenchIcon } from '@/components/icons/WorkbenchIcon';
 import { DASHBOARD_VIEWS, dashboardHref } from '@/components/dashboard/navigation';
@@ -39,7 +39,7 @@ export function WorkspaceHeader({
   const arrival = useSearchSpring(open ? 100 : 0, still, 20);
   const results = DASHBOARD_VIEWS.filter((view) => view.label.toLowerCase().includes(query.trim().toLowerCase()));
   const activities = useActivities();
-  const unread = activities.filter((item) => !item.read).length;
+  const unread = activities.length;
   useEffect(() => {
     if (sync && ['success', 'failed'].includes(sync.status))
       publishActivity({
@@ -97,7 +97,7 @@ export function WorkspaceHeader({
         <div ref={searchHost} className="v62-header-search">
           <Search
             alwaysOpen
-            width={240}
+            width={200}
             placeholder="搜索分析页面…"
             value={query}
             onActivate={() => setOpen(true)}
@@ -121,11 +121,17 @@ export function WorkspaceHeader({
                 全部已读
               </button>
             </div>
-            {!activities.length && <p>暂无动态</p>}
+            {!activities.length && <p>暂无未读消息</p>}
             <div className="activity-list">
               {activities.map((item) => (
                 <div className="activity-item" key={item.id} data-unread={!item.read}>
-                  {item.href ? <Link to={item.href}>{item.title}</Link> : <strong>{item.title}</strong>}
+                  {item.href ? (
+                    <Link to={item.href} onClick={() => readActivity(item.id)}>
+                      {item.title}
+                    </Link>
+                  ) : (
+                    <strong>{item.title}</strong>
+                  )}
                   {item.body && <p>{item.body}</p>}
                 </div>
               ))}

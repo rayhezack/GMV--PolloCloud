@@ -18,9 +18,12 @@ try {
 } catch {
   /* Storage is optional. */
 }
+// Keep read identities for polling deduplication; render only unread messages.
+let unreadItems = items.filter((item) => !item.read);
 const listeners = new Set<() => void>();
 function commit(next: Activity[]) {
   items = next.slice(0, 100);
+  unreadItems = items.filter((item) => !item.read);
   try {
     localStorage.setItem(key, JSON.stringify(items));
   } catch {
@@ -35,19 +38,22 @@ export function publishActivity(item: Activity) {
 export function readActivities() {
   commit(items.map((item) => ({ ...item, read: true })));
 }
+export function readActivity(id: string) {
+  commit(items.map((item) => (item.id === id ? { ...item, read: true } : item)));
+}
+export function unreadActivitySnapshot() {
+  return unreadItems;
+}
 export function activitySnapshot() {
   return items;
 }
 export function useActivities() {
-  return useSyncExternalStore(
-    (fn) => {
-      listeners.add(fn);
-      return () => {
-        listeners.delete(fn);
-      };
-    },
-    () => items,
-  );
+  return useSyncExternalStore((fn) => {
+    listeners.add(fn);
+    return () => {
+      listeners.delete(fn);
+    };
+  }, unreadActivitySnapshot);
 }
 const message = (title: string) => publishActivity({ id: `message:${Date.now()}:${title}`, title });
 export const toast = { info: message, success: message, error: message, warning: message };

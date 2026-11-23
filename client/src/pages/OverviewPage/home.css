@@ -772,3 +772,7 @@ html[data-astryx-theme='pollo-v62'] .astryx-tooltip:has(.gmv-day-preview) {
   border: 0;
   box-shadow: var(--shadow-floating);
 }
+
+/* Outside-range and unavailable observations keep the grid's shape without
+   implying a zero, adding a future date, or inventing a measurement. */
+[data-page='gmv-trend'] .gmv-calendar-grid > .gmv-calendar-blank { background: var(--surface-sunken); border-radius: var(--radius-cell); }
