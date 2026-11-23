@@ -96,8 +96,10 @@ export function comparisonParams(search: URLSearchParams): ChainComparisonParams
     baseline: search.get('baseline') || '',
     analysis: search.get('analysis') || '',
     chainType: search.get('chainType') || 'active',
+    populationDimension: search.get('populationDimension') || 'creation',
     lifecycle: search.get('lifecycle') || undefined,
     creationTier: search.get('creationTier') || undefined,
+    countryTier: search.get('countryTier') || undefined,
     planTier: search.get('planTier') || undefined,
   };
   if (
@@ -105,15 +107,18 @@ export function comparisonParams(search: URLSearchParams): ChainComparisonParams
     (params.deviceType != null && (params.platform !== 'app' || !['ios', 'android'].includes(params.deviceType))) ||
     !['day', 'week'].includes(params.mode) ||
     !['active', 'renewal'].includes(params.chainType) ||
+    !['creation', 'country'].includes(params.populationDimension) ||
     !validDate(params.baseline) ||
     !validDate(params.analysis) ||
     params.baseline >= params.analysis
   )
     throw new Error('链路比较参数无效；基准日期必须早于分析日期');
   if (params.lifecycle && !['NEW', 'OLD', 'UNKNOWN'].includes(params.lifecycle)) throw new Error('注册人群无效');
+  if (params.countryTier && (params.chainType !== 'active' || params.populationDimension !== 'country' || !params.lifecycle))
+    throw new Error('国家分层必须属于已选注册人群');
   if (
     params.creationTier &&
-    (!params.lifecycle ||
+    (params.populationDimension !== 'creation' || !params.lifecycle ||
       ![
         'create_cnt_30d_0',
         'create_cnt_30d_[1,11)',
@@ -137,9 +142,9 @@ export function buildChainComparison(
   pay: Row[],
   inheritedDates?: ChainComparison['dates'],
 ): ChainComparison {
-  if (params.lifecycle || params.planTier) {
+  if (params.lifecycle || params.countryTier || params.planTier) {
     const full = buildChainComparison(
-      { ...params, lifecycle: undefined, creationTier: undefined, planTier: undefined },
+      { ...params, lifecycle: undefined, creationTier: undefined, countryTier: undefined, planTier: undefined },
       source,
       pay,
     );
@@ -147,7 +152,8 @@ export function buildChainComparison(
     const selected = source.filter((row) =>
       params.chainType === 'active'
         ? lifecycleOf(row) === params.lifecycle &&
-          (!params.creationTier || row.creation_cnt_30d_label === params.creationTier)
+          (!params.creationTier || row.creation_cnt_30d_label === params.creationTier) &&
+          (!params.countryTier || String(row.country_tier || 'UNKNOWN') === params.countryTier)
         : String(row.plan_tier || 'UNKNOWN').toUpperCase() === params.planTier,
     );
     const field = params.chainType === 'active' ? 'gmv_usd' : 'renew_amount_usd';
@@ -163,7 +169,7 @@ export function buildChainComparison(
         : 0,
     }));
     const scoped = buildChainComparison(
-      { ...params, lifecycle: undefined, creationTier: undefined, planTier: undefined },
+      { ...params, lifecycle: undefined, creationTier: undefined, countryTier: undefined, planTier: undefined },
       selected,
       selectedPay,
       full.dates,
@@ -173,6 +179,7 @@ export function buildChainComparison(
       comparison: params,
       groups: full.groups,
       lifecycleGroups: full.lifecycleGroups,
+      countryGroups: full.countryGroups,
       residual: null,
     };
   }
@@ -233,10 +240,11 @@ export function buildChainComparison(
     effect: total.delta - effectSum,
     contribution: share(total.delta - effectSum, total.delta),
   };
-  const groupKey = (row: Row) =>
+  const creationGroupKey = (row: Row) =>
     params.chainType === 'active'
       ? `${row.creation_cnt_30d_label || '未知'} × ${lifecycleOf(row)}`
       : String(row.plan_tier || 'UNKNOWN').toUpperCase();
+  const countryGroupKey = (row: Row) => `${row.country_tier || 'UNKNOWN'} × ${lifecycleOf(row)}`;
   const tierNames: Record<string, string> = {
     create_cnt_30d_0: '近30日未创作',
     'create_cnt_30d_[1,11)': '近30日 1–10 次',
@@ -244,7 +252,8 @@ export function buildChainComparison(
     'create_cnt_30d_[31,101)': '近30日 31–100 次',
     'create_cnt_30d_[101,+inf)': '近30日 101+ 次',
   };
-  const groups: ChainGroup[] = [...new Set([...previous, ...current].map(groupKey))]
+  const makeGroups = (groupKey: (row: Row) => string, labelPart: (part: string) => string) =>
+    [...new Set([...previous, ...current].map(groupKey))]
     .sort((a, b) => compareChainGroupKeys(a, b, params.chainType))
     .map((key) => {
       const p = previous.filter((row) => groupKey(row) === key),
@@ -255,7 +264,7 @@ export function buildChainComparison(
           .split(' × ')
           .map(
             (part) =>
-              tierNames[part] ||
+              labelPart(part) ||
               ({ NEW: '新用户', OLD: '老用户', UNKNOWN: '未知' } as Record<string, string>)[part] ||
               part,
           )
@@ -265,6 +274,12 @@ export function buildChainComparison(
         factors: decompose(p, c, days, params.chainType, total.delta),
       };
     });
+  const creationGroups = makeGroups(creationGroupKey, (part) => tierNames[part] || '');
+  const countryGroups =
+    params.chainType === 'active'
+      ? makeGroups(countryGroupKey, (part) => (part === 'UNKNOWN' ? '未知国家' : part))
+      : [];
+  const groups = params.populationDimension === 'country' ? countryGroups : creationGroups;
   const trend = [...new Set(source.map((row) => String(row.period)))].sort().map((date) => {
     const rows = source.filter((row) => row.period === date);
     return {
@@ -309,6 +324,7 @@ export function buildChainComparison(
     factors,
     groups,
     lifecycleGroups,
+    countryGroups,
     trend,
   };
 }

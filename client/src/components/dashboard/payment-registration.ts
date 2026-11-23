@@ -1,11 +1,11 @@
 import type { PaymentAnalysisResponse, PaymentRegistrationTrendResponse } from '../../../../shared/api.interface';
 
 export type RegistrationDimension = 'userLifecycle' | 'countryTier' | 'regPlatform' | 'sku' | 'upgradeCombination' | 'creditAmount' | 'cycleTransition';
-export const registrationDimensionLabels: Record<RegistrationDimension,string> = { userLifecycle:'注册新老',countryTier:'国家层级',regPlatform:'注册端',sku:'续订 SKU',upgradeCombination:'升级组合',creditAmount:'积分档位',cycleTransition:'周期组合' };
+export const registrationDimensionLabels: Record<RegistrationDimension,string> = { userLifecycle:'注册新老',countryTier:'国家层级',regPlatform:'注册端',sku:'SKU',upgradeCombination:'升级组合',creditAmount:'积分档位',cycleTransition:'周期组合' };
 type RegistrationRow = PaymentRegistrationTrendResponse['rows'][number];
 const baseDimensions: RegistrationDimension[] = ['userLifecycle','countryTier','regPlatform'];
 export function registrationDimensions(payType: string): RegistrationDimension[] {
-  const special:Record<string,RegistrationDimension> = {'自动续订':'sku','套餐升级':'upgradeCombination','积分包':'creditAmount','重置订阅周期':'cycleTransition'};
+  const special:Record<string,RegistrationDimension> = {'首订':'sku','自动续订':'sku','套餐升级':'upgradeCombination','积分包':'creditAmount','重置订阅周期':'cycleTransition'};
   return special[payType] ? [special[payType],...baseDimensions] : baseDimensions;
 }
 const known = (value?:string) => !!value && !['UNKNOWN','未知','其他'].includes(value);

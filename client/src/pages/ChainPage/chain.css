@@ -366,6 +366,14 @@
   padding: var(--space-16) var(--space-24);
   border-bottom: 1px solid var(--line);
 }
+.chain-population-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+.chain-population-tools .spring-segment {
+  max-width: 250px;
+}
 .chain-population-label {
   display: flex;
   align-items: center;

@@ -5,8 +5,10 @@ export type ChainComparisonParams = {
   baseline: string;
   analysis: string;
   chainType: 'active' | 'renewal';
+  populationDimension?: 'creation' | 'country';
   lifecycle?: string;
   creationTier?: string;
+  countryTier?: string;
   planTier?: string;
 };
 export type ChainFactor = {
@@ -31,6 +33,8 @@ export type ChainComparison = {
   groups: ChainGroup[];
   /** Registration lifecycle totals, recomputed from atoms before decomposition. */
   lifecycleGroups?: ChainGroup[];
+  /** Country groups keyed by country tier × registration lifecycle. */
+  countryGroups?: ChainGroup[];
   trend: { date: string; values: Record<string, number | null> }[];
 };
 

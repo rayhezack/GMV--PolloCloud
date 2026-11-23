@@ -315,3 +315,26 @@ test('stored unknown lifecycle labels use the API-supported UNKNOWN key', () => 
   close(scoped.total.baseline, 40);
   close(scoped.total.current, 70);
 });
+test('country population drilldown keeps lifecycle separate and conserves GMV and factor effects', () => {
+  const countryParams = { ...params, populationDimension: 'country' };
+  const source = [
+    row(params.baseline, 100, { user_lifecycle: 'NEW', country_tier: 'T1' }),
+    row(params.baseline, 80, { user_lifecycle: 'NEW', country_tier: 'T2' }),
+    row(params.analysis, 140, { user_lifecycle: 'NEW', country_tier: 'T1' }),
+    row(params.analysis, 70, { user_lifecycle: 'NEW', country_tier: 'T2' }),
+  ];
+  const payments = [
+    { period: params.baseline, gmv_usd: 180 },
+    { period: params.analysis, gmv_usd: 210 },
+  ];
+  const full = buildChainComparison(countryParams, source, payments);
+  assert.equal(full.ready, true);
+  assert.deepEqual(full.groups.map((group) => group.key), ['T1 × NEW', 'T2 × NEW']);
+  close(full.groups.reduce((sum, group) => sum + group.baseline, 0), full.total.baseline);
+  close(full.groups.reduce((sum, group) => sum + group.current, 0), full.total.current);
+  const selected = buildChainComparison({ ...countryParams, lifecycle: 'NEW', countryTier: 'T1' }, source, payments);
+  assert.equal(selected.ready, true);
+  assert.equal(selected.comparison.countryTier, 'T1');
+  close(selected.factors.reduce((sum, factor) => sum + factor.effect, 0), selected.total.delta);
+  assert.equal(selected.residual, null);
+});

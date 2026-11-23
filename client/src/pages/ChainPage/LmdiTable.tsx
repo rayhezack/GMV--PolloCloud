@@ -17,7 +17,7 @@ export default function LmdiTable({ data, factor, onChoose, onExport }: Props) {
       id: 'total',
       kind: 'total' as const,
       label:
-        data.comparison.lifecycle || data.comparison.planTier
+        data.comparison.lifecycle || data.comparison.countryTier || data.comparison.planTier
           ? '所选人群 GMV'
           : chainType === 'active'
             ? '主动付费 GMV'

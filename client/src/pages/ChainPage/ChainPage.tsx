@@ -234,10 +234,20 @@ export default function ChainPage() {
           </div>
           <PopulationPicker
             data={data}
+            onDimensionChange={(value) =>
+              update({
+                populationDimension: value,
+                creationTier: null,
+                countryTier: null,
+                lifecycle: null,
+                selectedDay: null,
+              })
+            }
             onSelect={(scope) =>
               update({
                 lifecycle: scope.lifecycle || null,
                 creationTier: scope.creationTier || null,
+                countryTier: scope.countryTier || null,
                 planTier: scope.planTier || null,
                 selectedDay: null,
               })

@@ -43,7 +43,7 @@ test('business dimensions distinguish actual SKU, upgrade credits and cycle rese
   assert.equal(registrationDimensions('套餐升级')[0],'upgradeCombination');
   assert.equal(registrationDimensions('积分包')[0],'creditAmount');
   assert.equal(registrationDimensions('重置订阅周期')[0],'cycleTransition');
-  assert.equal(registrationDimensions('首订')[0],'userLifecycle');
+  assert.equal(registrationDimensions('首订')[0],'sku');
   assert.equal(registrationLabel(row,'upgradeCombination'),'Pro · 800 积分 · 月付 → Pro · 2,000 积分 · 月付');
   assert.equal(registrationLabel(row,'creditAmount'),'2,000 积分');
   assert.equal(registrationLabel(row,'cycleTransition'),'月付内重置');
