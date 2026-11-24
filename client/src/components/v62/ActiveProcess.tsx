@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type {
   DashboardGmvAnomalyResponse,
   DashboardPlatform,
@@ -39,6 +39,7 @@ export default function ActiveProcess({
   currentPoint?: OverviewTrendPoint;
   baselinePoint?: OverviewTrendPoint;
 }) {
+  const navigate = useNavigate();
   const [mode, setMode] = useState<'payment' | 'chain' | 'renewal'>('payment');
   const [retry, setRetry] = useState(0),
     [pairPending, setPairPending] = useState(false),
@@ -207,6 +208,24 @@ export default function ActiveProcess({
           netDelta={total}
           target={Math.abs(total)}
           targetLabel="净变化贡献度"
+          onSourceActivate={(source) => navigate(
+            mode === 'payment'
+              ? paymentContextHref({
+                  platform: scope,
+                  date,
+                  deviceType: scope === platform ? deviceType : undefined,
+                  payType: source.label,
+                  income: contextMetric === 'activeGmv' ? 'ACTIVE_PAYMENT' : contextMetric === 'renewalGmv' ? 'AUTO_RENEWAL' : 'ALL',
+                })
+              : chainContextHref({
+                  platform: scope,
+                  analysisDate: date,
+                  baselineDate: baseline,
+                  chainType,
+                  deviceType: scope === platform ? deviceType : undefined,
+                  factor: source.id,
+                }),
+          )}
         />
       )}
       {!loading && !available && <span className="sys-meta">监测状态暂不可用</span>}

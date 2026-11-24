@@ -38,3 +38,31 @@ test('app device drilldown survives supported navigation and rejects stray state
  assert.equal(paramsOf(chainContextHref({platform:'app',deviceType:'android',analysisDate:'2026-11-03',baselineDate:'2026-10-27',chainType:'active'})).get('deviceType'),'android');
  assert.equal(paramsOf(paymentContextHref({platform:'app',deviceType:'ios',date:'2026-11-03'})).get('deviceType'),'ios');
 });
+
+test('a payment source opens its business week and identifies the table row and revenue scope', () => {
+  const params = paramsOf(paymentContextHref({
+    platform: 'app', deviceType: 'ios', date: '2026-11-04', payType: '套餐升级', income: 'ACTIVE_PAYMENT',
+  }));
+  assert.equal(params.get('tab'), 'payment');
+  assert.equal(params.get('analysisWeek'), '2026-10-31');
+  assert.equal(params.get('baselineWeek'), '2026-10-24');
+  assert.equal(params.get('focusPayType'), '套餐升级');
+  assert.equal(params.get('income'), 'ACTIVE_PAYMENT');
+  assert.equal(params.get('deviceType'), 'ios');
+});
+
+test('chain factor sources open business-week comparison at the selected active or renewal factor', () => {
+  for (const [chainType, factor] of [['active', 'activeUv'], ['renewal', 'renewalRate']]) {
+    const href = chainContextHref({
+      platform: 'web', analysisDate: '2026-11-04', baselineDate: '2026-10-28', chainType, factor,
+    });
+    const params = paramsOf(href);
+    assert.equal(params.get('mode'), 'week');
+    assert.equal(params.get('analysisWeek'), '2026-10-31');
+    assert.equal(params.get('baselineWeek'), '2026-10-24');
+    assert.equal(params.get('factor'), factor);
+    assert.equal(params.get('chainType'), chainType);
+    assert.equal(params.get('analysisDate'), null);
+    assert.equal(new URL(href, 'https://example.test').hash, '#chain-factors');
+  }
+});

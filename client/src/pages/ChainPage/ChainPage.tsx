@@ -5,8 +5,8 @@ import LmdiTable from './LmdiTable';
 import { ChainDetails } from './ChainDetails';
 import { PopulationPicker } from './PopulationPicker';
 import './chain.css';
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { getChainComparison, type ChainComparison } from '@/api/chain-comparison';
 import { useDataCoverage } from '@/components/system/useDataCoverage';
 import { getBusinessWeekStart } from '@shared/business-week';
@@ -108,6 +108,16 @@ export default function ChainPage() {
     };
   }, [platform, deviceType, mode, chainType, analysis, baseline, revision, lifecycle, creationTier, countryTier, planTier]);
   const factor = data ? preferredFactor(data.factors, params.get('factor')) : undefined;
+  const location = useLocation();
+  const locatedRequest = useRef('');
+  useEffect(() => {
+    if (loading || !data?.ready || location.hash !== '#chain-factors' || locatedRequest.current === location.key) return;
+    const panel = document.getElementById('chain-factors');
+    if (!panel) return;
+    locatedRequest.current = location.key;
+    panel.scrollIntoView({ block: 'start', behavior: 'instant' });
+    panel.querySelector<HTMLButtonElement>('.chain-factor[data-selected="true"]')?.focus({ preventScroll: true });
+  }, [data, loading, location.hash, location.key]);
   const trendEnd = analysis ? (mode === 'week' ? [shiftDay(analysis, 6), latest || analysis].sort()[0] : analysis) : '';
   const trend = useMemo(
     () =>
@@ -257,7 +267,7 @@ export default function ChainPage() {
               })
             }
           />
-          <div className="chain-workspace">
+          <div className="chain-workspace" id="chain-factors">
             <LmdiTable data={data} factor={factor} onChoose={choose} onExport={() => setDetailsOpen(true)} />
             <FactorTrend
               factor={factor}

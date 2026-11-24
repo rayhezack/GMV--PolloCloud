@@ -45,6 +45,7 @@ type MonthlyIncomeChartProps = Omit<React.ComponentProps<"div">, "children"> & {
   initialVisibleSources?: number
   defaultIndex?: number | null
   onIndexChange?: (index: number | null, source: MonthlyIncomeSource | undefined) => void
+  onSourceActivate?: (source: MonthlyIncomeSource) => void
   /** The button under the list. */
   insightLabel?: string
   onInsightClick?: () => void
@@ -193,6 +194,7 @@ function MonthlyIncomeChart({
   index: indexProp,
   defaultIndex = null,
   onIndexChange,
+  onSourceActivate,
   insightLabel = "See insight",
   onInsightClick,
   onMoreClick,
@@ -516,7 +518,7 @@ function MonthlyIncomeChart({
                   type="button"
                   data-slot="monthly-income-chart-source"
                   data-active={on || undefined}
-                  aria-pressed={i === selected}
+                  aria-pressed={onSourceActivate ? undefined : i === selected}
                   aria-label={`${source.label}: ${signed(source.amount)}, ${percent((netDelta ?? total) !== 0 ? (source.amount / (netDelta ?? total)) * 100 : 0)} ${targetLabel}`}
                   onPointerEnter={() => setHovered(i)}
                   onPointerLeave={() => setHovered(null)}
@@ -524,7 +526,7 @@ function MonthlyIncomeChart({
                     if (event.currentTarget.matches(":focus-visible")) setFocused(i)
                   }}
                   onBlur={() => setFocused(null)}
-                  onClick={() => select(i)}
+                  onClick={() => onSourceActivate ? onSourceActivate(source) : select(i)}
                   onKeyDown={(event) => onSourceKeyDown(event, i)}
                   className={cn(
                     // Figma "Header Cell": #fbfbfb with a 1px Border/Soft inside stroke, 8px corners

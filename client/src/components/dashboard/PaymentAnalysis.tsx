@@ -558,6 +558,25 @@ export default function PaymentAnalysis({
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const visiblePage = Math.min(page, pageCount - 1);
   const shown = filtered.slice(visiblePage * PAGE_SIZE, (visiblePage + 1) * PAGE_SIZE);
+  const focusPayType = params.get('focusPayType');
+  const focusRow = mode === 'NONE' ? filtered.find((row) => entityLabel(row.key) === focusPayType) : undefined;
+  const tableRef = useRef<HTMLDivElement>(null);
+  const locatedRequest = useRef('');
+  const focusRequest = params.toString();
+  useEffect(() => {
+    if (loading || !focusRow || locatedRequest.current === focusRequest) return;
+    const targetPage = Math.floor(filtered.indexOf(focusRow) / PAGE_SIZE);
+    if (visiblePage !== targetPage) {
+      setPage(targetPage);
+      return;
+    }
+    const row = [...(tableRef.current?.querySelectorAll<HTMLButtonElement>('[data-pay-type]') || [])]
+      .find((node) => node.dataset.payType === focusRow.key);
+    if (!row) return;
+    locatedRequest.current = focusRequest;
+    row.scrollIntoView({ block: 'center', behavior: 'instant' });
+    row.focus({ preventScroll: true });
+  }, [loading, focusRow, filtered, visiblePage, focusRequest]);
   const supported = data?.availableAttributionTypes.includes(mode);
   const showCosts = Boolean(data?.costAvailable);
   const entityCosts = showCosts && grouping !== 'payType';
@@ -991,8 +1010,9 @@ export default function PaymentAnalysis({
                     </div>
                   </section>
                 )}
-                <CardContent className={`payment-table-content${modelTable ? ' payment-model-table' : ''}`}>
+                <CardContent ref={tableRef} className={`payment-table-content${modelTable ? ' payment-model-table' : ''}`}>
                   <DataTable
+                    selectedRowId={focusRow?.key}
                     rows={[
                       { ...view.total, key: 'total', id: 'total', kind: 'total' as const },
                       ...shown.map((row) => ({ ...row, id: row.key, kind: 'row' as const })),
@@ -1011,6 +1031,7 @@ export default function PaymentAnalysis({
                             <button
                               type="button"
                               className="payment-entity"
+                              data-pay-type={r.key}
                               onClick={(event) => {
                                 detailTriggerRef.current = event.currentTarget;
                                 openDetail(r.key);

@@ -72,29 +72,45 @@ export function chainContextHref({
   baselineDate,
   chainType,
   deviceType,
+  factor,
 }: {
   platform: string;
   analysisDate: string;
   baselineDate: string;
   chainType: string;
   deviceType?: string;
+  factor?: string;
 }) {
   const params = new URLSearchParams({ tab: 'chain', platform, mode: 'day', analysisDate, baselineDate, chainType });
+  if (factor) {
+    params.set('mode', 'week');
+    params.set('analysisWeek', getBusinessWeekStart(analysisDate));
+    params.set('baselineWeek', getBusinessWeekStart(baselineDate));
+    params.set('factor', factor);
+    params.delete('analysisDate');
+    params.delete('baselineDate');
+  }
   if (platform === 'app' && deviceType && ['ios', 'android'].includes(deviceType)) params.set('deviceType', deviceType);
-  return `/?${params}`;
+  return `/?${params}${factor ? '#chain-factors' : ''}`;
 }
 export function paymentContextHref({
   platform,
   date,
   deviceType,
+  payType,
+  income,
 }: {
   platform: string;
   date: string;
   deviceType?: string;
+  payType?: string;
+  income?: 'ALL' | 'ACTIVE_PAYMENT' | 'AUTO_RENEWAL';
 }) {
   const analysisWeek = getBusinessWeekStart(date);
   const baselineWeek = new Date(Date.parse(analysisWeek + 'T00:00:00Z') - 7 * 86400000).toISOString().slice(0, 10);
   const params = new URLSearchParams({ tab: 'payment', platform, analysisWeek, baselineWeek });
+  if (payType) params.set('focusPayType', payType);
+  if (income) params.set('income', income);
   if (platform === 'app' && deviceType && ['ios', 'android'].includes(deviceType)) params.set('deviceType', deviceType);
   return `/?${params}`;
 }
