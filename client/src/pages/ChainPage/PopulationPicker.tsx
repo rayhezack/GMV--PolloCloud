@@ -57,12 +57,18 @@ export function PopulationPicker({
   });
   const contribution = (row: PopulationRow) =>
     populationContribution(row, groups, row.kind === 'child' ? row.scope.lifecycle : undefined);
-  const scale = Math.max(Number.EPSILON, ...rows.map((row) => Math.abs(contribution(row) || 0)));
+  const isDrilledParent = (row: PopulationRow) =>
+    row.kind === 'row' && (row.key === selected || (active && row.key === open));
+  const scale = (row: PopulationRow) => Math.max(
+    Number.EPSILON,
+    ...rows.filter((peer) => peer.kind === row.kind && !isDrilledParent(peer))
+      .map((peer) => Math.abs(contribution(peer) || 0)),
+  );
   return (
     <section className="chain-populations">
       <PanelHeader
         title={active ? '分析人群' : '分析套餐'}
-        info="注册新老贡献度以全部人群 GMV 净变化为分母；下拆国家或创作分层以所属注册人群 GMV 净变化为分母，子层合计为 100%。分母为零时不计算；抵消项可能为负。支付结果表的未归因差额不分摊给人群。"
+        info="注册新老贡献度以全部人群 GMV 净变化为分母；下钻或展开的父行仅保留变化情况，不展示其对上层的贡献度。国家或创作子层以所属注册人群 GMV 净变化为分母，子层合计为 100%。分母为零时不计算；抵消项可能为负。支付结果表的未归因差额不分摊给人群。"
         tools={
           <div className="chain-population-tools">
             {active && (
@@ -159,11 +165,11 @@ export function PopulationPicker({
             minWidth: 140,
             header: 'GMV 贡献度',
             numeric: true,
-            render: (r) => (
+            render: (r) => isDrilledParent(r) ? null : (
               <DivergingBar
                 value={contribution(r)}
                 effect={r.current - r.baseline}
-                scaleMax={scale}
+                scaleMax={scale(r)}
                 variant={r.kind === 'child' ? 'child' : 'root'}
               />
             ),

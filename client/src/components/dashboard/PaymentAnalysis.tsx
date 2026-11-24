@@ -1374,12 +1374,12 @@ export default function PaymentAnalysis({
                                   minWidth: 104,
                                   render: (r) => share(relativeChange(r.analysis, r.baseline)),
                                 },
-                                {
+                                ...(!registrationLayer ? [{
                                   key: 'contribution',
                                   header: '贡献度',
                                   numeric: true,
                                   minWidth: 168,
-                                  render: (r) => (
+                                  render: (r: NonNullable<typeof visibleRegistrationRows>[number]) => (
                                     <DivergingBar
                                       value={r.contribution}
                                       effect={r.analysis - r.baseline}
@@ -1389,7 +1389,7 @@ export default function PaymentAnalysis({
                                       )}
                                     />
                                   ),
-                                },
+                                }] : []),
                               ]}
                             />
                           ) : (
