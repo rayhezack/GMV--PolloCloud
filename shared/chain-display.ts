@@ -1,6 +1,19 @@
 import { compareChainGroupKeys, type ChainGroup } from './chain-comparison.ts';
 
 export const SMALL_SAMPLE_PEOPLE = 100;
+/** Child shares explain their lifecycle parent; root shares explain the overall net change. */
+export function populationContribution(
+  group: Pick<ChainGroup, 'baseline' | 'current'>,
+  roots: ChainGroup[],
+  parentKey?: string,
+) {
+  const parent = parentKey ? roots.find((root) => root.key === parentKey) : undefined;
+  if (parentKey && !parent) return null;
+  const denominator = parent
+    ? parent.current - parent.baseline
+    : roots.reduce((sum, root) => sum + root.current - root.baseline, 0);
+  return denominator === 0 ? null : (group.current - group.baseline) / denominator;
+}
 /** Group GMV is never used as a population count. Read the chain's count factor. */
 export function chainGroupRows(groups: ChainGroup[], factorKey: string, chainType: 'active'|'renewal') {
   return [...groups].sort((a,b)=>compareChainGroupKeys(a.key,b.key,chainType)).map(group=>{

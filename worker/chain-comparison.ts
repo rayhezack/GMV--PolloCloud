@@ -180,6 +180,7 @@ export function buildChainComparison(
       groups: full.groups,
       lifecycleGroups: full.lifecycleGroups,
       countryGroups: full.countryGroups,
+      creationGroups: full.creationGroups,
       residual: null,
     };
   }

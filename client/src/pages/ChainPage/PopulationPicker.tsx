@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ChainComparison, ChainGroup } from '@shared/chain-comparison';
+import { populationContribution } from '@shared/chain-display';
 import { money, share, signedMoney } from '@shared/format';
 import { DataTable, PanelHeader, DivergingBar, PeriodHeading } from '@/components/system';
 import { Segment } from '@/components/v62/primitives';
@@ -54,14 +55,14 @@ export function PopulationPicker({
         : [];
     return [parent, ...children];
   });
-  const net = groups.reduce((sum, group) => sum + group.current - group.baseline, 0);
-  const contribution = (row: PopulationRow) => (net === 0 ? null : (row.current - row.baseline) / net);
+  const contribution = (row: PopulationRow) =>
+    populationContribution(row, groups, row.kind === 'child' ? row.scope.lifecycle : undefined);
   const scale = Math.max(Number.EPSILON, ...rows.map((row) => Math.abs(contribution(row) || 0)));
   return (
     <section className="chain-populations">
       <PanelHeader
         title={active ? '分析人群' : '分析套餐'}
-        info="贡献度 = 该行 GMV 变化 / 所有列示人群的 GMV 净变化；创作分层和国家分层使用相同分母。净变化为零时不计算。与支付结果表的未归因差额不分摊给人群。"
+        info="注册新老贡献度以全部人群 GMV 净变化为分母；下拆国家或创作分层以所属注册人群 GMV 净变化为分母，子层合计为 100%。分母为零时不计算；抵消项可能为负。支付结果表的未归因差额不分摊给人群。"
         tools={
           <div className="chain-population-tools">
             {active && (

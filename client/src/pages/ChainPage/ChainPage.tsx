@@ -89,6 +89,7 @@ export default function ChainPage() {
       analysis,
       baseline,
       revision,
+      populationDimension,
       lifecycle,
       creationTier,
       countryTier,

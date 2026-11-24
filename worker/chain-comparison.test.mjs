@@ -338,6 +338,10 @@ test('country population drilldown keeps lifecycle separate and conserves GMV an
   const selected = buildChainComparison({ ...countryParams, lifecycle: 'NEW', countryTier: 'T1' }, source, payments);
   assert.equal(selected.ready, true);
   assert.equal(selected.comparison.countryTier, 'T1');
+  assert.deepEqual(selected.countryGroups, full.countryGroups);
+  assert.deepEqual(selected.creationGroups, full.creationGroups);
+  close(selected.total.baseline, 100);
+  close(selected.total.current, 140);
   close(selected.factors.reduce((sum, factor) => sum + factor.effect, 0), selected.total.delta);
   assert.equal(selected.residual, null);
 });
