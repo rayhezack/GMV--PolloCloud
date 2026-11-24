@@ -473,6 +473,19 @@ html[data-astryx-theme='pollo-v62'] .astryx-tooltip:has(.gmv-day-preview) {
   padding-top: var(--space-8);
   color: var(--text-2);
 }
+.gmv-preview-actions {
+  display: block;
+  width: 100%;
+  padding: var(--space-4) 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.gmv-preview-actions:hover { color: var(--primary); }
+.gmv-preview-actions:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 .revenue-expanded-dialog {
   --accent: var(--primary);

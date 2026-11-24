@@ -43,6 +43,7 @@ export default function GmvCalendar({
   actionsStatus = 'ready',
 }: Props) {
   const [measure, setMeasure] = useState<'gmv' | 'orders'>('gmv');
+  const [dismissedPreview, setDismissedPreview] = useState<string | null>(null);
   const metricLabel = measure === 'orders' ? '订单量' : '大盘 GMV';
   const formatValue = measure === 'orders' ? count : money;
   const refs = useRef(new Map<string, HTMLButtonElement>());
@@ -165,11 +166,19 @@ export default function GmvCalendar({
                   <b>{changePct(change)}</b>
                 </div>
                 <footer>
-                  {actionsStatus === 'ready'
-                    ? `产品动作 ${count} 条 · 点击查看`
-                    : actionsStatus === 'loading'
-                      ? '正在读取产品动作'
-                      : '产品动作暂不可用'}
+                  {actionsStatus === 'ready' ? (
+                    <button
+                      type="button"
+                      className="gmv-preview-actions"
+                      aria-label={`查看 ${date} 的产品动作（${count} 条）`}
+                      onClick={() => {
+                        setDismissedPreview(date);
+                        onSelect(date);
+                      }}
+                    >
+                      产品动作 {count} 条 · 点击查看
+                    </button>
+                  ) : actionsStatus === 'loading' ? '正在读取产品动作' : '产品动作暂不可用'}
                 </footer>
               </div>
             );
@@ -181,6 +190,7 @@ export default function GmvCalendar({
                 focusTrigger="always"
                 placement="above"
                 hideDelay={120}
+                isOpen={dismissedPreview === date ? false : undefined}
               >
                 <button
                   ref={(el) => {
@@ -202,6 +212,8 @@ export default function GmvCalendar({
                   aria-label={description}
                   tabIndex={date === current ? 0 : -1}
                   onClick={() => onSelect(date)}
+                  onPointerEnter={() => setDismissedPreview(null)}
+                  onFocus={() => setDismissedPreview(null)}
                   onKeyDown={(event) => {
                     const steps: Record<string, number> = { ArrowUp: -1, ArrowDown: 1, ArrowLeft: -7, ArrowRight: 7 };
                     if (!(event.key in steps) && !['Home', 'End'].includes(event.key)) return;
