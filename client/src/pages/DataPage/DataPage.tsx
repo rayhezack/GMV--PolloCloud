@@ -13,7 +13,7 @@ export default function DataPage() {
     [error, setError] = useState(''),
     [revision, setRevision] = useState(0);
   useEffect(() => {
-    if (hash === '#method-anomaly') document.getElementById('method-anomaly')?.scrollIntoView({ block: 'start' });
+    if (hash.startsWith('#method-')) document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'start' });
   }, [hash, loading]);
   useEffect(() => {
     let live = true;
@@ -75,7 +75,7 @@ function GmvCoverageExplanation({
           <a href="#method-lineage">图表血缘</a>
           <a href="#method-window">统计窗口</a>
           <a href="#method-active">主动付费</a>
-          <a href="#method-drill">下钻口径</a>
+          <a href="#method-drill">功能与模型归因</a>
           <a href="#method-renewal">自动续订</a>
           <a href="#method-anomaly">异动诊断</a>
           <a href="#method-payment">支付与归因</a>
@@ -206,47 +206,55 @@ function GmvCoverageExplanation({
           </dl>
         </section>
         <section id="method-drill" className="dashboard-methodology-section">
-          <h3>主动付费下钻：按功能与注册新老</h3>
+          <h3>付费类型：功能、模型与注册分层</h3>
           <p>
-            下钻只解释主动付费内部的 GMV
-            变化，不改变上方付费类型页的结果口径。分析期和基准期分别按各自实际有效天数计算日均 GMV，再比较两期日均变化。
+            大盘汇总、创作模式、创作模型、调用模型是同一支付结果的不同观察维度，分别读取对应归因模式，不能相加。
+            每种视角均可按“全部收入、主动付费、自动续订、API 收入”筛选。
           </p>
           <dl className="dashboard-methodology-definitions">
             <div>
-              <dt>功能如何归到用户</dt>
+              <dt>当前数据来源</dt>
               <dd>
-                归因颗粒度是“用户-自然日”，不是单笔订单。先按用户和自然日去重，同一用户当天只保留一个功能归属；再把该用户当天的主动付费
-                GMV 汇总到这个功能。功能取支付前最近一次可匹配事件：优先使用 source_function；没有该来源时回退到
-                createflow_form_submit 的 form_type。source_function 是近期新增埋点，2026 年 9
-                月及更早数据若不存在该事件，完全依赖 form_type；不对缺失事件做日期外推。
+                当前归因读取 ads_pollo_transaction_gmv_attribution_daily_dip：金额使用 allocated_gmv_usd， 归因名称使用
+                attribution_name。金额已由上游分配，看板按日期、支付端、收入类型及所选归因维度直接汇总。
               </dd>
             </div>
             <div>
-              <dt>未归因功能</dt>
+              <dt>四种归因视角</dt>
               <dd>
-                未归因不是 0 GMV，而是没有可匹配功能事件的用户-日期金额，包括主动点击 Pricing
-                页面或主动曝光付费弹窗后直接支付、事件缺失、用户 ID
-                无法匹配等情况。此类金额保留在主动付费总额中，并单独汇总为“未归因功能”，不从总 GMV 中剔除。
+                大盘汇总读取 NONE，按付费类型展示支付结果；创作模式读取 CREATION_MODE，按创作功能展示； 创作模型读取
+                MODEL；调用模型读取 ACTUAL_MODEL，并可继续按渠道商、厂商查看。
+                看板直接使用上游已分配的金额，不能根据功能或模型名称推断用户当天只有一次创作或一笔支付。
               </dd>
             </div>
             <div>
-              <dt>按功能的贡献度</dt>
+              <dt>日均与贡献度</dt>
               <dd>
-                功能日均变化 ÷ 当前主动付费下钻全部功能的日均净变化。完整功能列表（包含“未归因功能”）的贡献度合计约为
-                100%；正负功能可以相互抵消，因此单个功能可能超过 100% 或为负数。
+                业务周按两期相同业务日对齐，分别计算日均后比较。贡献度 = 该项日均变化 ÷ 当前所选范围的日均净变化。
+                完整列表包含“未归因”，合计约为 100%；正负变化可相互抵消，单项可能超过 100%
+                或为负数，净变化为零时不计算。
               </dd>
             </div>
             <div>
-              <dt>注册新老</dt>
+              <dt>未归因与模型成本</dt>
               <dd>
-                “新用户”指注册日期落在当前分析业务周内的用户；“老用户”指在业务周开始前已经注册的用户；缺少注册日期或无法匹配用户的标记为“未知”。这里描述的是选定付费类型或功能下发生付费的用户-日期，不是全站用户分群，也不等同于创作分层。
+                “未归因”保留上游未分配至具体功能或模型的金额，不按 0 收入处理，也不从总额剔除。 模型成本读取 MODEL /
+                ACTUAL_MODEL 的全量创作成本汇总行，不能按当前收入筛选强行缩放；成本汇总行不重复计入 GMV。
               </dd>
             </div>
             <div>
-              <dt>注册新老的贡献度</dt>
+              <dt>支付结果的注册分层</dt>
               <dd>
-                用户群日均变化 ÷ 当前选定付费类型或功能的日均净变化。净变化接近 0 时，贡献度可能超过
-                100%；没有拆分标签的记录保留为“未知”。
+                大盘汇总的付费类型抽屉从订单侧读取 SKU、注册新老、国家层级和注册端，按日与支付结果对账后展示。
+                新用户指注册日期在对应业务周内，老用户指业务周开始前已注册，缺失标签保留“未知”。
+                子项贡献度以当前下钻父项的日均净变化为分母，不混用全站变化；这套订单分层不等同于功能或模型归因，也不等同于创作次数分层。
+              </dd>
+            </div>
+            <div>
+              <dt>历史数据边界</dt>
+              <dd>
+                2026 年 1—9 月保留旧版大盘汇总和创作模式数据，页面标记“历史口径”；创作模型和调用模型从 2026 年 10
+                月起提供。缺失模型数据不补零。
               </dd>
             </div>
             <div>

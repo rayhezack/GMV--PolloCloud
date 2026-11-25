@@ -584,14 +584,20 @@ function InvestmentPerformanceChart({
       {...props}
     >
       <div className="flex items-start gap-3">
-        {/* Figma "Y Axis Labels": 35px wide (wider labels widen it), spread over the plot's height, left-aligned */}
-        <div
-          aria-hidden
-          className="hug-w flex min-w-[35px] shrink-0 flex-col justify-between"
-          style={{ height: PLOT_HEIGHT }}
-        >
+        {/* Labels use the same value scale as grid lines, including a shortened first interval. */}
+        <div aria-hidden className="relative min-w-[35px] shrink-0" style={{ height: PLOT_HEIGHT }}>
+          <span className="invisible block whitespace-nowrap typo-label-02-regular">
+            {ticks.map(axisMoney).reduce((a, b) => (a.length >= b.length ? a : b), '')}
+          </span>
           {[...ticks].reverse().map((tick, i) => (
-            <ChartTickLabel key={i} value={tick} format={axisMoney} duration={MORPH} />
+            <ChartTickLabel
+              key={i}
+              value={tick}
+              format={axisMoney}
+              duration={MORPH}
+              className="absolute left-0 -translate-y-1/2"
+              style={{ top: level(tick) }}
+            />
           ))}
         </div>
 

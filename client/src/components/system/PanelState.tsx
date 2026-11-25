@@ -1,4 +1,4 @@
-import LoadingWave from '../dashboard/LoadingWave';
+import { Spinner } from '../ui/spinner';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Button } from '@astryxdesign/core/Button';
@@ -18,7 +18,7 @@ export function PanelState({
   if (state === 'loading')
     return (
       <div className="sys-panel-loading" role="status" aria-label="正在读取数据">
-        <LoadingWave label="正在读取数据…" />
+        <Spinner aria-label="正在读取数据" />
       </div>
     );
   return (

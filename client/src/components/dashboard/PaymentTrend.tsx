@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { money } from '@shared/format';
 import type { AppDeviceType, DashboardPlatform, GmvAttributionType, PaymentTrendResponse } from '@shared/api.interface';
 import { entityLabel, type PaymentGrouping, type RevenueScope } from './payment-analysis.data';
-import LoadingWave from './LoadingWave';
+import { Spinner } from '@/components/ui/spinner';
 import { Segment } from '@/components/v62/primitives';
 
 const ranges = { day: '近 30 天', week: '近 30 天', month: '近 30 天' };
@@ -219,7 +219,7 @@ export default function PaymentTrend({
         </div>
         {loading ? (
           <div className="payment-line-chart payment-trend-loading" role="status" aria-label="正在读取趋势">
-            <LoadingWave />
+            <Spinner aria-label="正在读取趋势" />
           </div>
         ) : error ? (
           <div className="payment-trend-state" role="alert">
@@ -244,7 +244,7 @@ export default function PaymentTrend({
             formatValue={(value) => formatPaymentValue(value, metric)}
             formatAxis={(value) =>
               new Intl.NumberFormat('en-US', {
-                ...(metric === 'gmv' ? { style: 'currency', currency: 'USD' } as const : {}),
+                ...(metric === 'gmv' ? ({ style: 'currency', currency: 'USD' } as const) : {}),
                 notation: 'compact',
                 maximumFractionDigits: 0,
               }).format(value)

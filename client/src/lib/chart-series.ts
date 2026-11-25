@@ -270,13 +270,21 @@ export function tightLineTicks(values: number[], intervals = 5) {
   if (!finite.length) return [0, 1]
   const min = Math.min(...finite), max = Math.max(...finite)
   const pad = max > min ? (max - min) * .05 : Math.abs(max) * .01 || 1
-  const low = min >= 0 ? Math.max(0, min - pad) : min - pad, high = max + pad
+  const low = min > 0 ? min - Math.min(pad, min * .05) : min === 0 ? 0 : min - pad, high = max + pad
   const raw = (high - low) / Math.max(1, intervals)
   const power = 10 ** Math.floor(Math.log10(raw))
   const step = [1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 7.5, 8, 10]
     .map(base => base * power).reduce((a,b) => Math.abs(a-raw) <= Math.abs(b-raw) ? a : b)
   const first = Math.floor(low / step) * step, last = Math.ceil(high / step) * step
-  return Array.from({length: Math.round((last-first)/step)+1}, (_,i) => Number((first+i*step).toPrecision(12)))
+  const ticks = Array.from({length: Math.round((last-first)/step)+1}, (_,i) => Number((first+i*step).toPrecision(12)))
+  // Round grid steps must not invent a zero origin when every observation is positive.
+  // Keep a close lower boundary without producing hundreds of ticks for a small minimum.
+  if (first === 0 && low > 0) {
+    const unit = 10 ** Math.floor(Math.log10(low))
+    const boundary = Number((Math.floor(low / unit) * unit).toPrecision(12))
+    return [boundary, ...ticks.filter(tick => tick - boundary >= step * .4)]
+  }
+  return ticks
 }
 
 const BAR_TICK_STEPS = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]

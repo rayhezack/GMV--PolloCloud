@@ -486,6 +486,12 @@ export default function RevenueTrend({
         }}
         title={`${title} · 数据明细`}
         description={`${granularity === 'day' ? '日值' : '日均'} · ${unitLabel}`}
+        actions={
+          <button type="button" className="v62-button" onClick={exportRows} disabled={!buckets.length}>
+            <ArrowDownToLine size={16} />
+            导出 CSV
+          </button>
+        }
       >
         <DataTable
           rows={buckets.map((b) => ({ ...b, id: b.date }))}
@@ -511,9 +517,6 @@ export default function RevenueTrend({
             },
           ]}
         />
-        <button className="v62-button" onClick={exportRows}>
-          导出 CSV
-        </button>
       </Modal>
     </section>
   );

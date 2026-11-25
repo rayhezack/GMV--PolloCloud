@@ -25,6 +25,9 @@ test('payment trends retain a positive dynamic origin across small and wide reve
     [11000, 31000],
     [11000, 40000],
     [28000, 28500],
+    [4955, 24987], // creation models: rounding the padded lower bound used to produce zero
+    [3906, 25369], // actual models
+    [100, 50000],
   ]) {
     const ticks = ticksFor(
       values.map((value) => ({ values: { subscription: value } })),
@@ -36,4 +39,14 @@ test('payment trends retain a positive dynamic origin across small and wide reve
     assert.ok(ticks[0] <= Math.min(...values));
     assert.ok(ticks.at(-1) >= Math.max(...values));
   }
+});
+
+test('payment trends keep actual zero readings in the axis range', () => {
+  const ticks = ticksFor(
+    [{ values: { model: 0 } }, { values: { model: 25000 } }],
+    chartTicks,
+    niceTicks,
+    tightLineTicks,
+  );
+  assert.equal(ticks[0], 0);
 });

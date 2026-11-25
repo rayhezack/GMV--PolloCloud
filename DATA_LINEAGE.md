@@ -25,6 +25,8 @@
 
 ## 付费类型业务分层
 
+当前功能/模型归因直接读取 ADS 的 `allocated_gmv_usd` 与 `attribution_name`，不在看板侧按用户—自然日、`source_function` 或 `form_type` 重新归因。`NONE`、`CREATION_MODE`、`MODEL`、`ACTUAL_MODEL` 是独立视角，收入按所选全部/主动付费/自动续订/API 范围筛选。业务周使用相同业务日的日均变化；贡献度分母为当前所选范围的日均净变化。模型成本取 MODEL / ACTUAL_MODEL 全量创作成本的双汇总行，不能按收入类别缩放，不能重复计入 GMV。2026 年 1—9 月旧数据仅支持大盘和创作模式，不能将其事件匹配说明套用于当前 ADS。
+
 `pollo_da_payment_registration` 保留订单的注册端 `reg_platform`、SKU 组合 `sku_combo_da`（存为 `sku`）、档位 `plan_tier_da`、周期 `sub_period_da`、积分额度 `usage_count`，以及变更前对应字段。SKU 使用仓库的“档位_周期_积分”组合，避免把笼统的商品标题 Pro 误作唯一 SKU；显示时格式化为“Pro · 800 积分 · 月付”。
 
 升级/重置前值通过 `dwd_pollo_transaction_order_snapshot_dip` 的付款记录—订阅关联，按同用户、同订阅、同支付端内的支付时间找上一笔有效实付订阅单。订阅映射包含上游 TXN / CUSTOMER / USER 匹配；聚合映射确保每笔订单只保留唯一订阅。读取 2024-10-14（订单最早分区）至窗口结束日的历史后再截取支付窗口，避免窗口首日丢失前值。订阅不唯一、无更早付款、同时间无法确定前后、SKU 缺失均保留未知，不用跨订阅或跨端订单补值。

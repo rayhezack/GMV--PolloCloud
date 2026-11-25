@@ -10,7 +10,7 @@ import { niceTicks } from '@/lib/chart-series';
 import type { AppDeviceType, DashboardPlatform, PaymentTrendResponse } from '@shared/api.interface';
 import { downloadCsv } from './AnalysisWidgets';
 import { latestPaymentDate, paymentShareTrend, type PaymentShareRange } from './payment-history';
-import LoadingWave from './LoadingWave';
+import { Spinner } from '@/components/ui/spinner';
 
 const formatShare = (value: number | null) => (value == null ? '—' : `${(value * 100).toFixed(2)}%`);
 const formatTick = (value: number) => `${+(value * 100).toFixed(2)}%`;
@@ -105,12 +105,15 @@ export function PaymentShareDialog({
   const missingDays = rows.reduce((sum, row) => sum + row.missingDays, 0);
   const rangeLabel = ranges.find((item) => item.value === range)!.description;
   const controls = (
-    <div className="payment-share-controls">{allowOrders && <PaymentMetricSwitch label="占比分析指标" value={metric} onChange={setMetric} />}<Segment
-      label="占比趋势范围"
-      value={range}
-      items={ranges}
-      onChange={(value) => setRange(value as PaymentShareRange)}
-    /></div>
+    <div className="payment-share-controls">
+      {allowOrders && <PaymentMetricSwitch label="占比分析指标" value={metric} onChange={setMetric} />}
+      <Segment
+        label="占比趋势范围"
+        value={range}
+        items={ranges}
+        onChange={(value) => setRange(value as PaymentShareRange)}
+      />
+    </div>
   );
   const formatDate = (date: string, position: 'axis' | 'tooltip') => {
     const row = rows.find((row) => row.date === date)!;
@@ -157,9 +160,12 @@ export function PaymentShareDialog({
       }}
     >
       <DialogContent className="payment-share-dialog">
-        <DialogTitle className="sr-only">{label} {metricLabel} 占比趋势</DialogTitle>
+        <DialogTitle className="sr-only">
+          {label} {metricLabel} 占比趋势
+        </DialogTitle>
         <DialogDescription className="sr-only">
-          {rangeLabel}。占比为所示周期内该类型日均{metricLabel} 除以当前筛选范围日均总{metricLabel}；首尾周期仅计算范围内已到达的日期。
+          {rangeLabel}。占比为所示周期内该类型日均{metricLabel} 除以当前筛选范围日均总{metricLabel}
+          ；首尾周期仅计算范围内已到达的日期。
           {context}
         </DialogDescription>
         <NetWorthChart
@@ -181,7 +187,7 @@ export function PaymentShareDialog({
                     </Button>
                   </>
                 ) : !source ? (
-                  <LoadingWave label="正在读取占比趋势" />
+                  <Spinner aria-label="正在读取占比趋势" />
                 ) : (
                   '此范围暂无占比数据'
                 )}
@@ -201,7 +207,9 @@ export function PaymentShareDialog({
               <p>
                 {rows[0]?.startDate} — {latest?.endDate}
               </p>
-              <p>占比 = 同期类型日均{metricLabel} ÷ 范围日均总{metricLabel}。</p>
+              <p>
+                占比 = 同期类型日均{metricLabel} ÷ 范围日均总{metricLabel}。
+              </p>
               {range !== 'week' && (
                 <p>
                   {range === 'month' ? '业务周为周六至周五。' : '按自然月汇总。'}
