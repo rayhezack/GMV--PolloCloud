@@ -308,10 +308,7 @@ export default function OverviewPage() {
                 granularity={granularity}
                 onGranularityChange={(value) => update({ granularity: value })}
                 onFullRange={() => update({ trendStartDate: coverage?.startDate, trendEndDate: coverage?.endDate })}
-                anomalyDates={[
-                  ...(monitor?.anomalyDates ?? []),
-                  ...(monitor?.alerts ?? []).map((alert) => alert.period),
-                ]}
+                anomalyDates={monitor?.anomalyDates ?? []}
                 loading={loading && !rows.length}
               />
             )}

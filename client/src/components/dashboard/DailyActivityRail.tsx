@@ -168,7 +168,7 @@ export default function DailyActivityRail({
     setLoading(true);
     setAnomalies(null);
     setErrors((current) => current.filter((label) => label !== '异动监测'));
-    void getGmvAnomalies(syncRevision || undefined, selectedDay || monitorDate || undefined, platform)
+    void getGmvAnomalies(`${syncRevision}:${refreshToken}`, selectedDay || monitorDate || undefined, platform)
       .then((value) => {
         if (!live) return;
         setAnomalies(value);
@@ -202,6 +202,7 @@ export default function DailyActivityRail({
   const monitorAvailable = Boolean(
     !deviceType &&
     anomalies?.latestDay &&
+    anomalies.latestDay === latestDate &&
     (!anomalies.monitoredPlatforms || anomalies.monitoredPlatforms.includes(platform)),
   );
   const diagnosisPlatforms = dailyDiagnosisScopes(anomalies?.alerts ?? [], latestDate);
@@ -221,15 +222,12 @@ export default function DailyActivityRail({
     [actions, platform],
   );
   const actionDates = useMemo(() => new Set(filteredActions.map((action) => action.date)), [filteredActions]);
-  const anomalyDates = useMemo(
-    () => new Set([...(anomalies?.anomalyDates ?? []), ...(anomalies?.alerts ?? []).map((alert) => alert.period)]),
-    [anomalies],
-  );
+  const anomalyDates = useMemo(() => new Set(anomalies?.anomalyDates ?? []), [anomalies]);
   const selectedActions = filteredActions.filter(
     (action) => action.date === (selectedDay || (selectedDate ? dateKey(selectedDate) : '')),
   );
   const alerts = (deviceType ? [] : (anomalies?.alerts ?? [])).filter(
-    (alert) => alert.period === latestDate && (platform === 'all' || alert.platform === platform),
+    (alert) => alert.period === latestDate && alert.platform === platform,
   );
   const signals = [
     ...new Map(
@@ -410,8 +408,14 @@ export default function DailyActivityRail({
             </Link>
           ))}
         </div>
-        {!alerts.length && <p className="daily-muted">当前端的当日未触发异动阈值。</p>}
-        <p className="daily-muted">异常阈值使用前 12 个完整业务周的历史分位数，最低变化幅度为 10%。</p>
+        {!alerts.length && <p className="daily-muted">{platformLabels[platform]} 当日未触发自身的动态异动阈值。</p>}
+        <p className="daily-muted">
+          大盘、Web、App 分别用最近 12 个完整业务周的历史变化率计算阈值，较前一日与上周同日各自计算。 上涨阈值取
+          max（P95，10%），下降阈值取 min（P5，−10%）；10% 是最低变化门槛，不是固定阈值。
+        </p>
+        <Link className="daily-monitor-link" to="/?tab=data#method-anomaly">
+          查看完整异动口径
+        </Link>
       </Modal>
       <Modal
         open={updatesOpen}

@@ -44,7 +44,8 @@ export function HomeSignals({
                   {loading ? '读取中' : monitorAvailable ? (signals.length ? '项异动' : '无异动') : '等待监测数据'}
                 </span>
                 <Definition label="异动阈值说明">
-                  异常阈值使用前 12 个完整业务周的历史分位数，最低变化幅度为 10%。
+                  大盘、Web、App 分别按最近 12 个完整业务周计算动态阈值，较前一日与上周同日分别计算。 上涨阈值取
+                  max（P95，10%），下降阈值取 min（P5，−10%）；10% 只是最低门槛，任一比较触发即为异动。
                 </Definition>
               </div>
               <div className="daily-signal-list">

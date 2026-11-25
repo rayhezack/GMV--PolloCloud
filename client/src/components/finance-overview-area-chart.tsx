@@ -1,4 +1,5 @@
 import { ChartCard } from '@/components/ui/chart-card';
+import { useState } from 'react';
 import { CashFlowAreaChart } from '@/components/cash-flow-area-chart';
 import { PanelHeader, PanelState } from '@/components/system';
 import { Segment } from '@/components/v62/primitives';
@@ -40,7 +41,8 @@ export function FinanceOverviewAreaChart({
   const daily = granularity === 'day';
   const chosen = buckets.findIndex((b) => b.dates.includes(selectedDay));
   const index = chosen < 0 ? buckets.length - 1 : chosen;
-  const current = buckets[index];
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const current = buckets[previewIndex ?? index] ?? buckets[index];
   const series = cashFlowSeries(buckets);
   const display = (value: number | null | undefined) =>
     value != null && Number.isFinite(value) ? (formatValue?.(value) ?? metricValue(value, unit)) : '—';
@@ -84,6 +86,7 @@ export function FinanceOverviewAreaChart({
             compareIndices={daily ? series.compareIndices : []}
             index={index}
             onIndexChange={(next) => onSelect(buckets[next].selectedDate)}
+            onPreviewIndexChange={setPreviewIndex}
             onPointActivate={daily && onActivate ? (next) => onActivate(buckets[next].selectedDate) : undefined}
             showSummary={false}
             plotHeight={plotHeight}

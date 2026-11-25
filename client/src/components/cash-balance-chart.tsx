@@ -748,7 +748,11 @@ function CashBalanceChart({
       },
     })
     if (!pair && path) animate(path, { opacity: [0, 1], duration: 500, ease: "outQuad", onComplete: releaseStyles("opacity") })
-  }, [dataKey, width, reduced])
+    const animation = morph.current
+    return () => {
+      animation?.cancel()
+    }
+  }, [dataKey, width, PLOT_HEIGHT, reduced])
   React.useEffect(
     () => () => {
       ride.current?.cancel()

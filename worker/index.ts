@@ -156,7 +156,7 @@ async function cachedDashboardResponse(env: Env, request: Request, context: { wa
   const url = new URL(request.url);
   url.searchParams.delete('cacheBust');
   url.searchParams.sort();
-  const version = url.pathname === '/api/dashboard/chain-funnel' ? 'v13-chain-day' : url.pathname === '/api/dashboard/attributions' ? 'v9-lmdi' : url.pathname === '/api/dashboard/payment-analysis' ? 'v10-payment-orders' : url.pathname === '/api/dashboard/creative-overview' ? 'v10-creative-summary' : url.pathname === '/api/dashboard/overview' ? 'v9-bounded-renewal' : url.pathname === '/api/dashboard/ads-overview' ? 'v6-ads-lazy' : url.pathname === '/api/dashboard/gmv-anomalies' ? 'v4-anomaly-calendar' : url.pathname === '/api/dashboard/payment-trend' ? 'v6-payment-orders' : 'v3';
+  const version = url.pathname === '/api/dashboard/chain-funnel' ? 'v13-chain-day' : url.pathname === '/api/dashboard/attributions' ? 'v9-lmdi' : url.pathname === '/api/dashboard/payment-analysis' ? 'v10-payment-orders' : url.pathname === '/api/dashboard/creative-overview' ? 'v10-creative-summary' : url.pathname === '/api/dashboard/overview' ? 'v9-bounded-renewal' : url.pathname === '/api/dashboard/ads-overview' ? 'v6-ads-lazy' : url.pathname === '/api/dashboard/gmv-anomalies' ? 'v5-anomaly-scope' : url.pathname === '/api/dashboard/payment-trend' ? 'v6-payment-orders' : 'v3';
   const key = `${version}:${url.pathname}?${url.searchParams}`;
   const isCacheablePayload = (payload: string) => {
     if (!['/api/dashboard/chain-funnel','/api/dashboard/creative-overview','/api/dashboard/ads-overview'].includes(url.pathname)) return true;
@@ -1207,9 +1207,13 @@ export async function gmvAnomalies(env: Env, asOfDate?: string, scope: Dashboard
   const startDate = shiftDate(latestPeriod, -120);
   let anomalyDates: string[] = [];
   try {
-    const rows = await queryRows(env, `SELECT DISTINCT period FROM daily_diagnosis_state
-      WHERE platform=? AND active=1 AND period BETWEEN ? AND ? ORDER BY period`,
-      scope, startDate, latestPeriod);
+    const rows = await queryRows(env, `SELECT DISTINCT period FROM daily_diagnosis_state AS state
+      WHERE platform=? AND active=1 AND period BETWEEN ? AND ?
+      AND EXISTS (SELECT 1 FROM json_each(state.signals) AS signal
+        WHERE json_extract(signal.value,'$.platform')=state.platform
+        AND json_extract(signal.value,'$.period')=state.period
+        AND json_extract(signal.value,'$.metric')='totalGmv')
+      ORDER BY period`, scope, startDate, latestPeriod);
     anomalyDates = rows.map(row => asText(row.period)).filter(Boolean);
   } catch {
     // Older installations may not have diagnosis state yet; anomaly detection
@@ -1319,7 +1323,7 @@ export async function gmvAnomalies(env: Env, asOfDate?: string, scope: Dashboard
   // Persisted diagnosis state is useful for historical markers, but the latest
   // day must follow the live detector. A queued/running/stale diagnosis must
   // not paint a red calendar ring when the current threshold check is clear.
-  anomalyDates = mergeAnomalyDates(anomalyDates, latestPeriod, alerts);
+  anomalyDates = mergeAnomalyDates(anomalyDates, latestPeriod, alerts, scope);
   return json({ latestWeek: '', latestDay: latestPeriod, anomalyDates, method: 'daily_and_weekly_rolling_p95_p05_min_10pct', monitoredPlatforms, alerts });
 }
 

@@ -88,6 +88,8 @@ type CashFlowAreaChartProps = Omit<React.ComponentProps<'div'>, 'children'> & {
   /** Keep the selected cursor hidden until the user interacts with the chart. */
   hideCursorUntilInteraction?: boolean;
   onIndexChange?: (index: number, point: CashFlowPoint) => void;
+  /** Hover previews share the exact same observation with an external summary. */
+  onPreviewIndexChange?: (index: number | null) => void;
   /** Commit a clicked point (including the selected point), or Enter/Space. Hover only previews. */
   onPointActivate?: (index: number, point: CashFlowPoint) => void;
   /** Text for a point's date on the axis ("Apr") and in the tooltip ("April"). */
@@ -328,6 +330,7 @@ function CashFlowAreaChart({
   defaultIndex,
   hideCursorUntilInteraction = false,
   onIndexChange,
+  onPreviewIndexChange,
   onPointActivate,
   formatDate,
   onMoreClick,
@@ -380,6 +383,11 @@ function CashFlowAreaChart({
   const ticksKey = ticks.join(';');
 
   const [hovered, setHovered] = React.useState<number | null>(null);
+  useIsomorphicLayoutEffect(() => {
+    onPreviewIndexChange?.(hovered);
+    return () => onPreviewIndexChange?.(null);
+  }, [hovered, onPreviewIndexChange]);
+  React.useEffect(() => setHovered(null), [dataKey]);
   const selected = n ? Math.min(Math.max(Math.round(indexValue), 0), n - 1) : -1;
   const active = hovered !== null && hovered < n ? hovered : selected;
   const cursorVisible = !escaped && (!hideCursorUntilInteraction || cursorEngaged);
@@ -611,9 +619,10 @@ function CashFlowAreaChart({
       label?.style.removeProperty('transform');
       for (const marker of markers) marker.style.removeProperty('transform');
     };
-    if (reduced || !point || before.width !== width) {
+    if (hovered !== null || reduced || !point || before.width !== width) {
       ride.current?.cancel();
       settle();
+      tip?.style.removeProperty('transform');
       return;
     }
     if (tip && (before.tipAnchor !== tipAnchor || before.tipTop !== tipTop || before.flipped !== flipped)) {
@@ -656,7 +665,7 @@ function CashFlowAreaChart({
     ride.current?.cancel();
     paint();
     ride.current = animate(state, { x: cursorX, duration: RIDE, ease: 'outExpo', onUpdate: paint, onComplete: settle });
-  }, [active, width, dataKey, tipAnchor, tipTop, flipped, reduced]);
+  }, [active, width, dataKey, tipAnchor, tipTop, flipped, reduced, hovered]);
 
   // New data morphs both lines and the area (each pair resampled on the same x positions) and the markers ride along;
   // a line that wasn't there fades in.
@@ -713,7 +722,15 @@ function CashFlowAreaChart({
     const appeared = [!blue && line, !blue && area, !pair && grey].filter((el): el is SVGPathElement => !!el);
     if (appeared.length)
       animate(appeared, { opacity: [0, 1], duration: 500, ease: 'outQuad', onComplete: releaseStyles('opacity') });
-  }, [dataKey, width, reduced]);
+    // ResizeObserver can change the plot width after wider axis labels render.
+    // Retire this animation before the next layout; its completion callback
+    // otherwise writes the obsolete width over React's new SVG coordinates.
+    const animation = morph.current;
+    return () => {
+      animation?.cancel();
+      for (const dot of dots) dot.style.removeProperty('translate');
+    };
+  }, [dataKey, width, plotHeight, reduced]);
   React.useEffect(
     () => () => {
       ride.current?.cancel();

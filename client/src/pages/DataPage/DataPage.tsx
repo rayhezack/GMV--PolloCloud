@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { getGmvCoverage } from '@/api/dashboard';
 import type { DashboardGmvCoverageResponse, Platform } from '@shared/api.interface';
 import { PageHeader, PanelState, DataTable, InfoTip } from '@/components/system';
@@ -6,10 +7,14 @@ import { money, rate } from '@shared/format';
 import './data-page.css';
 const SyncControlBar = lazy(() => import('../DashboardPage/SyncControlBar'));
 export default function DataPage() {
+  const { hash } = useLocation();
   const [data, setData] = useState<DashboardGmvCoverageResponse | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(''),
     [revision, setRevision] = useState(0);
+  useEffect(() => {
+    if (hash === '#method-anomaly') document.getElementById('method-anomaly')?.scrollIntoView({ block: 'start' });
+  }, [hash, loading]);
   useEffect(() => {
     let live = true;
     setLoading(true);
@@ -271,21 +276,45 @@ function GmvCoverageExplanation({
         <section id="method-anomaly" className="dashboard-methodology-section">
           <h3>GMV 异动诊断</h3>
           <p>
-            异动诊断按 Web、App 和大盘分别计算最新完整日的 GMV，指标包括大盘 GMV、主动付费和续订
-            GMV。每个指标同时检查最新一日对前一日的较前一天，以及最新一日对上周同一天的较上周同日。
+            异动使用动态阈值，10% 只是最低变化门槛，不是统一的固定阈值。大盘、Web、App 分别以各自支付结果中的总 GMV
+            为监测对象，包含主动付费、自动续订和 API；主动付费、自动续订子项用于解释变化，不独立触发日诊断。
           </p>
           <p>
-            历史基准沿用业务周口径：业务周采用周六至周五，至少需要最近 12
-            个完整业务周的日均数据。较前一天和较上周同日各自使用对应历史样本计算 P95/P05 阈值，并设置 ±10%
-            的最低触发线；任一口径超过阈值，就纳入最新 GMV 异动判断。
+            每个端分别取最近 12 个完整业务周（周六至周五）的每日 GMV，形成“较前一日”和“较上周同日”两组历史变化率分布。
+            每组分别计算上涨 P95 与下降
+            P5，阈值随历史窗口滚动更新；计算规则相同，但各端、各比较方式、各方向的实际阈值可以不同。
+          </p>
+          <dl className="dashboard-methodology-definitions">
+            <div>
+              <dt>较前一日</dt>
+              <dd>当日 GMV ÷ 前一日 GMV − 1；阈值使用该端历史的日变化率分布。</dd>
+            </div>
+            <div>
+              <dt>较上周同日</dt>
+              <dd>当日 GMV ÷ 7 天前 GMV − 1；阈值使用该端历史的上周同日变化率分布。</dd>
+            </div>
+            <div>
+              <dt>上涨触发条件</dt>
+              <dd>变化率 ≥ max（该端对应历史分布的 P95，+10%）。</dd>
+            </div>
+            <div>
+              <dt>下降触发条件</dt>
+              <dd>变化率 ≤ min（该端对应历史分布的 P5，−10%）。P5 即第 5 百分位数，也称 P05。</dd>
+            </div>
+            <div>
+              <dt>如何判定</dt>
+              <dd>任一比较方式触发即判为该端当日异动；两种比较同时触发时合并为一项，详情保留两条信号。</dd>
+            </div>
+          </dl>
+          <p>
+            因此，跌幅超过 10% 仍可能未触发。例如某端历史下降阈值为 −14.18%，当日下降 13.59% 就未触发。
+            大盘是汇总后的独立序列，其波动分布不同，可能出现大盘触发而 Web、App 各自均未触发的情况。
           </p>
           <p>
-            同一平台、同一指标、同一日期在每日动态中合并展示；如果较前一天和较上周同日同时触发，会在监测详情中并列展示两种变化，作为共同证据。数据缺失、对比基准为
-            0 或完整业务周不足 12 个时不发出提醒。
-          </p>
-          <p>
-            续订 GMV 只使用已有有效金额的完整业务周；选择 P95/P05 而不是 P99/P01，是因为当前历史周数有限，P99/P01
-            更接近极值，容易漏掉明显变化且阈值不稳定。
+            日历红圈、趋势红圈和右侧异动线索均按当前所选端展示，不能把大盘的异动标到 Web 或 App。
+            数据缺失、比较基准无有效正值、完整业务周不足 12 个或有效变化率样本不足 8
+            个时，等待监测数据，不将缺失判为无异动。
+            日诊断任务与异动信号分开：某端触发时也会生成大盘汇总诊断作为上下文，这不表示大盘必然触发了自身阈值。
           </p>
         </section>
         <section id="method-payment" className="dashboard-methodology-section">
