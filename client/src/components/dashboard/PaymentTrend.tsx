@@ -1,5 +1,6 @@
 import { paymentValue, formatPaymentValue, type PaymentMetric } from '@shared/payment-metric';
 import { chartTicks } from '@/components/charts/geometry';
+import { niceTicks } from '@/lib/chart-series';
 import { entityColor } from '@shared/chart-colors';
 import { paymentWeekBands, paymentTrendUnit } from '@shared/comparison-display';
 import { useEffect, useState } from 'react';
@@ -93,7 +94,7 @@ export default function PaymentTrend({
   }, [platform, deviceType, analysisPeriod, mode, scope, grouping, granularity, refreshToken, retry]);
   const shown = (data?.series || []).filter((s) => selected.includes(s.key));
   // Keep every bucket and omit only missing readings; the chart breaks lines at those observations.
-  const points = (data?.points || []).map((point, i) => ({
+  const rawPoints = (data?.points || []).map((point, i) => ({
     date: point.period,
     values: Object.fromEntries(
       shown.flatMap((series) => {
@@ -103,12 +104,24 @@ export default function PaymentTrend({
       }),
     ),
   }));
+  // The API keeps empty date buckets inside the requested window so missing
+  // days remain visible. Trim only trailing empty buckets; otherwise the
+  // x-axis and scrubber can end after the last real observation.
+  const lastObserved = rawPoints.reduceRight(
+    (last, point, index) =>
+      last >= 0 ? last : Object.values(point.values).some((value) => Number.isFinite(value)) ? index : -1,
+    -1,
+  );
+  const points = lastObserved >= 0 ? rawPoints.slice(0, lastObserved + 1) : [];
   const chartSeries = shown.map((series) => ({
     key: series.key,
     label: entityLabel(series.label),
     color: entityColor(entityLabel(series.label)),
   }));
-  const ticks = chartTicks(points.flatMap((point) => Object.values(point.values)));
+  const chartValues = points.flatMap((point) => Object.values(point.values));
+  const ticks = chartValues.length
+    ? niceTicks(Math.min(...chartValues), Math.max(...chartValues), 5)
+    : chartTicks(chartValues);
   const title =
     grouping === 'payType'
       ? '付费类型趋势'

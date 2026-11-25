@@ -30,6 +30,7 @@ import { buildMiddleTableSql } from '../server/modules/maxcompute/middle-table-s
 import { POLLOCLOUD_APP_OWNER_ID } from '../shared/auth.constants';
 import { reportGenerations } from './report-jobs';
 import { getDailyDiagnosis, markDailyDiagnosisDirty, regenerateDailyDiagnosis, tickDailyDiagnoses } from './daily-diagnosis-jobs';
+import { mergeAnomalyDates } from './anomaly-dates';
 import { buildReportEvidence, normalizeProductAction } from './report-evidence';
 import { loadReportSources } from './report-evidence-loader';
 import type { AdsAggregate, AdsOverviewResponse, DashboardAttributionsResponse, DashboardGmvAnomalyResponse, ReportGenerationRequest, ReportGenerationStatus, ReportSummary, AttributionItem, AttributionDriverItem, SyncDataset, SyncMode, SyncRunStatus, SyncRunResponse, CreativeChainTrendPoint, CreativeOverviewResponse } from '../shared/api.interface';
@@ -1315,6 +1316,10 @@ export async function gmvAnomalies(env: Env, asOfDate?: string, scope: Dashboard
       }
     }
   }
+  // Persisted diagnosis state is useful for historical markers, but the latest
+  // day must follow the live detector. A queued/running/stale diagnosis must
+  // not paint a red calendar ring when the current threshold check is clear.
+  anomalyDates = mergeAnomalyDates(anomalyDates, latestPeriod, alerts);
   return json({ latestWeek: '', latestDay: latestPeriod, anomalyDates, method: 'daily_and_weekly_rolling_p95_p05_min_10pct', monitoredPlatforms, alerts });
 }
 

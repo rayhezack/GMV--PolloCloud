@@ -84,8 +84,8 @@ function layoutChart(
   const LEVEL_BOTTOM = height - 0.5;
   const shown = series.filter((s) => !hidden.includes(s.key));
   const values = (shown.length ? shown : series).flatMap((s) => data.flatMap((point) => valueOf(point, s.key) ?? []));
-  const low = Math.min(0, ...values);
-  const high = Math.max(0, ...values);
+  const low = values.length ? Math.min(...values) : 0;
+  const high = values.length ? Math.max(...values) : 0;
   const ticks = ticksProp?.length
     ? [...ticksProp].sort((a, b) => a - b)
     : niceTicks(low, high > low ? high : low + 1, TICK_COUNT);
