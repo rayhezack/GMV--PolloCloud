@@ -48,6 +48,7 @@ export default function ChainDiagnostics({
     let live = true;
     setData(null);
     setError('');
+    if (!baseline || !analysis) return;
     void getChainFunnel({
       mode,
       platform,

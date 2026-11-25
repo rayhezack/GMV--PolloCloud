@@ -10,25 +10,39 @@ export function useDataCoverage(
   deviceType?: AppDeviceType,
   revision = 0,
 ) {
-  const key = `${dataset}:${platform}:${deviceType || ''}:${revision}`;
-  const [state, setState] = useState<{ key: string; coverage: DataCoverage | null; error: string } | null>(null);
+  const scope = `${dataset}:${platform}:${deviceType || ''}`;
+  const key = `${scope}:${revision}`;
+  const [state, setState] = useState<{
+    key: string;
+    scope: string;
+    coverage: DataCoverage | null;
+    error: string;
+  } | null>(null);
   useEffect(() => {
     let live = true;
     void getDataCoverage({ dataset, platform, deviceType, cacheBust: revision })
       .then((coverage) => {
-        if (live) setState({ key, coverage, error: '' });
+        if (live) setState({ key, scope, coverage, error: '' });
       })
       .catch(() => {
-        if (live) setState({ key, coverage: null, error: '可用数据日期读取失败，请重试' });
+        if (live)
+          setState((previous) => ({
+            key,
+            scope,
+            coverage: previous?.scope === scope ? previous.coverage : null,
+            error: '可用数据日期读取失败，请重试',
+          }));
       });
     return () => {
       live = false;
     };
   }, [key]);
-  const current = state?.key === key ? state : null;
+  // A refresh keeps the current scope's dates usable while its request is in
+  // flight. A platform/dataset change must never reuse another scope's dates.
+  const current = state?.scope === scope ? state : null;
   return {
     coverage: STATIC_DEMO_MODE ? { startDate: '2026-01-01', endDate: '2026-10-09' } : (current?.coverage ?? null),
-    loading: !STATIC_DEMO_MODE && !current,
-    error: current?.error || '',
+    loading: !STATIC_DEMO_MODE && state?.key !== key,
+    error: state?.key === key ? state.error : '',
   };
 }
