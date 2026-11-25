@@ -1,6 +1,5 @@
 import { paymentValue, formatPaymentValue, type PaymentMetric } from '@shared/payment-metric';
-import { chartTicks } from '@/components/charts/geometry';
-import { niceTicks } from '@/lib/chart-series';
+import { tightLineTicks } from '@/lib/chart-series';
 import { entityColor } from '@shared/chart-colors';
 import { paymentWeekBands, paymentTrendUnit } from '@shared/comparison-display';
 import { useEffect, useState } from 'react';
@@ -119,9 +118,7 @@ export default function PaymentTrend({
     color: entityColor(entityLabel(series.label)),
   }));
   const chartValues = points.flatMap((point) => Object.values(point.values));
-  const ticks = chartValues.length
-    ? niceTicks(Math.min(...chartValues), Math.max(...chartValues), 5)
-    : chartTicks(chartValues);
+  const ticks = tightLineTicks(chartValues);
   const title =
     grouping === 'payType'
       ? '付费类型趋势'
