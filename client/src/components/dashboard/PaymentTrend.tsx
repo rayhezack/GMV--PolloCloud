@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { money } from '@shared/format';
 import type { AppDeviceType, DashboardPlatform, GmvAttributionType, PaymentTrendResponse } from '@shared/api.interface';
 import { entityLabel, type PaymentGrouping, type RevenueScope } from './payment-analysis.data';
-import { Spinner } from '@/components/ui/spinner';
+import { ChartSkeleton } from '@/components/system/ChartSkeleton';
 import { Segment } from '@/components/v62/primitives';
 
 const ranges = { day: '近 30 天', week: '近 30 天', month: '近 30 天' };
@@ -218,8 +218,8 @@ export default function PaymentTrend({
           </Popover>
         </div>
         {loading ? (
-          <div className="payment-line-chart payment-trend-loading" role="status" aria-label="正在读取趋势">
-            <Spinner aria-label="正在读取趋势" />
+          <div className="payment-line-chart payment-trend-loading">
+            <ChartSkeleton label="正在读取趋势" />
           </div>
         ) : error ? (
           <div className="payment-trend-state" role="alert">

@@ -232,6 +232,8 @@ components:
 
 周/月不完整桶必须披露实际日数；有效基准按匹配业务日比较。无同日基准、零分母或未成熟应明确状态。官方图表标记跟随与选择动画保留，减少动态效果分支取消过渡；Cohort 诊断使用 spring（stiffness 320 / damping 29 / mass 0.8），reduced-motion 时 duration 0。系统级减少动态效果尚无独立实测证据。
 
+图表数据读取中使用浅灰网格与曲线轮廓的 `ChartSkeleton` 骨架动画；普通内容区使用块状骨架。数据就绪后保留图表从左至右的 reveal 入场动画，不将 reveal 当作数据加载状态。页面与子 Tab 切换保留 Wave；图表骨架和 reveal 均遵循减少动态效果偏好。
+
 付费类型的 InvestmentPerformanceChart 与实际安装的 chart-marker、chart-tick-label 源组件共同使用：保留真实逐日数据以及日/周/月/年日均聚合，缺失处断线，tooltip 金额调用整数 `money`，不靠示例序列替换数据。收入图卡采用 `overflow: clip` 防止聚焦控件时产生意外横向滚动。PaymentShareDialog 保留 NetWorthChart，范围切换使用扁平 Segment；tooltip 仅显示紧凑日期和占比，指针离开隐藏。
 
 首页 BudgetChart 改编自 Mebius charts-budget：按选中日、当前端/设备的真实 `totalPayTypeGmv` 绘制 GMV 构成，保留 35 列、两行圆角格栅，类别边界按真实金额份额绘制，不将金额四舍五入成整格；类别用稳定的单一紫色色阶区分。图例仅保留色点与名称；金额和占比只在构成条悬浮或图例键盘聚焦时显示，离开或 Escape 收起。缺失不补零，源差额单列；负向金额不伪装成正向堆叠。上方趋势绘图区保留原高度。

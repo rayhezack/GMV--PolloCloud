@@ -1,4 +1,4 @@
-import { Spinner } from '../ui/spinner';
+import { Skeleton } from '@astryxdesign/core/Skeleton';
 import { EmptyState } from '@astryxdesign/core/EmptyState';
 import { Badge } from '@astryxdesign/core/Badge';
 import { Button } from '@astryxdesign/core/Button';
@@ -18,7 +18,11 @@ export function PanelState({
   if (state === 'loading')
     return (
       <div className="sys-panel-loading" role="status" aria-label="正在读取数据">
-        <Spinner aria-label="正在读取数据" />
+        <div className="sys-panel-skeleton" aria-hidden="true">
+          <Skeleton width="40%" height={16} />
+          <Skeleton width="100%" height={48} />
+          <Skeleton width="70%" height={16} />
+        </div>
       </div>
     );
   return (

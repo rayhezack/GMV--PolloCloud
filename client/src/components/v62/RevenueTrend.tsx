@@ -14,6 +14,7 @@ import { chartTicks, businessTickIndices, weekendIndices, axisValue } from '../c
 import { WeekendBand } from '../charts/Annotations';
 import { ChartTooltip } from '../charts/ChartTooltip';
 import { PanelState } from '../system/PanelState';
+import { ChartSkeleton } from '../system/ChartSkeleton';
 import { Segment, exportCsv, usd, signedUsd } from './primitives';
 import { cashFlowSeries, type TrendBucket } from './trend-data';
 
@@ -205,7 +206,7 @@ export default function RevenueTrend({
         )}
       </div>
       {loading ? (
-        <PanelState state="loading" />
+        <ChartSkeleton />
       ) : !buckets.some((b) => Number.isFinite(b.value)) ? (
         <PanelState state="empty" reason="该日期无数据或快照未覆盖" />
       ) : cashFlow ? (

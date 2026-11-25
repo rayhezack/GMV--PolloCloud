@@ -51,7 +51,7 @@ export function useAnimeScope(root: RefObject<HTMLElement | null>) {
   return scope
 }
 
-/** Data plots render immediately; decorative entrances must be explicitly requested. */
+/** Keep figures exact, then reveal each plot from left to right when it enters view. */
 export function useChartEntrance(
   root: RefObject<HTMLElement | null>,
   build: (timeline: Timeline) => void | (() => void),
@@ -61,7 +61,7 @@ export function useChartEntrance(
   const buildRef = useRef(build)
   buildRef.current = build
   useIsomorphicLayoutEffect(() => {
-    if (!root.current || options.enabled === false || !options.mode) return
+    if (!root.current || options.enabled === false) return
     const timeline = createTimeline({ autoplay: false })
     const cleanup = buildRef.current(timeline)
     // Registry charts can opt into their original per-element entrance timeline.

@@ -10,7 +10,7 @@ import { niceTicks } from '@/lib/chart-series';
 import type { AppDeviceType, DashboardPlatform, PaymentTrendResponse } from '@shared/api.interface';
 import { downloadCsv } from './AnalysisWidgets';
 import { latestPaymentDate, paymentShareTrend, type PaymentShareRange } from './payment-history';
-import { Spinner } from '@/components/ui/spinner';
+import { ChartSkeleton } from '@/components/system/ChartSkeleton';
 
 const formatShare = (value: number | null) => (value == null ? '—' : `${(value * 100).toFixed(2)}%`);
 const formatTick = (value: number) => `${+(value * 100).toFixed(2)}%`;
@@ -187,7 +187,7 @@ export function PaymentShareDialog({
                     </Button>
                   </>
                 ) : !source ? (
-                  <Spinner aria-label="正在读取占比趋势" />
+                  <ChartSkeleton label="正在读取占比趋势" />
                 ) : (
                   '此范围暂无占比数据'
                 )}

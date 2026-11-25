@@ -8,16 +8,41 @@ const ast = ts.createSourceFile('use-chart-motion.ts', source, ts.ScriptTarget.L
 const fn = ast.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === 'useChartEntrance');
 const code = ts.transpileModule(fn.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
-function mount(options) {
+function mount(options, reduced = false) {
   const calls = [];
+  const plot = {
+    style: {
+      clipPath: '',
+      removeProperty() {
+        this.clipPath = '';
+      },
+    },
+    matches: () => false,
+    getBoundingClientRect: () => ({ width: 600, height: 224 }),
+  };
   let cleanup;
+  let complete;
   const dependencies = {
-    useReducedMotion: () => false,
+    useReducedMotion: () => reduced,
     useRef: (current) => ({ current }),
     useIsomorphicLayoutEffect: (effect) => {
       cleanup = effect();
     },
-    createTimeline: () => ({ play: () => calls.push('play'), revert: () => calls.push('revert') }),
+    createTimeline: () => ({
+      duration: 1900,
+      seek: () => calls.push('seek'),
+      play: () => calls.push('play'),
+      revert: () => calls.push('revert'),
+    }),
+    animate: (targets, params) => {
+      calls.push('reveal');
+      complete = () => params.onComplete({ targets });
+      return { cancel: () => calls.push('cancel') };
+    },
+    releaseStyles:
+      () =>
+      ({ targets }) =>
+        targets.forEach((target) => target.style.removeProperty('clip-path')),
     IntersectionObserver: class {
       constructor(callback) {
         this.callback = callback;
@@ -33,20 +58,36 @@ function mount(options) {
     `${code.replace(/^export /, '')}; return useChartEntrance;`,
   )(...Object.values(dependencies));
   entrance(
-    { current: {} },
+    { current: { querySelectorAll: () => [plot] } },
     () => {
       calls.push('build');
       return () => calls.push('cleanup');
     },
     options,
   );
-  return { calls, unmount: () => cleanup?.() };
+  return { calls, plot, finishReveal: () => complete?.(), unmount: () => cleanup?.() };
 }
 
-test('a default data chart mounts immediately without hiding its SVG for a reveal', () => {
+test('a data chart reveals by default and releases the clipping when complete', () => {
   const chart = mount();
-  assert.deepEqual(chart.calls, []);
+  assert.deepEqual(chart.calls, ['build', 'seek', 'revert', 'cleanup', 'reveal']);
+  assert.equal(chart.plot.style.clipPath, 'inset(0 100% 0 0)');
+  chart.finishReveal();
+  assert.equal(chart.plot.style.clipPath, '');
   chart.unmount();
+});
+
+test('unmounting during reveal removes clipping and cancels the animation', () => {
+  const chart = mount();
+  chart.unmount();
+  assert.equal(chart.plot.style.clipPath, '');
+  assert.equal(chart.calls.at(-1), 'cancel');
+});
+
+test('reduced motion shows the complete chart without a reveal', () => {
+  const chart = mount(undefined, true);
+  assert.deepEqual(chart.calls, ['build', 'seek', 'revert', 'cleanup']);
+  assert.equal(chart.plot.style.clipPath, '');
 });
 
 test('an explicitly requested decorative timeline still plays and cleans up', () => {

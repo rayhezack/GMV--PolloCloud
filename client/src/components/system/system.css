@@ -403,8 +403,46 @@ html[data-astryx-theme='pollo-v62']
 .sys-panel-loading {
   min-height: 180px;
 }
+.sys-panel-skeleton {
+  display: grid;
+  width: 100%;
+  gap: var(--space-16);
+}
+.sys-chart-skeleton {
+  width: 100%;
+  min-width: 0;
+  color: var(--line);
+}
+.sys-chart-skeleton svg {
+  display: block;
+  width: 100%;
+  height: 224px;
+  animation: chart-skeleton-pulse 1.6s ease-in-out infinite alternate;
+}
+.sys-chart-skeleton-grid {
+  fill: none;
+  stroke: currentColor;
+  stroke-dasharray: 4 6;
+}
+.sys-chart-skeleton-series {
+  fill: none;
+  stroke: var(--text-3);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.2;
+}
+.sys-chart-skeleton-labels {
+  fill: currentColor;
+}
+@keyframes chart-skeleton-pulse {
+  from { opacity: 0.45; }
+  to { opacity: 1; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .dashboard-wave-loader-motion * {
+  .dashboard-wave-loader-motion *,
+  .sys-chart-skeleton svg,
+  .sys-panel-skeleton * {
     animation: none !important;
   }
 }
