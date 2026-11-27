@@ -68,7 +68,7 @@ export default function GmvCalendar({
         title={measure === 'orders' ? '订单量日历' : 'GMV 日历'}
         unit={range(start, [end, latest || end].sort()[0])}
         inlineUnit
-        info="一格代表一天，每列为自然周，每行为周一至周日，范围外和缺失日期留空。按所选指标每日数值着色，缺失订单数不补零。红圈表示异动；悬浮或键盘聚焦查看当日数据与产品动作。同期动作不代表变化原因。方向键选日。"
+        info="一格代表一个有数据的日期，每列为自然周，每行为周一至周日，不展示未来日期的占位格。按所选指标每日数值着色，历史缺失日期留空、不补零。红圈表示异动；悬浮或键盘聚焦查看当日数据与产品动作。同期动作不代表变化原因。方向键选日。"
         tools={
           <div className="gmv-calendar-tools">
             {peak && (
@@ -120,26 +120,10 @@ export default function GmvCalendar({
         </div>
         <div className="gmv-calendar-grid">
           {cells.map((date, i) => {
-            if (!date)
-              return (
-                <span
-                  key={`blank-${i}`}
-                  className="gmv-calendar-blank"
-                  style={{ gridColumn: Math.floor(i / 7) + 1, gridRow: (i % 7) + 1 }}
-                  aria-hidden="true"
-                />
-              );
+            if (!date) return null;
             const value = values.get(date),
               before = values.get(shiftDay(date, -7));
-            if (value == null || !Number.isFinite(value))
-              return (
-                <span
-                  key={date}
-                  className="gmv-calendar-blank"
-                  style={{ gridColumn: Math.floor(i / 7) + 1, gridRow: (i % 7) + 1 }}
-                  aria-hidden="true"
-                />
-              );
+            if (value == null || !Number.isFinite(value)) return null;
             const change = before != null && before !== 0 ? value / before - 1 : null,
               count = actionCounts?.get(date) ?? (actions.has(date) ? 1 : 0);
             const description = `${day(date)} · ${formatValue(value)} · 较上周同日 ${changePct(change)}${anomalies.has(date) ? ' · 异动' : ''}${count ? ` · 产品动作 ${count} 条` : ''}`;

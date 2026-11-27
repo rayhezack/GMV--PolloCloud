@@ -25,12 +25,11 @@ export function calendarDates(start: string, end: string, latest = end) {
   if (!start || !through || start > through) return { dates: [] as (string | null)[], rows: 0, truncated: false };
   const monday = (date: string) => shift(date, -((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7));
   const first = monday(start),
-    last = monday(through),
     visible = first;
   const dates: (string | null)[] = [];
-  for (let date = visible; date <= shift(last, 6); date = shift(date, 1))
+  for (let date = visible; date <= through; date = shift(date, 1))
     dates.push(date >= start && date <= through ? date : null);
-  return { dates, rows: dates.length / 7, truncated: first < visible };
+  return { dates, rows: Math.ceil(dates.length / 7), truncated: first < visible };
 }
 
 /** The peak is selected only from visible observations; ties prefer the latest day. */
